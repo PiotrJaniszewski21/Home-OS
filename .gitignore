@@ -30,6 +30,8 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Claude
+# Local docs (not published)
 claude-md/
+Design/
+CLAUDE.md
 Home-OS
