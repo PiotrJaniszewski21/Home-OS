@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-5xl">
+    <div class="flex items-center justify-between mb-6">
+        <h1>Dashboard</h1>
+        <span class="text-tertiary text-xs">{{ metrics.hostname }}</span>
+    </div>
+
+    <div class="grid grid-cols-4 gap-4 mb-6">
+        <div class="glass-card">
+            <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.05em;">CPU</p>
+            <p style="font-size:1.75rem; font-weight:700; margin-top:0.25rem;" id="cpu-val">{{ metrics.cpu_percent }}%</p>
+            <div class="progress-bar mt-2">
+                <div id="cpu-bar" class="progress-fill blue" style="width: {{ metrics.cpu_percent }}%"></div>
+            </div>
+            <p class="text-tertiary text-xs mt-2">{{ metrics.cpu_count }} cores</p>
+        </div>
+
+        <div class="glass-card">
+            <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.05em;">Memory</p>
+            <p style="font-size:1.75rem; font-weight:700; margin-top:0.25rem;" id="mem-val">{{ metrics.memory.used_gb }}<span class="text-secondary" style="font-size:0.875rem;"> / {{ metrics.memory.total_gb }} GB</span></p>
+            <div class="progress-bar mt-2">
+                <div id="mem-bar" class="progress-fill green" style="width: {{ metrics.memory.percent }}%"></div>
+            </div>
+            <p class="text-tertiary text-xs mt-2">{{ metrics.memory.percent }}%</p>
+        </div>
+
+        <div class="glass-card">
+            <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.05em;">Disk</p>
+            <p style="font-size:1.75rem; font-weight:700; margin-top:0.25rem;">{{ metrics.disk.used_gb }}<span class="text-secondary" style="font-size:0.875rem;"> / {{ metrics.disk.total_gb }} GB</span></p>
+            <div class="progress-bar mt-2">
+                <div class="progress-fill {% if metrics.disk.percent > 90 %}red{% elif metrics.disk.percent > 70 %}yellow{% else %}blue{% endif %}" style="width: {{ metrics.disk.percent }}%"></div>
+            </div>
+            <p class="text-tertiary text-xs mt-2">{{ metrics.disk.percent }}%</p>
+        </div>
+
+        <div class="glass-card">
+            <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.05em;">Uptime</p>
+            <p style="font-size:1.75rem; font-weight:700; margin-top:0.25rem;">{{ metrics.uptime }}</p>
+            <p class="text-tertiary text-xs mt-2">{{ metrics.platform }}</p>
+        </div>
+    </div>
+
+    <!-- Network live -->
+    <div class="glass-card mb-4">
+        <p class="text-tertiary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.05em;">Network</p>
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <div class="flex justify-between items-center">
+                    <p class="text-tertiary text-xs">Download</p>
+                    <p id="dash-speed-down" style="font-size:1.25rem; font-weight:600; color:var(--success);">—</p>
+                </div>
+                {% if isp_download > 0 %}
+                <div class="progress-bar mt-2"><div class="progress-fill green" id="dash-down-bar" style="width:0%"></div></div>
+                <p class="text-tertiary text-xs mt-1"><span id="dash-down-pct">0</span>% of {{ isp_download }} Mbps</p>
+                {% endif %}
+            </div>
+            <div>
+                <div class="flex justify-between items-center">
+                    <p class="text-tertiary text-xs">Upload</p>
+                    <p id="dash-speed-up" style="font-size:1.25rem; font-weight:600; color:var(--accent);">—</p>
+                </div>
+                {% if isp_upload > 0 %}
+                <div class="progress-bar mt-2"><div class="progress-fill blue" id="dash-up-bar" style="width:0%"></div></div>
+                <p class="text-tertiary text-xs mt-1"><span id="dash-up-pct">0</span>% of {{ isp_upload }} Mbps</p>
+                {% endif %}
+            </div>
+        </div>
+        <div class="flex justify-between mt-3 text-xs text-tertiary" style="border-top:1px solid rgba(0,60,120,0.06); padding-top:0.5rem;">
+            <span>Total sent: {{ metrics.network.sent_gb }} GB</span>
+            <span>Total received: {{ metrics.network.recv_gb }} GB</span>
+        </div>
+    </div>
+
+    <div class="glass-card">
+        <p class="text-tertiary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.05em;">System</p>
+        <div class="space-y-2 text-sm">
+            <div class="flex justify-between">
+                <span class="text-tertiary">Hostname</span>
+                <span>{{ metrics.hostname }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-tertiary">Platform</span>
+                <span>{{ metrics.platform }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-tertiary">Python</span>
+                <span>{{ metrics.python_version }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const ispDown = {{ isp_download }};
+const ispUp = {{ isp_upload }};
+let dashLastBytes = null, dashLastTime = null;
+
+setInterval(() => {
+    fetch("/api/monitor/metrics", {headers: {"Accept": "application/json"}})
+        .then(r => r.json())
+        .then(r => {
+            if (!r.ok) return;
+            const d = r.data;
+            document.getElementById("cpu-val").innerHTML = d.cpu_percent + "%";
+            document.getElementById("cpu-bar").style.width = d.cpu_percent + "%";
+            document.getElementById("mem-val").innerHTML = d.memory.used_gb + '<span class="text-secondary" style="font-size:0.875rem;"> / ' + d.memory.total_gb + ' GB</span>';
+            document.getElementById("mem-bar").style.width = d.memory.percent + "%";
+        });
+}, 3000);
+
+function formatSpeed(bps) {
+    const mbps = (bps * 8) / 1000000;
+    if (mbps >= 1) return mbps.toFixed(1) + ' Mbps';
+    const kbps = (bps * 8) / 1000;
+    if (kbps >= 1) return kbps.toFixed(0) + ' Kbps';
+    return (bps * 8).toFixed(0) + ' bps';
+}
+
+function pollNetSpeed() {
+    fetch("/api/network/speed").then(r => r.json()).then(r => {
+        if (!r.ok) return;
+        const now = r.data;
+        if (dashLastBytes && dashLastTime) {
+            const dt = now.timestamp - dashLastTime;
+            if (dt > 0) {
+                const downBps = Math.max(0, (now.bytes_recv - dashLastBytes.recv) / dt);
+                const upBps = Math.max(0, (now.bytes_sent - dashLastBytes.sent) / dt);
+                document.getElementById("dash-speed-down").textContent = formatSpeed(downBps);
+                document.getElementById("dash-speed-up").textContent = formatSpeed(upBps);
+
+                if (ispDown > 0) {
+                    const pct = Math.min(100, ((downBps * 8 / 1048576) / ispDown) * 100);
+                    const bar = document.getElementById("dash-down-bar");
+                    const label = document.getElementById("dash-down-pct");
+                    if (bar) bar.style.width = pct + "%";
+                    if (label) label.textContent = pct.toFixed(0);
+                }
+                if (ispUp > 0) {
+                    const pct = Math.min(100, ((upBps * 8 / 1048576) / ispUp) * 100);
+                    const bar = document.getElementById("dash-up-bar");
+                    const label = document.getElementById("dash-up-pct");
+                    if (bar) bar.style.width = pct + "%";
+                    if (label) label.textContent = pct.toFixed(0);
+                }
+            }
+        }
+        dashLastBytes = {sent: now.bytes_sent, recv: now.bytes_recv};
+        dashLastTime = now.timestamp;
+    });
+}
+
+pollNetSpeed();
+setInterval(pollNetSpeed, 2000);
+</script>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Create User — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-md">
+    <div class="flex items-center gap-4 mb-6">
+        <a href="{{ url_for('auth.users') }}" class="text-secondary" style="text-decoration:none;">&larr;</a>
+        <h1>Create User</h1>
+    </div>
+
+    <div class="glass-card">
+        <form method="POST" class="space-y-4">
+            {{ form.hidden_tag() }}
+            <div>
+                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Username</label>
+                {{ form.username(class="glass-input") }}
+                {% for error in form.username.errors %}
+                <p class="text-danger text-xs mt-1">{{ error }}</p>
+                {% endfor %}
+            </div>
+            <div>
+                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Email (optional)</label>
+                {{ form.email(class="glass-input") }}
+            </div>
+            <div>
+                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Password</label>
+                {{ form.password(class="glass-input") }}
+                {% for error in form.password.errors %}
+                <p class="text-danger text-xs mt-1">{{ error }}</p>
+                {% endfor %}
+            </div>
+            <div>
+                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Role</label>
+                {{ form.role(class="glass-input") }}
+            </div>
+            <div class="flex gap-3" style="padding-top: 0.5rem;">
+                <button type="submit" class="btn btn-primary">Create User</button>
+                <a href="{{ url_for('auth.users') }}" class="btn btn-ghost">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,465 @@
+{% extends "base.html" %}
+{% block title %}Network — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto">
+
+    <!-- Setup Wizard (shown on first visit) -->
+    <div id="setup-wizard" class="hidden">
+        <div class="glass-card" style="max-width:32rem; margin:0 auto; padding:2rem;">
+            <!-- Step 1: ISP Speed -->
+            <div id="wizard-step-1">
+                <div style="text-align:center; margin-bottom:1.5rem;">
+                    <p style="font-size:2rem; margin-bottom:0.5rem;">📡</p>
+                    <h2>Network Setup</h2>
+                    <p class="text-secondary text-sm mt-1">Enter your ISP plan speeds so we can compare actual vs expected performance.</p>
+                </div>
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Download Speed (Mbps)</label>
+                            <input type="number" id="wiz-download" class="glass-input" placeholder="100">
+                        </div>
+                        <div>
+                            <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Upload Speed (Mbps)</label>
+                            <input type="number" id="wiz-upload" class="glass-input" placeholder="20">
+                        </div>
+                    </div>
+                    <div class="flex justify-between" style="padding-top:0.5rem;">
+                        <button onclick="skipWizard()" class="btn btn-ghost">Skip</button>
+                        <button onclick="wizardNext()" class="btn btn-primary">Next</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: AdGuard -->
+            <div id="wizard-step-2" class="hidden">
+                <div style="text-align:center; margin-bottom:1.5rem;">
+                    <p style="font-size:2rem; margin-bottom:0.5rem;">🛡️</p>
+                    <h2>Ad Blocking</h2>
+                    <p class="text-secondary text-sm mt-1">Install AdGuard Home to block ads and trackers for all devices on your network.</p>
+                </div>
+                <div id="wiz-adguard-status">
+                    <div class="flex justify-between" style="padding-top:0.5rem;">
+                        <button onclick="finishWizard()" class="btn btn-ghost">Skip</button>
+                        <button onclick="wizardInstallAdGuard()" id="wiz-install-btn" class="btn btn-primary">Install AdGuard Home</button>
+                    </div>
+                    <p id="wiz-install-status" class="text-tertiary text-xs mt-3" style="text-align:center;"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content (hidden during wizard) -->
+    <div id="main-content" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+            <h1>Network</h1>
+            <span class="text-tertiary text-xs" id="hostname"></span>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tab-bar mb-6">
+            <button class="tab active" data-tab="monitor" onclick="switchTab('monitor')">Monitor</button>
+            <button class="tab" data-tab="devices" onclick="switchTab('devices')">Devices</button>
+            <button class="tab" data-tab="dns" onclick="switchTab('dns')">DNS & Ad Blocking</button>
+        </div>
+
+        <!-- Tab: Monitor -->
+        <div id="tab-monitor" class="tab-content">
+            <!-- Live speed with ISP comparison -->
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div class="glass-card" style="text-align:center;">
+                    <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Download</p>
+                    <p id="speed-down" style="font-size:2rem; font-weight:700; margin-top:0.25rem; color:var(--success);">—</p>
+                    <p class="text-tertiary text-xs">per second</p>
+                    <div id="isp-down-bar" class="isp-bar hidden mt-2">
+                        <div class="isp-bar-track"><div class="isp-bar-fill" id="isp-down-fill"></div></div>
+                        <p class="text-tertiary text-xs mt-1"><span id="isp-down-pct"></span> of <span id="isp-down-max"></span></p>
+                    </div>
+                </div>
+                <div class="glass-card" style="text-align:center;">
+                    <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Upload</p>
+                    <p id="speed-up" style="font-size:2rem; font-weight:700; margin-top:0.25rem; color:var(--accent);">—</p>
+                    <p class="text-tertiary text-xs">per second</p>
+                    <div id="isp-up-bar" class="isp-bar hidden mt-2">
+                        <div class="isp-bar-track"><div class="isp-bar-fill up" id="isp-up-fill"></div></div>
+                        <p class="text-tertiary text-xs mt-1"><span id="isp-up-pct"></span> of <span id="isp-up-max"></span></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Interfaces -->
+            <div class="glass-card mb-4">
+                <h3 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Interfaces</h3>
+                <div id="interfaces-list"></div>
+            </div>
+
+            <!-- Total traffic -->
+            <div class="grid grid-cols-4 gap-4" id="totals" style="display:none;">
+                <div class="glass-card" style="text-align:center;"><p class="text-tertiary text-xs">Total Sent</p><p id="total-sent" style="font-size:1.125rem; font-weight:600;"></p></div>
+                <div class="glass-card" style="text-align:center;"><p class="text-tertiary text-xs">Total Received</p><p id="total-recv" style="font-size:1.125rem; font-weight:600;"></p></div>
+                <div class="glass-card" style="text-align:center;"><p class="text-tertiary text-xs">Packets Sent</p><p id="total-pkts-sent" style="font-size:1.125rem; font-weight:600;"></p></div>
+                <div class="glass-card" style="text-align:center;"><p class="text-tertiary text-xs">Packets Received</p><p id="total-pkts-recv" style="font-size:1.125rem; font-weight:600;"></p></div>
+            </div>
+        </div>
+
+        <!-- Tab: Devices -->
+        <div id="tab-devices" class="tab-content hidden">
+            <div class="glass-panel" style="padding:0; overflow:hidden;">
+                <div style="padding:0.75rem 1rem; border-bottom:1px solid rgba(0,60,120,0.06); display:flex; align-items:center; justify-content:space-between;">
+                    <h3 class="text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Devices on Network</h3>
+                    <span id="device-count" class="badge badge-ghost"></span>
+                </div>
+                <table class="glass-table">
+                    <thead><tr><th>Hostname</th><th>IP Address</th><th>MAC Address</th></tr></thead>
+                    <tbody id="devices-body">
+                        <tr><td colspan="3" style="text-align:center; padding:2rem; color:var(--text-tertiary);">Scanning...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tab: DNS -->
+        <div id="tab-dns" class="tab-content hidden">
+            <div id="adguard-install" class="glass-card hidden" style="text-align:center; padding:2.5rem;">
+                <p style="font-size:2.5rem; margin-bottom:0.75rem;">🛡️</p>
+                <h2 class="mb-2">Ad Blocking Not Installed</h2>
+                <p class="text-secondary text-sm mb-4">Install AdGuard Home to block ads and trackers for all devices on your network.</p>
+                <button onclick="installAdGuard()" id="install-btn" class="btn btn-primary">Install AdGuard Home</button>
+                <p id="install-status" class="text-tertiary text-xs mt-3"></p>
+            </div>
+
+            <div id="adguard-panel" class="hidden">
+                <div class="flex items-center justify-between mb-4">
+                    <span id="protection-status" class="badge"></span>
+                    <button id="toggle-btn" onclick="toggleProtection()" class="btn btn-ghost" style="font-size:0.75rem;"></button>
+                </div>
+
+                <div class="grid grid-cols-4 gap-4 mb-4">
+                    <div class="glass-card" style="text-align:center;"><p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Queries</p><p id="stat-queries" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem;"></p></div>
+                    <div class="glass-card" style="text-align:center;"><p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Blocked</p><p id="stat-blocked" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:var(--danger);"></p></div>
+                    <div class="glass-card" style="text-align:center;"><p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Block Rate</p><p id="stat-rate" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem;"></p></div>
+                    <div class="glass-card" style="text-align:center;"><p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Avg Response</p><p id="stat-time" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem;"></p></div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="glass-card"><h3 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Top Blocked</h3><div id="top-blocked"></div></div>
+                    <div class="glass-card"><h3 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Top Clients</h3><div id="top-clients"></div></div>
+                </div>
+
+                <div class="glass-panel mb-4" style="padding:0; overflow:hidden;">
+                    <div style="padding:0.75rem 1rem; border-bottom:1px solid rgba(0,60,120,0.06); display:flex; align-items:center; justify-content:space-between;">
+                        <h3 class="text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Local DNS Records</h3>
+                        <button onclick="document.getElementById('add-record-modal').classList.remove('hidden')" class="btn btn-ghost" style="font-size:0.7rem; padding:0.3rem 0.6rem;">+ Add</button>
+                    </div>
+                    <table class="glass-table">
+                        <thead><tr><th>Domain</th><th>Points to</th><th style="width:60px;"></th></tr></thead>
+                        <tbody id="rewrites-body"><tr><td colspan="3" style="text-align:center; padding:1.5rem; color:var(--text-tertiary);">Loading...</td></tr></tbody>
+                    </table>
+                </div>
+
+                <div class="glass-panel" style="padding:0; overflow:hidden;">
+                    <div style="padding:0.75rem 1rem; border-bottom:1px solid rgba(0,60,120,0.06);"><h3 class="text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Recent Queries</h3></div>
+                    <div style="max-height:300px; overflow-y:auto;">
+                        <table class="glass-table">
+                            <thead><tr><th>Domain</th><th>Client</th><th>Type</th><th>Status</th></tr></thead>
+                            <tbody id="querylog-body"><tr><td colspan="4" style="text-align:center; padding:1.5rem; color:var(--text-tertiary);">Loading...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add DNS Record Modal -->
+<div id="add-record-modal" class="modal-backdrop hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal-content">
+        <h3 style="margin-bottom:1rem;">Add DNS Record</h3>
+        <div class="space-y-4">
+            <div><label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Domain</label><input type="text" id="record-domain" class="glass-input" placeholder="e.g. server.home"></div>
+            <div><label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Points to (IP)</label><input type="text" id="record-answer" class="glass-input" placeholder="e.g. 192.168.1.50"></div>
+            <div class="flex justify-end gap-3">
+                <button onclick="document.getElementById('add-record-modal').classList.add('hidden')" class="btn btn-ghost">Cancel</button>
+                <button onclick="addRecord()" class="btn btn-primary">Add</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.tab-bar { display: flex; gap: 2px; background: rgba(255,255,255,0.3); border-radius: 10px; padding: 3px; border: 1px solid var(--border-glass); }
+.tab { flex: 1; padding: 0.5rem 1rem; border: none; background: none; border-radius: 8px; font-size: 0.8125rem; font-weight: 500; color: var(--text-secondary); cursor: pointer; transition: all 0.15s; }
+.tab:hover { color: var(--text-primary); }
+.tab.active { background: rgba(255,255,255,0.7); color: var(--text-primary); box-shadow: 0 1px 4px rgba(0,40,80,0.08); }
+.tab-content.hidden { display: none !important; }
+
+.iface-row { display: flex; align-items: center; gap: 1rem; padding: 0.6rem 0; border-bottom: 1px solid rgba(0,60,120,0.04); }
+.iface-row:last-child { border-bottom: none; }
+.iface-status { width: 8px; height: 8px; border-radius: 50%; }
+.iface-status.up { background: var(--success); }
+.iface-status.down { background: var(--danger); }
+.iface-name { font-weight: 600; font-size: 0.875rem; min-width: 80px; }
+.iface-detail { font-size: 0.75rem; color: var(--text-secondary); }
+.iface-traffic { margin-left: auto; font-size: 0.6875rem; color: var(--text-tertiary); text-align: right; }
+
+.top-item { display: flex; align-items: center; justify-content: space-between; padding: 0.35rem 0; font-size: 0.75rem; border-bottom: 1px solid rgba(0,60,120,0.04); }
+.top-item:last-child { border-bottom: none; }
+.top-item-domain { color: var(--text-primary); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top-item-count { color: var(--text-tertiary); }
+.query-blocked { color: var(--danger); font-size: 0.6875rem; }
+.query-allowed { color: var(--success); font-size: 0.6875rem; }
+
+.isp-bar-track { height: 6px; background: rgba(0,60,120,0.06); border-radius: 3px; overflow: hidden; }
+.isp-bar-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--success), #5af06a); transition: width 0.5s; }
+.isp-bar-fill.up { background: linear-gradient(90deg, var(--accent), #60d4ff); }
+</style>
+
+<script>
+const CSRF = "{{ csrf_token() }}";
+let lastBytes = null, lastTime = null;
+let protectionEnabled = true;
+let ispDownload = 0, ispUpload = 0;
+
+// --- Init: check if setup done ---
+function init() {
+    fetch("/api/network/settings").then(r => r.json()).then(r => {
+        if (r.ok && r.data.setup_complete) {
+            ispDownload = r.data.isp_download;
+            ispUpload = r.data.isp_upload;
+            showMain();
+        } else {
+            showWizard();
+        }
+    }).catch(() => showMain());
+}
+
+function showWizard() {
+    document.getElementById("setup-wizard").classList.remove("hidden");
+    document.getElementById("main-content").classList.add("hidden");
+}
+
+function showMain() {
+    document.getElementById("setup-wizard").classList.add("hidden");
+    document.getElementById("main-content").classList.remove("hidden");
+    if (ispDownload > 0) {
+        document.getElementById("isp-down-bar").classList.remove("hidden");
+        document.getElementById("isp-down-max").textContent = ispDownload + " Mbps";
+        document.getElementById("isp-up-bar").classList.remove("hidden");
+        document.getElementById("isp-up-max").textContent = ispUpload + " Mbps";
+    }
+    loadStatus();
+    measureSpeed();
+    setInterval(measureSpeed, 2000);
+    setInterval(loadStatus, 15000);
+}
+
+// --- Wizard ---
+function wizardNext() {
+    const down = parseFloat(document.getElementById("wiz-download").value) || 0;
+    const up = parseFloat(document.getElementById("wiz-upload").value) || 0;
+
+    ispDownload = down;
+    ispUpload = up;
+
+    fetch("/api/network/settings", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({isp_download: down, isp_upload: up})
+    });
+
+    document.getElementById("wizard-step-1").classList.add("hidden");
+    document.getElementById("wizard-step-2").classList.remove("hidden");
+}
+
+function skipWizard() {
+    fetch("/api/network/settings", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({isp_name: "", isp_download: 0, isp_upload: 0})
+    }).then(() => { showMain(); });
+}
+
+function finishWizard() {
+    showMain();
+}
+
+function wizardInstallAdGuard() {
+    const btn = document.getElementById("wiz-install-btn");
+    const status = document.getElementById("wiz-install-status");
+    btn.disabled = true;
+    btn.textContent = "Installing...";
+    status.textContent = "This may take a minute...";
+
+    fetch("/api/network/adguard/install", {method:"POST", headers:{"X-CSRFToken":CSRF}})
+        .then(r => r.json())
+        .then(r => {
+            if (r.ok) {
+                status.textContent = "Installed! Complete setup at http://your-server:3000";
+                status.style.color = "var(--success)";
+                btn.textContent = "Done";
+                setTimeout(finishWizard, 2000);
+            } else {
+                status.textContent = r.error || "Failed";
+                status.style.color = "var(--danger)";
+                btn.disabled = false;
+                btn.textContent = "Retry";
+            }
+        }).catch(() => { status.textContent = "Network error"; btn.disabled = false; btn.textContent = "Retry"; });
+}
+
+// --- Tabs ---
+function switchTab(tab) {
+    document.querySelectorAll(".tab-content").forEach(el => el.classList.add("hidden"));
+    document.querySelectorAll(".tab").forEach(el => el.classList.remove("active"));
+    document.getElementById("tab-" + tab).classList.remove("hidden");
+    document.querySelector(`.tab[data-tab="${tab}"]`).classList.add("active");
+    if (tab === "dns") loadDNS();
+    if (tab === "devices") loadStatus();
+}
+
+// --- Monitor ---
+function formatBytes(bytes) {
+    if (bytes > 1073741824) return (bytes / 1073741824).toFixed(2) + ' GB';
+    if (bytes > 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+    if (bytes > 1024) return (bytes / 1024).toFixed(0) + ' KB';
+    return bytes + ' B';
+}
+function formatSpeed(bps) {
+    const mbps = (bps * 8) / 1000000;
+    if (mbps >= 1) return mbps.toFixed(1) + ' Mbps';
+    const kbps = (bps * 8) / 1000;
+    if (kbps >= 1) return kbps.toFixed(0) + ' Kbps';
+    return (bps * 8).toFixed(0) + ' bps';
+}
+
+function loadStatus() {
+    fetch("/api/network/status").then(r => r.json()).then(r => {
+        if (!r.ok) return;
+        const d = r.data;
+        document.getElementById("hostname").textContent = d.hostname;
+        document.getElementById("interfaces-list").innerHTML = d.interfaces.map(iface => `
+            <div class="iface-row">
+                <div class="iface-status ${iface.is_up ? 'up' : 'down'}"></div>
+                <span class="iface-name">${iface.name}</span>
+                <span class="iface-detail">${iface.addresses.filter(a => a.type === 'IPv4').map(a => a.address).join(', ') || 'No IP'}${iface.mac ? ' — ' + iface.mac : ''}${iface.speed ? ' — ' + iface.speed + ' Mbps' : ''}</span>
+                <span class="iface-traffic">↑ ${formatBytes(iface.bytes_sent)}<br>↓ ${formatBytes(iface.bytes_recv)}</span>
+            </div>
+        `).join("");
+        document.getElementById("total-sent").textContent = formatBytes(d.total.bytes_sent);
+        document.getElementById("total-recv").textContent = formatBytes(d.total.bytes_recv);
+        document.getElementById("total-pkts-sent").textContent = d.total.packets_sent.toLocaleString();
+        document.getElementById("total-pkts-recv").textContent = d.total.packets_recv.toLocaleString();
+        document.getElementById("totals").style.display = "";
+        if (d.devices.length > 0) {
+            document.getElementById("device-count").textContent = d.devices.length + " found";
+            document.getElementById("devices-body").innerHTML = d.devices.map(dev => `
+                <tr><td>${dev.hostname || '<span class="text-tertiary">Unknown</span>'}</td><td class="font-medium">${dev.ip}</td><td class="text-tertiary text-xs">${dev.mac || '—'}</td></tr>
+            `).join("");
+        }
+    });
+}
+
+function measureSpeed() {
+    fetch("/api/network/speed").then(r => r.json()).then(r => {
+        if (!r.ok) return;
+        const now = r.data;
+        if (lastBytes && lastTime) {
+            const dt = now.timestamp - lastTime;
+            if (dt > 0) {
+                const downBps = Math.max(0, (now.bytes_recv - lastBytes.recv) / dt);
+                const upBps = Math.max(0, (now.bytes_sent - lastBytes.sent) / dt);
+                document.getElementById("speed-down").textContent = formatSpeed(downBps);
+                document.getElementById("speed-up").textContent = formatSpeed(upBps);
+
+                // ISP comparison
+                if (ispDownload > 0) {
+                    const downMbps = (downBps * 8) / 1048576;
+                    const pct = Math.min(100, (downMbps / ispDownload) * 100);
+                    document.getElementById("isp-down-fill").style.width = pct + "%";
+                    document.getElementById("isp-down-pct").textContent = pct.toFixed(0) + "%";
+                }
+                if (ispUpload > 0) {
+                    const upMbps = (upBps * 8) / 1048576;
+                    const pct = Math.min(100, (upMbps / ispUpload) * 100);
+                    document.getElementById("isp-up-fill").style.width = pct + "%";
+                    document.getElementById("isp-up-pct").textContent = pct.toFixed(0) + "%";
+                }
+            }
+        }
+        lastBytes = {sent: now.bytes_sent, recv: now.bytes_recv};
+        lastTime = now.timestamp;
+    });
+}
+
+// --- DNS ---
+function loadDNS() {
+    fetch("/api/network/adguard/status").then(r => r.json()).then(r => {
+        if (!r.data.installed) { document.getElementById("adguard-install").classList.remove("hidden"); document.getElementById("adguard-panel").classList.add("hidden"); return; }
+        document.getElementById("adguard-install").classList.add("hidden");
+        loadDNSStatus();
+    }).catch(() => { document.getElementById("adguard-install").classList.remove("hidden"); });
+}
+
+function loadDNSStatus() {
+    fetch("/api/dns/status").then(r => r.json()).then(r => {
+        if (!r.ok) { document.getElementById("adguard-install").classList.remove("hidden"); document.getElementById("adguard-panel").classList.add("hidden"); return; }
+        document.getElementById("adguard-panel").classList.remove("hidden");
+        const d = r.data;
+        protectionEnabled = d.protection_enabled;
+        updateProtectionUI();
+        document.getElementById("stat-queries").textContent = (d.num_dns_queries || 0).toLocaleString();
+        document.getElementById("stat-blocked").textContent = (d.num_blocked || 0).toLocaleString();
+        document.getElementById("stat-rate").textContent = (d.num_dns_queries > 0 ? ((d.num_blocked / d.num_dns_queries) * 100).toFixed(1) : "0") + "%";
+        document.getElementById("stat-time").textContent = ((d.avg_processing_time || 0) * 1000).toFixed(0) + "ms";
+        document.getElementById("top-blocked").innerHTML = (d.top_blocked || []).slice(0,6).map(i => { const k=Object.keys(i)[0]; return `<div class="top-item"><span class="top-item-domain">${k}</span><span class="top-item-count">${i[k]}</span></div>`; }).join("") || '<p class="text-tertiary text-xs">No data</p>';
+        document.getElementById("top-clients").innerHTML = (d.top_clients || []).slice(0,6).map(i => { const k=Object.keys(i)[0]; return `<div class="top-item"><span class="top-item-domain">${k}</span><span class="top-item-count">${i[k]}</span></div>`; }).join("") || '<p class="text-tertiary text-xs">No data</p>';
+    }).catch(() => { document.getElementById("adguard-install").classList.remove("hidden"); document.getElementById("adguard-panel").classList.add("hidden"); });
+
+    fetch("/api/dns/rewrites").then(r => r.json()).then(r => {
+        if (!r.ok || !r.data || !r.data.length) { document.getElementById("rewrites-body").innerHTML = '<tr><td colspan="3" style="text-align:center; padding:1.5rem; color:var(--text-tertiary);">No records</td></tr>'; return; }
+        document.getElementById("rewrites-body").innerHTML = r.data.map(rec => `<tr><td class="font-medium">${rec.domain}</td><td class="text-secondary">${rec.answer}</td><td><button class="action-link danger" onclick="deleteRecord('${rec.domain}','${rec.answer}')">Remove</button></td></tr>`).join("");
+    }).catch(() => {});
+
+    fetch("/api/dns/querylog").then(r => r.json()).then(r => {
+        if (!r.ok || !r.data || !r.data.length) { document.getElementById("querylog-body").innerHTML = '<tr><td colspan="4" style="text-align:center; padding:1.5rem; color:var(--text-tertiary);">No queries</td></tr>'; return; }
+        document.getElementById("querylog-body").innerHTML = r.data.slice(0,30).map(q => `<tr><td style="max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${q.domain}</td><td class="text-secondary text-xs">${q.client}</td><td class="text-tertiary text-xs">${q.type}</td><td><span class="${q.blocked ? 'query-blocked' : 'query-allowed'}">${q.blocked ? 'Blocked' : 'Allowed'}</span></td></tr>`).join("");
+    }).catch(() => {});
+}
+
+function updateProtectionUI() {
+    const badge = document.getElementById("protection-status");
+    const btn = document.getElementById("toggle-btn");
+    badge.className = protectionEnabled ? "badge badge-success" : "badge badge-danger";
+    badge.textContent = protectionEnabled ? "Protected" : "Unprotected";
+    btn.textContent = protectionEnabled ? "Disable" : "Enable";
+}
+
+function toggleProtection() {
+    fetch("/api/dns/toggle", {method:"POST", headers:{"Content-Type":"application/json","X-CSRFToken":CSRF}, body:JSON.stringify({enabled:!protectionEnabled})}).then(r => r.json()).then(r => { if(r.ok) { protectionEnabled = !protectionEnabled; updateProtectionUI(); }});
+}
+
+function installAdGuard() {
+    const btn = document.getElementById("install-btn");
+    const status = document.getElementById("install-status");
+    btn.disabled = true; btn.textContent = "Installing..."; status.textContent = "This may take a minute...";
+    fetch("/api/network/adguard/install", {method:"POST", headers:{"X-CSRFToken":CSRF}}).then(r => r.json()).then(r => {
+        if (r.ok) { status.textContent = "Installed! Open http://your-server:3000 to complete setup."; status.style.color = "var(--success)"; btn.textContent = "Done"; }
+        else { status.textContent = r.error || "Failed"; status.style.color = "var(--danger)"; btn.disabled = false; btn.textContent = "Retry"; }
+    }).catch(() => { status.textContent = "Network error"; btn.disabled = false; btn.textContent = "Retry"; });
+}
+
+function addRecord() {
+    const domain = document.getElementById("record-domain").value.trim();
+    const answer = document.getElementById("record-answer").value.trim();
+    if (!domain || !answer) return;
+    fetch("/api/dns/rewrites", {method:"POST", headers:{"Content-Type":"application/json","X-CSRFToken":CSRF}, body:JSON.stringify({domain, answer})}).then(r => r.json()).then(r => { if(r.ok) { document.getElementById("add-record-modal").classList.add("hidden"); document.getElementById("record-domain").value=""; document.getElementById("record-answer").value=""; loadDNSStatus(); } else alert(r.error); });
+}
+
+function deleteRecord(domain, answer) {
+    if (!confirm(`Remove ${domain}?`)) return;
+    fetch("/api/dns/rewrites/delete", {method:"POST", headers:{"Content-Type":"application/json","X-CSRFToken":CSRF}, body:JSON.stringify({domain, answer})}).then(r => r.json()).then(r => { if(r.ok) loadDNSStatus(); });
+}
+
+init();
+</script>
+{% endblock %}

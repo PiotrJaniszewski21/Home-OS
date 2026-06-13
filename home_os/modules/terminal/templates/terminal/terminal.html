@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}Terminal — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <div class="flex items-center justify-between mb-4">
+        <h1>Terminal</h1>
+        <span class="text-tertiary text-xs">Admin only — commands run on server</span>
+    </div>
+
+    <div class="terminal-window">
+        <div class="terminal-header">
+            <div class="terminal-dots">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+            </div>
+            <span class="terminal-title">homeos — bash</span>
+        </div>
+        <div class="terminal-body" id="terminal-output">
+            <div class="terminal-line system">Welcome to Home OS Terminal</div>
+            <div class="terminal-line system">Type commands below. Output appears here.</div>
+        </div>
+        <div class="terminal-input-row">
+            <span class="terminal-prompt">$</span>
+            <input type="text" id="terminal-input" class="terminal-input" placeholder="Enter command..." autocomplete="off" spellcheck="false">
+        </div>
+    </div>
+</div>
+
+<style>
+.terminal-window {
+    background: rgba(20, 20, 30, 0.95);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.terminal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 10px 14px;
+    background: rgba(40, 40, 50, 0.9);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.terminal-dots {
+    display: flex;
+    gap: 6px;
+}
+.dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+.dot.red { background: #ff5f57; }
+.dot.yellow { background: #febc2e; }
+.dot.green { background: #28c840; }
+
+.terminal-title {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.4);
+    font-family: 'SF Mono', Menlo, Monaco, monospace;
+}
+
+.terminal-body {
+    padding: 1rem;
+    min-height: 400px;
+    max-height: 60vh;
+    overflow-y: auto;
+    font-family: 'SF Mono', Menlo, Monaco, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.6;
+}
+
+.terminal-line {
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+.terminal-line.system { color: rgba(255, 255, 255, 0.3); }
+.terminal-line.command { color: #5af78e; }
+.terminal-line.stdout { color: rgba(255, 255, 255, 0.85); }
+.terminal-line.stderr { color: #ff6b6b; }
+.terminal-line.error { color: #ff9f43; }
+
+.terminal-input-row {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(30, 30, 40, 0.8);
+}
+
+.terminal-prompt {
+    color: #5af78e;
+    font-family: 'SF Mono', Menlo, Monaco, monospace;
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-right: 0.5rem;
+}
+
+.terminal-input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: rgba(255, 255, 255, 0.9);
+    font-family: 'SF Mono', Menlo, Monaco, monospace;
+    font-size: 0.8125rem;
+    caret-color: #5af78e;
+}
+.terminal-input::placeholder {
+    color: rgba(255, 255, 255, 0.2);
+}
+</style>
+
+<script>
+const CSRF = "{{ csrf_token() }}";
+const input = document.getElementById("terminal-input");
+const output = document.getElementById("terminal-output");
+let history = [];
+let historyIndex = -1;
+
+input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+        e.preventDefault();
+        runCommand();
+    } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (historyIndex < history.length - 1) {
+            historyIndex++;
+            input.value = history[history.length - 1 - historyIndex];
+        }
+    } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (historyIndex > 0) {
+            historyIndex--;
+            input.value = history[history.length - 1 - historyIndex];
+        } else {
+            historyIndex = -1;
+            input.value = "";
+        }
+    }
+});
+
+function addLine(text, cls) {
+    const div = document.createElement("div");
+    div.className = "terminal-line " + cls;
+    div.textContent = text;
+    output.appendChild(div);
+    output.scrollTop = output.scrollHeight;
+}
+
+function runCommand() {
+    const cmd = input.value.trim();
+    if (!cmd) return;
+
+    history.push(cmd);
+    historyIndex = -1;
+    input.value = "";
+
+    addLine("$ " + cmd, "command");
+
+    if (cmd === "clear") {
+        output.innerHTML = "";
+        return;
+    }
+
+    fetch("/api/terminal/exec", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({command: cmd})
+    })
+    .then(r => r.json())
+    .then(r => {
+        if (r.ok) {
+            if (r.data.stdout) addLine(r.data.stdout, "stdout");
+            if (r.data.stderr) addLine(r.data.stderr, "stderr");
+            if (r.data.returncode !== 0 && !r.data.stdout && !r.data.stderr) {
+                addLine("Exit code: " + r.data.returncode, "error");
+            }
+        } else {
+            addLine(r.error || "Error", "error");
+        }
+    })
+    .catch(() => addLine("Failed to reach server", "error"));
+}
+
+input.focus();
+document.addEventListener("click", () => input.focus());
+</script>
+{% endblock %}

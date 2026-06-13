@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Trash — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-4">
+            <a href="{{ url_for('files.browse') }}" class="text-gray-400 hover:text-primary text-sm">&larr; Files</a>
+            <h1 class="text-xl font-semibold">Trash</h1>
+            {% if entries %}
+            <span class="text-xs text-gray-500">{{ entries|length }} item{{ 's' if entries|length != 1 }}</span>
+            {% endif %}
+        </div>
+        {% if entries %}
+        <button onclick="emptyTrash()" class="text-sm bg-red-900/50 border border-red-800 hover:bg-red-900 text-red-200 px-3 py-1 rounded">Empty Trash</button>
+        {% endif %}
+    </div>
+
+    <div class="bg-surface border border-border rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="border-b border-border">
+                <tr class="text-gray-400 text-left">
+                    <th class="px-4 py-3">Original Path</th>
+                    <th class="px-4 py-3 w-24">Size</th>
+                    <th class="px-4 py-3 w-36">Deleted</th>
+                    <th class="px-4 py-3 w-32">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in entries %}
+                <tr class="border-b border-border/50 hover:bg-background/50 group">
+                    <td class="px-4 py-2 text-gray-200">{{ entry.original_path }}</td>
+                    <td class="px-4 py-2 text-gray-400 text-xs">
+                        {% if entry.size_bytes > 1048576 %}{{ "%.1f"|format(entry.size_bytes / 1048576) }} MB
+                        {% elif entry.size_bytes > 1024 %}{{ "%.1f"|format(entry.size_bytes / 1024) }} KB
+                        {% else %}{{ entry.size_bytes }} B{% endif %}
+                    </td>
+                    <td class="px-4 py-2 text-gray-500 text-xs">{{ entry.deleted_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td class="px-4 py-2">
+                        <button onclick="restoreItem({{ entry.id }})" class="text-xs text-primary hover:underline mr-3">Restore</button>
+                        <button onclick="permanentDelete({{ entry.id }})" class="text-xs text-gray-400 hover:text-red-400">Delete</button>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not entries %}
+                <tr><td colspan="4" class="px-4 py-8 text-center text-gray-500">Trash is empty</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const CSRF = "{{ csrf_token() }}";
+
+function restoreItem(id) {
+    fetch("/api/files/trash/" + id + "/restore", {
+        method: "POST",
+        headers: {"X-CSRFToken": CSRF}
+    }).then(r => r.json()).then(r => {
+        if (r.ok) location.reload();
+        else alert(r.error);
+    });
+}
+
+function permanentDelete(id) {
+    if (!confirm("Permanently delete? This cannot be undone.")) return;
+    fetch("/api/files/trash/" + id, {
+        method: "DELETE",
+        headers: {"X-CSRFToken": CSRF}
+    }).then(r => r.json()).then(r => {
+        if (r.ok) location.reload();
+        else alert(r.error);
+    });
+}
+
+function emptyTrash() {
+    if (!confirm("Permanently delete ALL items in trash?")) return;
+    fetch("/api/files/trash/empty", {
+        method: "POST",
+        headers: {"X-CSRFToken": CSRF}
+    }).then(r => r.json()).then(r => {
+        if (r.ok) location.reload();
+        else alert(r.error);
+    });
+}
+</script>
+{% endblock %}

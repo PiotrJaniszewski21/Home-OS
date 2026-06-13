@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Setup — Home OS{% endblock %}
+{% block content %}
+<div class="auth-card">
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <h1 class="text-accent">Home OS</h1>
+        <p class="text-secondary text-sm" style="margin-top: 0.25rem;">Create your admin account</p>
+    </div>
+    <form method="POST" class="space-y-4">
+        {{ form.hidden_tag() }}
+        <div>
+            <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Username</label>
+            {{ form.username(class="glass-input") }}
+            {% for error in form.username.errors %}
+            <p class="text-danger text-xs" style="margin-top:0.25rem;">{{ error }}</p>
+            {% endfor %}
+        </div>
+        <div>
+            <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Email (optional)</label>
+            {{ form.email(class="glass-input") }}
+        </div>
+        <div>
+            <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Password</label>
+            {{ form.password(class="glass-input") }}
+            {% for error in form.password.errors %}
+            <p class="text-danger text-xs" style="margin-top:0.25rem;">{{ error }}</p>
+            {% endfor %}
+        </div>
+        <div>
+            <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Confirm Password</label>
+            {{ form.password_confirm(class="glass-input") }}
+            {% for error in form.password_confirm.errors %}
+            <p class="text-danger text-xs" style="margin-top:0.25rem;">{{ error }}</p>
+            {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-primary w-full" style="justify-content:center; padding: 0.75rem;">
+            Create Account
+        </button>
+    </form>
+</div>
+{% endblock %}
