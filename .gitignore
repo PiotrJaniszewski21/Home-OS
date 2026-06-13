@@ -6,7 +6,7 @@ venv/
 
 # Data (never commit user data)
 data/
-storage/
+/storage/
 instance/
 
 # Secrets (never commit)

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Drive Not Found — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto mt-20 text-center">
+    <p class="text-4xl mb-4">💾</p>
+    <h1 class="text-xl font-semibold mb-2">Drive "{{ name }}" not found</h1>
+    <p class="text-gray-400 text-sm mb-6">It may have been unplugged.</p>
+    <a href="{{ url_for('storage.overview') }}" class="text-primary hover:underline text-sm">Back to Storage</a>
+</div>
+{% endblock %}

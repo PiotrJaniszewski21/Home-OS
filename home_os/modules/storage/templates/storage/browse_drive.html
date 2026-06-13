@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ drive.name }} — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-5xl">
+    <!-- Breadcrumbs -->
+    <div class="flex items-center gap-1 text-sm text-gray-400 mb-4">
+        <a href="{{ url_for('storage.overview') }}" class="hover:text-primary">Storage</a>
+        <span>/</span>
+        {% for crumb in breadcrumbs %}
+        {% if not loop.last %}
+        <a href="{{ url_for('storage.browse_drive', name=drive.name, filepath=crumb.path) }}" class="hover:text-primary">{{ crumb.name }}</a>
+        <span>/</span>
+        {% else %}
+        <span class="text-gray-200">{{ crumb.name }}</span>
+        {% endif %}
+        {% endfor %}
+    </div>
+
+    <!-- File list -->
+    <div class="bg-surface border border-border rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="border-b border-border">
+                <tr class="text-gray-400 text-left">
+                    <th class="px-4 py-3">Name</th>
+                    <th class="px-4 py-3 w-24">Size</th>
+                    <th class="px-4 py-3 w-28">Modified</th>
+                    <th class="px-4 py-3 w-24">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if filepath %}
+                <tr class="border-b border-border/50 hover:bg-background/50">
+                    <td class="px-4 py-2" colspan="4">
+                        {% set parts = filepath.rstrip('/').split('/')[:-1] %}
+                        {% set parent = '/'.join(parts) %}
+                        <a href="{{ url_for('storage.browse_drive', name=drive.name, filepath=parent) }}" class="text-gray-400 hover:text-primary">..</a>
+                    </td>
+                </tr>
+                {% endif %}
+                {% for entry in entries %}
+                <tr class="border-b border-border/50 hover:bg-background/50 group">
+                    <td class="px-4 py-2">
+                        {% if entry.is_dir %}
+                        <a href="{{ url_for('storage.browse_drive', name=drive.name, filepath=entry.path) }}" class="text-primary hover:underline">{{ entry.name }}/</a>
+                        {% else %}
+                        <a href="{{ url_for('storage.browse_drive', name=drive.name, filepath=entry.path) }}" class="text-gray-200 hover:text-primary">{{ entry.name }}</a>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-2 text-gray-400 text-xs">
+                        {% if entry.size is not none %}
+                            {% if entry.size > 1073741824 %}{{ "%.1f"|format(entry.size / 1073741824) }} GB
+                            {% elif entry.size > 1048576 %}{{ "%.1f"|format(entry.size / 1048576) }} MB
+                            {% elif entry.size > 1024 %}{{ "%.1f"|format(entry.size / 1024) }} KB
+                            {% else %}{{ entry.size }} B{% endif %}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="px-4 py-2 text-gray-500 text-xs">{{ entry.modified[:10] }}</td>
+                    <td class="px-4 py-2 opacity-0 group-hover:opacity-100">
+                        {% if not entry.is_dir %}
+                        <a href="{{ url_for('storage.browse_drive', name=drive.name, filepath=entry.path, download='') }}" class="text-xs text-gray-400 hover:text-primary">Download</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not entries %}
+                <tr><td colspan="4" class="px-4 py-8 text-center text-gray-500">Empty</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
