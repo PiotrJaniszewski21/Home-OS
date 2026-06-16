@@ -1,0 +1,793 @@
+{% extends "base.html" %}
+{% block title %}Files — Home OS{% endblock %}
+{% block content %}
+<div class="finder-layout">
+<div class="finder-main">
+    <!-- Toolbar (Finder-style) -->
+    <div class="finder-toolbar">
+        <div class="flex items-center gap-2">
+            {% set sys_param = '?system=1' if system_mode else '' %}
+            {% if path != "/" %}
+            {% set parts = path.rstrip('/').split('/')[:-1] %}
+            {% set parent = '/'.join(parts) %}
+            <a href="{% if parent == '' or parent == '/' %}{{ url_for('files.browse') }}{{ sys_param }}{% else %}{{ url_for('files.browse', filepath=parent.lstrip('/')) }}{{ sys_param }}{% endif %}" class="toolbar-btn" title="Back">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            </a>
+            {% endif %}
+            <!-- Breadcrumbs -->
+            <div class="breadcrumbs">
+                {% for crumb in breadcrumbs %}
+                {% if not loop.last %}
+                {% if crumb.path == '/' or crumb.path == '' %}
+                <a href="{{ url_for('files.browse') }}{{ sys_param }}">{{ crumb.name }}</a>
+                {% else %}
+                <a href="{{ url_for('files.browse', filepath=crumb.path.lstrip('/')) }}{{ sys_param }}">{{ crumb.name }}</a>
+                {% endif %}
+                <span class="breadcrumb-sep">/</span>
+                {% else %}
+                <span class="breadcrumb-current">{{ crumb.name }}</span>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            {% if current_user.is_admin %}
+            {% if system_mode %}
+            <a href="{{ url_for('files.browse') }}" class="toolbar-btn system-toggle active" title="Switch to Storage">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </a>
+            {% else %}
+            <a href="{{ url_for('files.browse') }}?system=1" class="toolbar-btn" title="System Files">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M3 9h2m-2 6h2m14-6h2m-2 6h2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            </a>
+            {% endif %}
+            {% endif %}
+            <form action="{{ url_for('files.search_page') }}" method="GET" class="finder-search">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M21 21l-4.35-4.35"/></svg>
+                <input type="text" name="q" placeholder="Search">
+            </form>
+            {% if not system_mode %}
+            <button onclick="document.getElementById('mkdir-modal').classList.remove('hidden')" class="toolbar-btn" title="New Folder">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v12m6-6H6"/></svg>
+            </button>
+            {% endif %}
+            {% if not system_mode %}
+            <form action="{{ url_for('files.upload') }}" method="POST" enctype="multipart/form-data" id="upload-form" class="flex items-center">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="path" value="{{ path }}">
+                <input type="file" name="file" multiple id="upload-input" style="display:none" onchange="document.getElementById('upload-form').submit()">
+                <button type="button" onclick="document.getElementById('upload-input').click()" class="toolbar-btn" title="Upload">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12L8 8m4-4l4 4"/></svg>
+                </button>
+            </form>
+            <a href="{{ url_for('files.trash') }}" class="toolbar-btn" title="Trash">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Paste bar -->
+    <div id="paste-bar" class="paste-bar hidden">
+        <span id="paste-label"></span>
+        <button onclick="doPaste()" class="btn btn-primary" style="padding:0.35rem 0.75rem; font-size:0.75rem;">Paste Here</button>
+        <button onclick="clearClipboard()" class="action-link" style="margin-left:0.5rem;">Cancel</button>
+    </div>
+
+    {% if storage_info %}
+    <!-- Storage Overview -->
+    <div class="storage-summary">
+        <div class="storage-summary-item">
+            <div class="storage-summary-header">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" stroke-width="1.5"/><path stroke-width="1.5" d="M4 12h16"/><circle cx="7" cy="8" r="1" fill="currentColor"/></svg>
+                <span>Internal</span>
+                <span class="storage-summary-size">{{ "%.0f"|format(storage_info.main.used_bytes / 1073741824) }} / {{ "%.0f"|format(storage_info.main.total_bytes / 1073741824) }} GB</span>
+            </div>
+            <div class="storage-mini-bar">
+                <div class="storage-mini-bar-fill" style="width: {{ storage_info.main.percent_used }}%"></div>
+            </div>
+        </div>
+        {% for drive in storage_info.drives %}
+        <div class="storage-summary-item">
+            <div class="storage-summary-header">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="1.5" stroke-linecap="round" d="M12 18v3m-4 0h8"/><rect x="3" y="4" width="18" height="14" rx="3" stroke-width="1.5"/></svg>
+                <span>{{ drive.name }}</span>
+                <span class="storage-summary-size">{{ "%.0f"|format(drive.used_bytes / 1073741824) }} / {{ "%.0f"|format(drive.total_bytes / 1073741824) }} GB</span>
+            </div>
+            <div class="storage-mini-bar">
+                <div class="storage-mini-bar-fill external" style="width: {{ drive.percent_used }}%"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- File grid (Finder icon view for folders, list for files) -->
+    {% set folders = entries | selectattr('is_dir') | list %}
+    {% set files = entries | rejectattr('is_dir') | list %}
+
+    {% if folders %}
+    <div class="finder-grid">
+        {% for entry in folders %}
+        <a href="{{ url_for('files.browse', filepath=entry.path.lstrip('/')) }}{{ '?system=1' if system_mode else '' }}" class="finder-grid-item" data-path="{{ entry.path }}" data-name="{{ entry.name }}" data-isdir="true" oncontextmenu="showContext(event, this)">
+            <div class="finder-grid-icon">
+                <svg viewBox="0 0 80 80" width="56" height="56">
+                    <defs>
+                        <linearGradient id="folder-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#6EC6FF"/>
+                            <stop offset="100%" stop-color="#2196F3"/>
+                        </linearGradient>
+                    </defs>
+                    <path d="M8 20h24l4-5h28c3 0 5 2.5 5 5.5V62c0 3-2 5.5-5 5.5H8c-3 0-5-2.5-5-5.5V25.5C3 22.5 5 20 8 20z" fill="url(#folder-grad)" opacity="0.9"/>
+                    <path d="M3 30h69v32c0 3-2 5.5-5 5.5H8c-3 0-5-2.5-5-5.5V30z" fill="url(#folder-grad)"/>
+                    <path d="M3 30h69v4H3z" fill="rgba(255,255,255,0.12)"/>
+                </svg>
+            </div>
+            <span class="finder-grid-label">{{ entry.name }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if files %}
+    <div class="finder-grid" {% if folders %}style="margin-top: 1rem;"{% endif %}>
+        {% for entry in files %}
+        <div class="finder-grid-item file-item" data-path="{{ entry.path }}" data-name="{{ entry.name }}" data-isdir="false" data-ext="{{ entry.extension or '' }}" data-size="{% if entry.size is not none %}{% if entry.size > 1073741824 %}{{ '%.1f'|format(entry.size / 1073741824) }} GB{% elif entry.size > 1048576 %}{{ '%.1f'|format(entry.size / 1048576) }} MB{% elif entry.size > 1024 %}{{ '%.1f'|format(entry.size / 1024) }} KB{% else %}{{ entry.size }} B{% endif %}{% endif %}" oncontextmenu="showContext(event, this)">
+            <div class="finder-grid-icon">
+                {% if entry.extension in ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'] %}
+                <img class="finder-thumb" src="{{ url_for('files.browse', filepath=entry.path.lstrip('/')) }}" alt="{{ entry.name }}">
+                {% elif entry.extension in ['pdf'] %}
+                <svg viewBox="0 0 64 64" width="44" height="44"><rect x="10" y="2" width="44" height="60" rx="4" fill="#fee2e2" stroke="#fca5a5" stroke-width="1"/><text x="32" y="40" font-family="Helvetica" font-size="13" font-weight="bold" fill="#dc2626" text-anchor="middle">PDF</text></svg>
+                {% elif entry.extension in ['mp4', 'mov', 'avi', 'mkv', 'webm'] %}
+                <svg viewBox="0 0 64 64" width="44" height="44"><rect x="6" y="6" width="52" height="52" rx="8" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/><polygon points="26,20 44,32 26,44" fill="#7c3aed"/></svg>
+                {% elif entry.extension in ['mp3', 'wav', 'flac', 'aac', 'ogg'] %}
+                <svg viewBox="0 0 64 64" width="44" height="44"><rect x="6" y="6" width="52" height="52" rx="8" fill="#fce7f3" stroke="#f9a8d4" stroke-width="1"/><circle cx="32" cy="34" r="10" fill="none" stroke="#ec4899" stroke-width="2.5"/><path d="M42 34V16l-10 4" stroke="#ec4899" stroke-width="2.5" fill="none"/></svg>
+                {% elif entry.extension in ['zip', 'tar', 'gz', 'rar', '7z'] %}
+                <svg viewBox="0 0 64 64" width="44" height="44"><rect x="10" y="2" width="44" height="60" rx="4" fill="#f3f4f6" stroke="#d1d5db" stroke-width="1"/><rect x="26" y="2" width="8" height="60" fill="#e5e7eb"/><rect x="26" y="36" width="8" height="12" rx="2" fill="#fbbf24"/></svg>
+                {% elif entry.extension in ['txt', 'md', 'log', 'csv'] %}
+                <svg viewBox="0 0 64 64" width="44" height="44"><rect x="10" y="2" width="44" height="60" rx="4" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/><path d="M20 18h24M20 26h24M20 34h18M20 42h22" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round"/></svg>
+                {% elif entry.extension in ['py', 'js', 'html', 'css', 'json', 'yaml', 'yml', 'sh', 'sql', 'xml', 'toml'] %}
+                <svg viewBox="0 0 64 64" width="44" height="44"><rect x="10" y="2" width="44" height="60" rx="4" fill="#eff6ff" stroke="#93c5fd" stroke-width="1"/><path d="M20 18h10M20 26h20M20 34h14M20 42h18" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round"/><text x="46" y="16" font-family="Menlo" font-size="9" fill="#3b82f6">{}</text></svg>
+                {% else %}
+                <svg viewBox="0 0 64 64" width="44" height="44"><path d="M14 2h24l16 16v40c0 2.2-1.8 4-4 4H14c-2.2 0-4-1.8-4-4V6c0-2.2 1.8-4 4-4z" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/><path d="M38 2v12c0 2.2 1.8 4 4 4h12" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1"/></svg>
+                {% endif %}
+            </div>
+            <span class="finder-grid-label">{{ entry.name }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if not entries %}
+    <div class="glass-panel" style="padding: 4rem; text-align: center; color: var(--text-tertiary);">
+        This folder is empty
+    </div>
+    {% endif %}
+</div><!-- end .finder-main -->
+
+<!-- Preview Panel (sidebar) -->
+<div class="preview-panel glass-panel" id="preview-panel">
+    <div id="preview-empty" class="preview-empty">
+        <p class="text-tertiary text-xs">Select an image to preview</p>
+    </div>
+    <div id="preview-content" class="preview-content hidden">
+        <img id="preview-img" src="" alt="">
+        <div id="preview-name" class="preview-name"></div>
+        <div id="preview-meta" class="preview-meta"></div>
+    </div>
+</div>
+</div><!-- end .finder-layout -->
+
+<!-- Context Menu -->
+<div id="image-preview" class="image-preview hidden">
+    <img id="preview-img" src="" alt="">
+    <div id="preview-name" class="image-preview-name"></div>
+</div>
+
+<!-- Context Menu -->
+<div id="context-menu" class="context-menu hidden">
+    <div class="context-item" onclick="ctxOpen()"><span class="ctx-icon">📂</span> Open</div>
+    <div class="context-item" onclick="ctxDownload()" id="ctx-download"><span class="ctx-icon">⬇️</span> Download</div>
+    <div class="context-sep"></div>
+    <div class="context-item" onclick="ctxCopy()"><span class="ctx-icon">📋</span> Copy</div>
+    <div class="context-item" onclick="ctxCut()"><span class="ctx-icon">✂️</span> Cut</div>
+    <div class="context-item" onclick="ctxRename()"><span class="ctx-icon">✏️</span> Rename</div>
+    <div class="context-sep"></div>
+    <div class="context-item danger" onclick="ctxDelete()"><span class="ctx-icon">🗑️</span> Move to Trash</div>
+</div>
+
+<!-- New Folder Modal -->
+<div id="mkdir-modal" class="modal-backdrop hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal-content">
+        <h3 style="margin-bottom:1rem;">New Folder</h3>
+        <input type="text" id="mkdir-name" placeholder="Untitled Folder" class="glass-input mb-4">
+        <div class="flex justify-end gap-3">
+            <button onclick="document.getElementById('mkdir-modal').classList.add('hidden')" class="btn btn-ghost">Cancel</button>
+            <button onclick="createFolder()" class="btn btn-primary">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Rename Modal -->
+<div id="rename-modal" class="modal-backdrop hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal-content">
+        <h3 style="margin-bottom:1rem;">Rename</h3>
+        <input type="hidden" id="rename-path">
+        <input type="text" id="rename-name" class="glass-input mb-4">
+        <div class="flex justify-end gap-3">
+            <button onclick="document.getElementById('rename-modal').classList.add('hidden')" class="btn btn-ghost">Cancel</button>
+            <button onclick="doRename()" class="btn btn-primary">Rename</button>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Storage Summary */
+.storage-summary {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+    background: rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(30px);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+}
+
+.storage-summary-item {
+    flex: 1;
+    min-width: 0;
+}
+
+.storage-summary-header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.35rem;
+}
+
+.storage-summary-header svg {
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+.storage-summary-size {
+    margin-left: auto;
+    color: var(--text-tertiary);
+    font-size: 0.625rem;
+    white-space: nowrap;
+}
+
+.storage-mini-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(0, 60, 120, 0.06);
+    overflow: hidden;
+}
+
+.storage-mini-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(135deg, #4facfe 0%, #00c6fb 100%);
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.storage-mini-bar-fill.external {
+    background: linear-gradient(135deg, #28cd41 0%, #5af06a 100%);
+}
+
+@media (max-width: 640px) {
+    .storage-summary { flex-direction: column; gap: 0.5rem; }
+}
+
+/* Finder Grid (icon view for folders) */
+.finder-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 0.5rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(30px);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+}
+
+.finder-grid-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.75rem 0.5rem;
+    border-radius: 12px;
+    text-decoration: none;
+    transition: all 0.15s ease;
+    cursor: default;
+}
+
+.finder-grid-item:hover {
+    background: rgba(255, 255, 255, 0.6);
+    transform: scale(1.03);
+}
+
+.finder-grid-item:active {
+    transform: scale(0.97);
+}
+
+.finder-grid-item[class*="selected"],
+.finder-grid-item.selected {
+    background: rgba(10, 132, 255, 0.1);
+    box-shadow: 0 0 0 1.5px rgba(10, 132, 255, 0.3);
+}
+
+.finder-grid-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    filter: drop-shadow(0 3px 6px rgba(0, 80, 180, 0.15));
+    transition: filter 0.2s;
+}
+
+.finder-grid-item:hover .finder-grid-icon {
+    filter: drop-shadow(0 5px 12px rgba(0, 80, 180, 0.25));
+}
+
+.finder-thumb {
+    width: 56px;
+    height: 56px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 60, 120, 0.08);
+    background: rgba(255, 255, 255, 0.5);
+}
+
+.finder-grid-label {
+    font-size: 0.6875rem;
+    color: var(--text-primary);
+    text-align: center;
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.3;
+}
+
+/* Finder-specific styles */
+.finder-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(30px);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+}
+
+.toolbar-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+.toolbar-btn:hover {
+    background: var(--bg-glass-hover);
+    color: var(--accent);
+}
+.toolbar-btn.system-toggle.active {
+    background: rgba(10, 132, 255, 0.1);
+    color: var(--accent);
+}
+
+.breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8125rem;
+}
+.breadcrumbs a { color: var(--text-secondary); }
+.breadcrumbs a:hover { color: var(--accent); }
+.breadcrumb-sep { color: var(--text-tertiary); font-size: 0.75rem; }
+.breadcrumb-current { color: var(--text-primary); font-weight: 500; }
+
+.finder-search {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.7rem;
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(0, 80, 160, 0.1);
+    border-radius: 8px;
+    color: var(--text-tertiary);
+}
+.finder-search input {
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    width: 120px;
+}
+.finder-search input::placeholder { color: var(--text-tertiary); }
+
+.paste-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 1rem;
+    margin-bottom: 0.5rem;
+    background: rgba(10, 132, 255, 0.06);
+    border: 1px solid rgba(10, 132, 255, 0.15);
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    color: var(--accent);
+}
+
+
+/* Context Menu */
+.context-menu {
+    position: fixed;
+    z-index: 3000;
+    min-width: 180px;
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(50px) saturate(1.8);
+    -webkit-backdrop-filter: blur(50px) saturate(1.8);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    border-radius: 10px;
+    padding: 4px;
+    box-shadow: 0 12px 40px rgba(0, 40, 100, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.05);
+}
+
+.context-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.12s;
+}
+.context-item:hover {
+    background: rgba(10, 132, 255, 0.1);
+}
+.context-item.danger { color: var(--danger); }
+.context-item.danger:hover { background: rgba(255, 59, 48, 0.08); }
+
+.ctx-icon { font-size: 0.875rem; width: 1.2rem; text-align: center; }
+
+.context-sep {
+    height: 1px;
+    background: rgba(0, 60, 120, 0.08);
+    margin: 3px 8px;
+}
+
+/* Finder Layout (main + preview sidebar) */
+.finder-layout {
+    display: flex;
+    gap: 1rem;
+    max-width: 72rem;
+}
+
+.finder-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.preview-panel {
+    width: 240px;
+    flex-shrink: 0;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    align-self: flex-start;
+    position: sticky;
+    top: 2rem;
+}
+
+.preview-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 180px;
+    text-align: center;
+}
+
+.preview-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+
+.preview-content img {
+    width: 100%;
+    max-height: 240px;
+    object-fit: contain;
+    border-radius: 8px;
+    display: block;
+}
+
+.preview-name {
+    margin-top: 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    text-align: center;
+    word-break: break-all;
+}
+
+.preview-meta {
+    margin-top: 0.25rem;
+    font-size: 0.6875rem;
+    color: var(--text-tertiary);
+    text-align: center;
+}
+
+.preview-text-content {
+    width: 100%;
+    max-height: 240px;
+    overflow-y: auto;
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.4);
+    border: 1px solid rgba(0, 60, 120, 0.06);
+    border-radius: 8px;
+    font-family: 'SF Mono', Menlo, Monaco, monospace;
+    font-size: 0.625rem;
+    line-height: 1.5;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+}
+
+@media (max-width: 900px) {
+    .finder-layout { flex-direction: column; }
+    .preview-panel { width: 100%; position: static; }
+}
+</style>
+
+<script>
+const CSRF = "{{ csrf_token() }}";
+const currentPath = "{{ path }}";
+const systemMode = {{ 'true' if system_mode else 'false' }};
+const sysParam = systemMode ? "?system=1" : "";
+let clipboard = JSON.parse(sessionStorage.getItem("fileClipboard") || "null");
+let ctxTarget = null;
+
+updatePasteBar();
+
+// Close context menu on click elsewhere
+document.addEventListener("click", () => {
+    document.getElementById("context-menu").classList.add("hidden");
+});
+
+function apiPost(url, data) {
+    return fetch(url, {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify(data)
+    }).then(r => r.json());
+}
+
+// Context menu
+function showContext(e, row) {
+    e.preventDefault();
+    e.stopPropagation();
+    ctxTarget = {
+        path: row.dataset.path,
+        name: row.dataset.name,
+        isDir: row.dataset.isdir === "true"
+    };
+
+    // Highlight row
+    document.querySelectorAll(".finder-row.selected").forEach(r => r.classList.remove("selected"));
+    row.classList.add("selected");
+
+    const menu = document.getElementById("context-menu");
+    const dl = document.getElementById("ctx-download");
+    dl.style.display = ctxTarget.isDir ? "none" : "";
+
+    menu.classList.remove("hidden");
+    menu.style.left = Math.min(e.clientX, window.innerWidth - 200) + "px";
+    menu.style.top = Math.min(e.clientY, window.innerHeight - 250) + "px";
+}
+
+function ctxOpen() {
+    if (!ctxTarget) return;
+    window.location.href = "/files/" + ctxTarget.path.replace(/^\//, "") + sysParam;
+}
+
+function ctxDownload() {
+    if (!ctxTarget) return;
+    window.location.href = "/files/" + ctxTarget.path.replace(/^\//, "") + "?download" + (systemMode ? "&system=1" : "");
+}
+
+function ctxCopy() {
+    if (!ctxTarget) return;
+    clipboard = {path: ctxTarget.path, mode: "copy"};
+    sessionStorage.setItem("fileClipboard", JSON.stringify(clipboard));
+    updatePasteBar();
+}
+
+function ctxCut() {
+    if (!ctxTarget) return;
+    clipboard = {path: ctxTarget.path, mode: "cut"};
+    sessionStorage.setItem("fileClipboard", JSON.stringify(clipboard));
+    updatePasteBar();
+}
+
+function ctxRename() {
+    if (!ctxTarget) return;
+    document.getElementById("rename-path").value = ctxTarget.path;
+    document.getElementById("rename-name").value = ctxTarget.name;
+    document.getElementById("rename-modal").classList.remove("hidden");
+}
+
+function ctxDelete() {
+    if (!ctxTarget) return;
+    if (!confirm("Move \"" + ctxTarget.name + "\" to Trash?")) return;
+    apiPost("/api/files/delete", {path: ctxTarget.path}).then(r => {
+        if (r.ok) location.reload();
+        else alert(r.error);
+    });
+}
+
+function createFolder() {
+    const name = document.getElementById("mkdir-name").value.trim();
+    if (!name) return;
+    const path = currentPath === "/" ? "/" + name : currentPath + "/" + name;
+    apiPost("/api/files/mkdir", {path}).then(r => {
+        if (r.ok) location.reload();
+        else alert(r.error);
+    });
+}
+
+function doRename() {
+    const path = document.getElementById("rename-path").value;
+    const newName = document.getElementById("rename-name").value.trim();
+    if (!newName) return;
+    apiPost("/api/files/rename", {path, new_name: newName}).then(r => {
+        if (r.ok) location.reload();
+        else alert(r.error);
+    });
+}
+
+function updatePasteBar() {
+    const bar = document.getElementById("paste-bar");
+    const label = document.getElementById("paste-label");
+    if (clipboard) {
+        const name = clipboard.path.split("/").pop();
+        const action = clipboard.mode === "cut" ? "Move" : "Copy";
+        label.textContent = action + ' "' + name + '"';
+        bar.classList.remove("hidden");
+    } else {
+        bar.classList.add("hidden");
+    }
+}
+
+function doPaste() {
+    if (!clipboard) return;
+    const endpoint = clipboard.mode === "cut" ? "/api/files/move" : "/api/files/copy";
+    apiPost(endpoint, {src: clipboard.path, dest: currentPath}).then(r => {
+        if (r.ok) {
+            if (clipboard.mode === "cut") clearClipboard();
+            location.reload();
+        } else {
+            alert(r.error);
+        }
+    });
+}
+
+function clearClipboard() {
+    clipboard = null;
+    sessionStorage.removeItem("fileClipboard");
+    updatePasteBar();
+}
+
+
+// Grid items context menu (folders shown as icons)
+document.querySelectorAll(".finder-grid-item").forEach(item => {
+    item.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        showContext(e, item);
+    });
+});
+
+// Preview sidebar
+const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+const TEXT_EXTS = ['txt', 'md', 'json', 'yaml', 'yml', 'xml', 'csv', 'log', 'py', 'js', 'html', 'css', 'sh', 'conf', 'ini', 'toml', 'env', 'sql'];
+const VIDEO_EXTS = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
+
+function showPreview(path, name, size, ext) {
+    const empty = document.getElementById("preview-empty");
+    const content = document.getElementById("preview-content");
+    const img = document.getElementById("preview-img");
+    const nameEl = document.getElementById("preview-name");
+    const metaEl = document.getElementById("preview-meta");
+
+    const fileSrc = "/files/" + path.replace(/^\//, "");
+    nameEl.textContent = name;
+    metaEl.textContent = size || "";
+
+    // Reset content
+    img.classList.add("hidden");
+    let textEl = document.getElementById("preview-text");
+    if (textEl) textEl.remove();
+    let videoEl = document.getElementById("preview-video");
+    if (videoEl) videoEl.remove();
+
+    if (IMAGE_EXTS.includes(ext)) {
+        img.src = fileSrc;
+        img.classList.remove("hidden");
+    } else if (VIDEO_EXTS.includes(ext)) {
+        const video = document.createElement("video");
+        video.id = "preview-video";
+        video.src = fileSrc;
+        video.controls = false;
+        video.muted = true;
+        video.preload = "metadata";
+        video.style.cssText = "width:100%; max-height:200px; border-radius:8px; object-fit:contain; background:#000;";
+        video.addEventListener("loadeddata", () => { video.currentTime = 1; });
+        content.insertBefore(video, nameEl);
+    } else if (TEXT_EXTS.includes(ext)) {
+        const pre = document.createElement("pre");
+        pre.id = "preview-text";
+        pre.className = "preview-text-content";
+        pre.textContent = "Loading...";
+        content.insertBefore(pre, nameEl);
+        fetch(fileSrc).then(r => r.text()).then(text => {
+            pre.textContent = text.slice(0, 2000);
+            if (text.length > 2000) pre.textContent += "\n\n...";
+        }).catch(() => { pre.textContent = "Unable to load"; });
+    }
+
+    empty.classList.add("hidden");
+    content.classList.remove("hidden");
+}
+
+function hidePreview() {
+    document.getElementById("preview-empty").classList.remove("hidden");
+    document.getElementById("preview-content").classList.add("hidden");
+    document.getElementById("preview-img").classList.add("hidden");
+    let textEl = document.getElementById("preview-text");
+    if (textEl) textEl.remove();
+    let videoEl = document.getElementById("preview-video");
+    if (videoEl) videoEl.remove();
+}
+
+// File grid items — click to select & preview
+document.querySelectorAll(".finder-grid-item.file-item").forEach(item => {
+    item.addEventListener("click", (e) => {
+        e.preventDefault();
+        document.querySelectorAll(".finder-grid-item.selected").forEach(i => i.classList.remove("selected"));
+        item.classList.add("selected");
+
+        const ext = item.dataset.ext;
+        if (IMAGE_EXTS.includes(ext) || TEXT_EXTS.includes(ext) || VIDEO_EXTS.includes(ext)) {
+            showPreview(item.dataset.path, item.dataset.name, item.dataset.size || "", ext);
+        } else {
+            hidePreview();
+        }
+    });
+
+    item.addEventListener("dblclick", (e) => {
+        window.location.href = "/files/" + item.dataset.path.replace(/^\//, "") + "?download";
+    });
+});
+</script>
+{% endblock %}

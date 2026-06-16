@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}AI Settings — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-3xl">
+    <div class="flex items-center justify-between mb-6">
+        <h1>AI Settings</h1>
+        <a href="{{ url_for('ai.chat') }}" class="btn btn-ghost">Back to Chat</a>
+    </div>
+
+    {% if not ai_config.provider %}
+    <div class="glass-card mb-6" style="border-color: rgba(10, 132, 255, 0.2);">
+        <h2 class="text-accent mb-2">Setup Required</h2>
+        <p class="text-secondary text-sm">Choose an AI provider below to enable the assistant. You can use a local model (Ollama) or a cloud API.</p>
+    </div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('ai.save_settings') }}" class="space-y-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <!-- Provider Selection -->
+        <div class="glass-card">
+            <h3 class="mb-3 text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Provider</h3>
+            <div class="provider-grid">
+                <label class="provider-option">
+                    <input type="radio" name="provider" value="ollama" {% if ai_config.provider == 'ollama' %}checked{% endif %}>
+                    <div class="provider-card">
+                        <span class="provider-icon">🦙</span>
+                        <span class="provider-name">Ollama</span>
+                        <span class="provider-desc">Local model, fully private</span>
+                    </div>
+                </label>
+                <label class="provider-option">
+                    <input type="radio" name="provider" value="claude" {% if ai_config.provider == 'claude' %}checked{% endif %}>
+                    <div class="provider-card">
+                        <span class="provider-icon">🟠</span>
+                        <span class="provider-name">Claude</span>
+                        <span class="provider-desc">Anthropic API</span>
+                    </div>
+                </label>
+                <label class="provider-option">
+                    <input type="radio" name="provider" value="openai" {% if ai_config.provider == 'openai' %}checked{% endif %}>
+                    <div class="provider-card">
+                        <span class="provider-icon">🟢</span>
+                        <span class="provider-name">OpenAI</span>
+                        <span class="provider-desc">GPT-4o, GPT-4, etc.</span>
+                    </div>
+                </label>
+                <label class="provider-option">
+                    <input type="radio" name="provider" value="bedrock" {% if ai_config.provider == 'bedrock' %}checked{% endif %}>
+                    <div class="provider-card">
+                        <span class="provider-icon">☁️</span>
+                        <span class="provider-name">AWS Bedrock</span>
+                        <span class="provider-desc">Amazon hosted models</span>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <!-- Ollama Settings -->
+        <div class="glass-card provider-settings" id="settings-ollama">
+            <h3 class="mb-3">Ollama Configuration</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Server URL</label>
+                    <input type="text" name="ollama_url" value="{{ ai_config.ollama.url }}" placeholder="http://localhost:11434" class="glass-input">
+                </div>
+                <div>
+                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Model</label>
+                    <input type="text" name="ollama_model" value="{{ ai_config.ollama.model }}" placeholder="llama3" class="glass-input">
+                    <p class="text-tertiary text-xs mt-1">Run <code>ollama list</code> to see available models</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Claude Settings -->
+        <div class="glass-card provider-settings" id="settings-claude">
+            <h3 class="mb-3">Claude Configuration</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">API Key</label>
+                    <input type="password" name="claude_api_key" value="{{ ai_config.claude.api_key }}" placeholder="sk-ant-..." class="glass-input">
+                    <p class="text-tertiary text-xs mt-1">From console.anthropic.com</p>
+                </div>
+                <div>
+                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Model</label>
+                    <input type="text" name="claude_model" value="{{ ai_config.claude.model }}" placeholder="claude-sonnet-4-6-20250514" class="glass-input">
+                </div>
+            </div>
+        </div>
+
+        <!-- OpenAI Settings -->
+        <div class="glass-card provider-settings" id="settings-openai">
+            <h3 class="mb-3">OpenAI Configuration</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">API Key</label>
+                    <input type="password" name="openai_api_key" value="{{ ai_config.openai.api_key }}" placeholder="sk-..." class="glass-input">
+                    <p class="text-tertiary text-xs mt-1">From platform.openai.com</p>
+                </div>
+                <div>
+                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Model</label>
+                    <input type="text" name="openai_model" value="{{ ai_config.openai.model }}" placeholder="gpt-4o" class="glass-input">
+                </div>
+            </div>
+        </div>
+
+        <!-- Bedrock Settings -->
+        <div class="glass-card provider-settings" id="settings-bedrock">
+            <h3 class="mb-3">AWS Bedrock Configuration</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Access Key ID</label>
+                    <input type="text" name="bedrock_access_key" value="{{ ai_config.bedrock.access_key }}" placeholder="AKIA..." class="glass-input">
+                </div>
+                <div>
+                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Secret Access Key</label>
+                    <input type="password" name="bedrock_secret_key" value="{{ ai_config.bedrock.secret_key }}" placeholder="wJal..." class="glass-input">
+                </div>
+                <div>
+                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Region</label>
+                    <input type="text" name="bedrock_region" value="{{ ai_config.bedrock.region }}" placeholder="us-east-1" class="glass-input">
+                </div>
+                <div>
+                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Model ID</label>
+                    <input type="text" name="bedrock_model" value="{{ ai_config.bedrock.model }}" placeholder="anthropic.claude-sonnet-4-6-20250514-v1:0" class="glass-input">
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Save Settings</button>
+    </form>
+</div>
+
+<style>
+.provider-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+}
+@media (max-width: 768px) {
+    .provider-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.provider-option input[type="radio"] { display: none; }
+
+.provider-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 1rem 0.5rem;
+    border-radius: 12px;
+    border: 1.5px solid rgba(0, 60, 120, 0.08);
+    background: rgba(255, 255, 255, 0.4);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.provider-card:hover {
+    background: rgba(255, 255, 255, 0.7);
+    border-color: rgba(10, 132, 255, 0.2);
+}
+.provider-option input:checked + .provider-card {
+    border-color: var(--accent);
+    background: rgba(10, 132, 255, 0.06);
+    box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.1);
+}
+.provider-icon { font-size: 1.5rem; }
+.provider-name { font-size: 0.8125rem; font-weight: 600; color: var(--text-primary); }
+.provider-desc { font-size: 0.6875rem; color: var(--text-tertiary); text-align: center; }
+
+.provider-settings { display: none; }
+.provider-settings.active { display: block; }
+</style>
+
+<script>
+function updateVisibility() {
+    document.querySelectorAll('.provider-settings').forEach(el => el.classList.remove('active'));
+    const checked = document.querySelector('input[name="provider"]:checked');
+    if (checked) {
+        const panel = document.getElementById('settings-' + checked.value);
+        if (panel) panel.classList.add('active');
+    }
+}
+
+document.querySelectorAll('input[name="provider"]').forEach(radio => {
+    radio.addEventListener('change', updateVisibility);
+});
+updateVisibility();
+</script>
+{% endblock %}

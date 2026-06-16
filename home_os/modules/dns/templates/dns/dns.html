@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+{% block title %}DNS — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+        <h1>DNS & Ad Blocking</h1>
+        <div class="flex items-center gap-3">
+            <span id="protection-status" class="badge"></span>
+            <button id="toggle-btn" onclick="toggleProtection()" class="btn btn-ghost" style="font-size:0.75rem;"></button>
+        </div>
+    </div>
+
+    <!-- Error state -->
+    <div id="error-state" class="glass-card hidden" style="text-align:center; padding:3rem;">
+        <p style="font-size:2rem; margin-bottom:0.5rem;">🛡️</p>
+        <p class="text-secondary">Cannot connect to AdGuard Home</p>
+        <p class="text-tertiary text-xs mt-2">Make sure AdGuard Home is running on this server.<br>Configure the connection in <code>config.yaml</code> under <code>adguard:</code></p>
+    </div>
+
+    <!-- Stats cards -->
+    <div class="grid grid-cols-4 gap-4 mb-6" id="stats-cards" style="display:none;">
+        <div class="glass-card" style="text-align:center;">
+            <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Total Queries</p>
+            <p id="stat-queries" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem;"></p>
+        </div>
+        <div class="glass-card" style="text-align:center;">
+            <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Blocked</p>
+            <p id="stat-blocked" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:var(--danger);"></p>
+        </div>
+        <div class="glass-card" style="text-align:center;">
+            <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Block Rate</p>
+            <p id="stat-rate" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem;"></p>
+        </div>
+        <div class="glass-card" style="text-align:center;">
+            <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Avg Response</p>
+            <p id="stat-time" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem;"></p>
+        </div>
+    </div>
+
+    <!-- Top domains / clients -->
+    <div class="grid grid-cols-2 gap-4 mb-6" id="top-section" style="display:none;">
+        <div class="glass-card">
+            <h3 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Top Blocked Domains</h3>
+            <div id="top-blocked"></div>
+        </div>
+        <div class="glass-card">
+            <h3 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Top Clients</h3>
+            <div id="top-clients"></div>
+        </div>
+    </div>
+
+    <!-- Local DNS Records -->
+    <div class="glass-panel mb-4" style="padding:0; overflow:hidden;" id="rewrites-section">
+        <div style="padding:0.75rem 1rem; border-bottom:1px solid rgba(0,60,120,0.06); display:flex; align-items:center; justify-content:space-between;">
+            <h3 class="text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Local DNS Records</h3>
+            <button onclick="document.getElementById('add-record-modal').classList.remove('hidden')" class="btn btn-ghost" style="font-size:0.7rem; padding:0.3rem 0.6rem;">+ Add</button>
+        </div>
+        <table class="glass-table">
+            <thead>
+                <tr>
+                    <th>Domain</th>
+                    <th>Points to</th>
+                    <th style="width:60px;"></th>
+                </tr>
+            </thead>
+            <tbody id="rewrites-body">
+                <tr><td colspan="3" style="text-align:center; padding:2rem; color:var(--text-tertiary);">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Query Log -->
+    <div class="glass-panel" style="padding:0; overflow:hidden;">
+        <div style="padding:0.75rem 1rem; border-bottom:1px solid rgba(0,60,120,0.06);">
+            <h3 class="text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Recent Queries</h3>
+        </div>
+        <div style="max-height:400px; overflow-y:auto;">
+            <table class="glass-table">
+                <thead>
+                    <tr>
+                        <th>Domain</th>
+                        <th>Client</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="querylog-body">
+                    <tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--text-tertiary);">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Record Modal -->
+<div id="add-record-modal" class="modal-backdrop hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal-content">
+        <h3 style="margin-bottom:1rem;">Add DNS Record</h3>
+        <div class="space-y-4">
+            <div>
+                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Domain</label>
+                <input type="text" id="record-domain" class="glass-input" placeholder="e.g. server.home">
+            </div>
+            <div>
+                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Points to (IP address)</label>
+                <input type="text" id="record-answer" class="glass-input" placeholder="e.g. 192.168.1.50">
+            </div>
+            <div class="flex justify-end gap-3">
+                <button onclick="document.getElementById('add-record-modal').classList.add('hidden')" class="btn btn-ghost">Cancel</button>
+                <button onclick="addRecord()" class="btn btn-primary">Add</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.top-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.35rem 0;
+    font-size: 0.75rem;
+    border-bottom: 1px solid rgba(0, 60, 120, 0.04);
+}
+.top-item:last-child { border-bottom: none; }
+.top-item-domain {
+    color: var(--text-primary);
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.top-item-count { color: var(--text-tertiary); }
+
+.query-blocked { color: var(--danger); }
+.query-allowed { color: var(--success); }
+</style>
+
+<script>
+const CSRF = "{{ csrf_token() }}";
+let protectionEnabled = true;
+
+function load() {
+    fetch("/api/dns/status")
+        .then(r => r.json())
+        .then(r => {
+            if (!r.ok) {
+                document.getElementById("error-state").classList.remove("hidden");
+                return;
+            }
+            document.getElementById("error-state").classList.add("hidden");
+            const d = r.data;
+
+            protectionEnabled = d.protection_enabled;
+            updateProtectionUI();
+
+            // Stats
+            document.getElementById("stat-queries").textContent = (d.num_dns_queries || 0).toLocaleString();
+            document.getElementById("stat-blocked").textContent = (d.num_blocked || 0).toLocaleString();
+            const rate = d.num_dns_queries > 0 ? ((d.num_blocked / d.num_dns_queries) * 100).toFixed(1) : "0";
+            document.getElementById("stat-rate").textContent = rate + "%";
+            document.getElementById("stat-time").textContent = ((d.avg_processing_time || 0) * 1000).toFixed(0) + "ms";
+            document.getElementById("stats-cards").style.display = "";
+
+            // Top blocked
+            if (d.top_blocked && d.top_blocked.length > 0) {
+                document.getElementById("top-blocked").innerHTML = d.top_blocked.slice(0, 8).map(item => {
+                    const domain = Object.keys(item)[0];
+                    const count = item[domain];
+                    return `<div class="top-item"><span class="top-item-domain">${domain}</span><span class="top-item-count">${count}</span></div>`;
+                }).join("");
+            } else {
+                document.getElementById("top-blocked").innerHTML = '<p class="text-tertiary text-xs">No data yet</p>';
+            }
+
+            // Top clients
+            if (d.top_clients && d.top_clients.length > 0) {
+                document.getElementById("top-clients").innerHTML = d.top_clients.slice(0, 8).map(item => {
+                    const client = Object.keys(item)[0];
+                    const count = item[client];
+                    return `<div class="top-item"><span class="top-item-domain">${client}</span><span class="top-item-count">${count}</span></div>`;
+                }).join("");
+            } else {
+                document.getElementById("top-clients").innerHTML = '<p class="text-tertiary text-xs">No data yet</p>';
+            }
+
+            document.getElementById("top-section").style.display = "";
+        })
+        .catch(() => {
+            document.getElementById("error-state").classList.remove("hidden");
+        });
+
+    loadRewrites();
+    loadQueryLog();
+}
+
+function updateProtectionUI() {
+    const badge = document.getElementById("protection-status");
+    const btn = document.getElementById("toggle-btn");
+    if (protectionEnabled) {
+        badge.className = "badge badge-success";
+        badge.textContent = "Protected";
+        btn.textContent = "Disable";
+    } else {
+        badge.className = "badge badge-danger";
+        badge.textContent = "Unprotected";
+        btn.textContent = "Enable";
+    }
+}
+
+function toggleProtection() {
+    fetch("/api/dns/toggle", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({enabled: !protectionEnabled})
+    }).then(r => r.json()).then(r => {
+        if (r.ok) {
+            protectionEnabled = !protectionEnabled;
+            updateProtectionUI();
+        }
+    });
+}
+
+function loadRewrites() {
+    fetch("/api/dns/rewrites")
+        .then(r => r.json())
+        .then(r => {
+            if (!r.ok || !r.data || r.data.length === 0) {
+                document.getElementById("rewrites-body").innerHTML = '<tr><td colspan="3" style="text-align:center; padding:1.5rem; color:var(--text-tertiary);">No local DNS records</td></tr>';
+                return;
+            }
+            document.getElementById("rewrites-body").innerHTML = r.data.map(rec => `
+                <tr>
+                    <td class="font-medium">${rec.domain}</td>
+                    <td class="text-secondary">${rec.answer}</td>
+                    <td><button class="action-link danger" onclick="deleteRecord('${rec.domain}','${rec.answer}')">Remove</button></td>
+                </tr>
+            `).join("");
+        });
+}
+
+function loadQueryLog() {
+    fetch("/api/dns/querylog")
+        .then(r => r.json())
+        .then(r => {
+            if (!r.ok || !r.data || r.data.length === 0) {
+                document.getElementById("querylog-body").innerHTML = '<tr><td colspan="4" style="text-align:center; padding:1.5rem; color:var(--text-tertiary);">No queries yet</td></tr>';
+                return;
+            }
+            document.getElementById("querylog-body").innerHTML = r.data.slice(0, 50).map(q => `
+                <tr>
+                    <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${q.domain}</td>
+                    <td class="text-secondary text-xs">${q.client}</td>
+                    <td class="text-tertiary text-xs">${q.type}</td>
+                    <td><span class="${q.blocked ? 'query-blocked' : 'query-allowed'}" style="font-size:0.6875rem;">${q.blocked ? 'Blocked' : 'Allowed'}</span></td>
+                </tr>
+            `).join("");
+        });
+}
+
+function addRecord() {
+    const domain = document.getElementById("record-domain").value.trim();
+    const answer = document.getElementById("record-answer").value.trim();
+    if (!domain || !answer) return;
+    fetch("/api/dns/rewrites", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({domain, answer})
+    }).then(r => r.json()).then(r => {
+        if (r.ok) {
+            document.getElementById("add-record-modal").classList.add("hidden");
+            document.getElementById("record-domain").value = "";
+            document.getElementById("record-answer").value = "";
+            loadRewrites();
+        } else {
+            alert(r.error || "Failed");
+        }
+    });
+}
+
+function deleteRecord(domain, answer) {
+    if (!confirm(`Remove ${domain} → ${answer}?`)) return;
+    fetch("/api/dns/rewrites/delete", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({domain, answer})
+    }).then(r => r.json()).then(r => { if (r.ok) loadRewrites(); });
+}
+
+load();
+setInterval(load, 15000);
+</script>
+{% endblock %}

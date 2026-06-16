@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+*.egg-info/
+
+# Data (never commit user data)
+data/
+/storage/
+instance/
+
+# Secrets (never commit)
+config.yaml
+*.key
+*.pem
+
+# Swift / Xcode
+HomeOSApp/.build/
+HomeOSApp/.swiftpm/
+HomeOSApp/HomeOS/
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Local docs (not published)
+claude-md/
+Design/
+CLAUDE.md
+Home-OS

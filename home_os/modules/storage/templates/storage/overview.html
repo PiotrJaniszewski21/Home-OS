@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}Storage — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <h1 class="mb-6">Storage</h1>
+
+    <!-- Main Storage -->
+    <div class="glass-card mb-4">
+        <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-3">
+                <div class="storage-icon main">
+                    <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" stroke-width="1.5"/><path stroke-width="1.5" d="M4 12h16"/><circle cx="7" cy="8" r="1" fill="currentColor"/><circle cx="7" cy="16" r="1" fill="currentColor"/></svg>
+                </div>
+                <div>
+                    <h2 style="font-size: 1rem;">Main Storage</h2>
+                    <p class="text-tertiary text-xs">Internal — Home OS root</p>
+                </div>
+            </div>
+            <a href="{{ url_for('files.browse') }}" class="btn btn-ghost" style="font-size: 0.75rem;">Browse Files</a>
+        </div>
+
+        <!-- Storage bar -->
+        <div class="storage-bar-container">
+            <div class="storage-bar">
+                <div class="storage-bar-fill" style="width: {{ main.percent_used }}%">
+                    <span class="storage-bar-label">{{ "%.1f"|format(main.used_bytes / 1073741824) }} GB Used</span>
+                </div>
+                <div class="storage-bar-free">
+                    <span class="storage-bar-label">{{ "%.1f"|format(main.free_bytes / 1073741824) }} GB Free</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats row -->
+        <div class="storage-stats">
+            <div class="storage-stat">
+                <span class="storage-stat-value">{{ "%.1f"|format(main.total_bytes / 1073741824) }} GB</span>
+                <span class="storage-stat-label">Total</span>
+            </div>
+            <div class="storage-stat">
+                <span class="storage-stat-value">{{ "%.1f"|format(main.used_bytes / 1073741824) }} GB</span>
+                <span class="storage-stat-label">Used</span>
+            </div>
+            <div class="storage-stat">
+                <span class="storage-stat-value">{{ "%.1f"|format(main.free_bytes / 1073741824) }} GB</span>
+                <span class="storage-stat-label">Available</span>
+            </div>
+            <div class="storage-stat">
+                <span class="storage-stat-value">{{ main.percent_used }}%</span>
+                <span class="storage-stat-label">Used</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- External Drives -->
+    {% if drives %}
+    <div class="flex items-center gap-2 mt-6 mb-3">
+        <h2 class="text-secondary text-xs" style="text-transform: uppercase; letter-spacing: 0.06em;">External Drives</h2>
+        <span class="badge badge-ghost">{{ drives|length }}</span>
+    </div>
+
+    {% for drive in drives %}
+    <div class="glass-card mb-3">
+        <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-3">
+                <div class="storage-icon external">
+                    <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="1.5" stroke-linecap="round" d="M12 18v3m-4 0h8"/><rect x="3" y="4" width="18" height="14" rx="3" stroke-width="1.5"/><circle cx="6" cy="14" r="1" fill="currentColor"/></svg>
+                </div>
+                <div>
+                    <h2 style="font-size: 1rem;">{{ drive.name }}</h2>
+                    <p class="text-tertiary text-xs">{{ drive.device }} — {{ drive.filesystem }}</p>
+                </div>
+            </div>
+            <a href="{{ url_for('storage.browse_drive', name=drive.name) }}" class="btn btn-ghost" style="font-size: 0.75rem;">Browse</a>
+        </div>
+
+        <div class="storage-bar-container">
+            <div class="storage-bar">
+                <div class="storage-bar-fill external" style="width: {{ drive.percent_used }}%">
+                    <span class="storage-bar-label">{{ "%.1f"|format(drive.used_bytes / 1073741824) }} GB Used</span>
+                </div>
+                <div class="storage-bar-free">
+                    <span class="storage-bar-label">{{ "%.1f"|format(drive.free_bytes / 1073741824) }} GB Free</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="storage-stats">
+            <div class="storage-stat">
+                <span class="storage-stat-value">{{ "%.1f"|format(drive.total_bytes / 1073741824) }} GB</span>
+                <span class="storage-stat-label">Total</span>
+            </div>
+            <div class="storage-stat">
+                <span class="storage-stat-value">{{ "%.1f"|format(drive.used_bytes / 1073741824) }} GB</span>
+                <span class="storage-stat-label">Used</span>
+            </div>
+            <div class="storage-stat">
+                <span class="storage-stat-value">{{ "%.1f"|format(drive.free_bytes / 1073741824) }} GB</span>
+                <span class="storage-stat-label">Available</span>
+            </div>
+            <div class="storage-stat">
+                <span class="storage-stat-value">{{ drive.percent_used }}%</span>
+                <span class="storage-stat-label">Used</span>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    {% else %}
+    <div class="flex items-center gap-2 mt-6 mb-3">
+        <h2 class="text-secondary text-xs" style="text-transform: uppercase; letter-spacing: 0.06em;">External Drives</h2>
+    </div>
+    <div class="glass-card" style="text-align: center; padding: 2.5rem;">
+        <p class="text-tertiary" style="font-size: 2rem; margin-bottom: 0.5rem;">💾</p>
+        <p class="text-secondary text-sm">No external drives detected</p>
+        <p class="text-tertiary text-xs mt-1">Plug in a USB drive and it will appear here</p>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.storage-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    color: var(--accent);
+}
+.storage-icon.main {
+    background: rgba(10, 132, 255, 0.08);
+}
+.storage-icon.external {
+    background: rgba(40, 205, 65, 0.08);
+    color: var(--success);
+}
+
+.storage-bar-container {
+    margin-bottom: 1rem;
+}
+
+.storage-bar {
+    display: flex;
+    height: 32px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(0, 60, 120, 0.04);
+    border: 1px solid rgba(0, 60, 120, 0.06);
+}
+
+.storage-bar-fill {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #4facfe 0%, #00c6fb 100%);
+    min-width: 60px;
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+
+.storage-bar-fill.external {
+    background: linear-gradient(135deg, #28cd41 0%, #5af06a 100%);
+}
+
+.storage-bar-free {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 60px;
+}
+
+.storage-bar-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.storage-bar-fill .storage-bar-label {
+    color: white;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.storage-bar-free .storage-bar-label {
+    color: var(--text-tertiary);
+}
+
+.storage-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+}
+
+.storage-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.5rem;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+}
+
+.storage-stat-value {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.storage-stat-label {
+    font-size: 0.625rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-top: 0.125rem;
+}
+
+@media (max-width: 640px) {
+    .storage-stats { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+{% endblock %}

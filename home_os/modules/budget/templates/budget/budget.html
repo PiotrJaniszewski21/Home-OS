@@ -1,0 +1,454 @@
+{% extends "base.html" %}
+{% block title %}Budget — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+        <h1>Budget</h1>
+        <a href="{{ url_for('calendar.calendar_view') }}" class="btn btn-ghost" style="font-size:0.75rem;">Add in Calendar</a>
+    </div>
+
+    <!-- View toggle + navigation -->
+    <div class="tab-bar mb-4" style="max-width:240px;">
+        <button class="tab active" data-tab="monthly" onclick="switchView('monthly')">Monthly</button>
+        <button class="tab" data-tab="yearly" onclick="switchView('yearly')">Yearly</button>
+    </div>
+
+    <div id="view-monthly">
+        <div class="flex items-center justify-between mb-4">
+            <button onclick="changeMonth(-1)" class="btn btn-ghost" style="padding:0.4rem 0.75rem;">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            </button>
+            <h2 id="month-title" style="font-size:1.125rem;"></h2>
+            <button onclick="changeMonth(1)" class="btn btn-ghost" style="padding:0.4rem 0.75rem;">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <div id="view-yearly" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+            <button onclick="changeYear(-1)" class="btn btn-ghost" style="padding:0.4rem 0.75rem;">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            </button>
+            <h2 id="year-title" style="font-size:1.125rem;"></h2>
+            <button onclick="changeYear(1)" class="btn btn-ghost" style="padding:0.4rem 0.75rem;">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            </button>
+        </div>
+
+        <!-- Year summary cards -->
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:0.75rem; margin-bottom:1.5rem;" id="year-overview"></div>
+
+        <!-- Month-by-month breakdown -->
+        <div class="glass-panel" style="padding:0; overflow:hidden;" id="year-table">
+            <table class="glass-table">
+                <thead>
+                    <tr>
+                        <th>Month</th>
+                        <th>Income</th>
+                        <th>Bills</th>
+                        <th>One-off Out</th>
+                        <th>One-off In</th>
+                        <th>Net</th>
+                    </tr>
+                </thead>
+                <tbody id="year-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Overview cards -->
+    <div style="display:none; grid-template-columns:repeat(5,1fr); gap:0.75rem; margin-bottom:1.5rem;" id="overview">
+        <div class="glass-card" style="text-align:center;">
+            <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Household Income</p>
+            <p id="total-income" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:var(--success);"></p>
+            <p class="text-tertiary text-xs">/month</p>
+        </div>
+        <div class="glass-card" style="text-align:center;">
+            <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Monthly Bills</p>
+            <p id="total-bills" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:var(--danger);"></p>
+            <p class="text-tertiary text-xs">/month</p>
+        </div>
+        <div class="glass-card" style="text-align:center;">
+            <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Remaining</p>
+            <p id="total-remaining" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem;"></p>
+            <p class="text-tertiary text-xs">/month</p>
+        </div>
+        <div class="glass-card" style="text-align:center;">
+            <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">One-off Due</p>
+            <p id="total-payments" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:var(--warning);"></p>
+            <p class="text-tertiary text-xs">outgoing</p>
+        </div>
+        <div class="glass-card" style="text-align:center;">
+            <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">One-off Income</p>
+            <p id="total-income-events" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:var(--success);"></p>
+            <p class="text-tertiary text-xs">incoming</p>
+        </div>
+    </div>
+
+    <!-- Income section -->
+    <div class="glass-card mb-4" id="income-section" style="display:none;">
+        <h3 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Household Income</h3>
+        <div id="income-list"></div>
+    </div>
+
+    <!-- Bills breakdown chart -->
+    <div class="glass-card mb-4" id="chart-card" style="display:none;">
+        <h3 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Monthly Bills Breakdown</h3>
+        <div id="chart-bars"></div>
+    </div>
+
+    <!-- Recurring bills table -->
+    <div class="glass-panel mb-4" style="padding:0; overflow:hidden;" id="bills-table">
+        <div style="padding:0.75rem 1rem; border-bottom:1px solid rgba(0,60,120,0.06);">
+            <h3 class="text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Recurring Bills</h3>
+        </div>
+        <table class="glass-table">
+            <thead>
+                <tr>
+                    <th>Bill</th>
+                    <th>Amount</th>
+                    <th>Frequency</th>
+                    <th>Monthly</th>
+                    <th>Added by</th>
+                    <th style="width:70px;">Status</th>
+                </tr>
+            </thead>
+            <tbody id="bills-body">
+                <tr><td colspan="6" style="text-align:center; padding:2rem; color:var(--text-tertiary);">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- One-off payments table -->
+    <div class="glass-panel mb-4" style="padding:0; overflow:hidden;" id="payments-table">
+        <div style="padding:0.75rem 1rem; border-bottom:1px solid rgba(0,60,120,0.06);">
+            <h3 class="text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">One-off Payments</h3>
+        </div>
+        <table class="glass-table">
+            <thead>
+                <tr>
+                    <th>Payment</th>
+                    <th>Amount</th>
+                    <th>Due Date</th>
+                    <th>Added by</th>
+                    <th style="width:70px;">Status</th>
+                </tr>
+            </thead>
+            <tbody id="payments-body">
+                <tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--text-tertiary);">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- One-off income table -->
+    <div class="glass-panel" style="padding:0; overflow:hidden;" id="income-events-table">
+        <div style="padding:0.75rem 1rem; border-bottom:1px solid rgba(0,60,120,0.06);">
+            <h3 class="text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">One-off Income</h3>
+        </div>
+        <table class="glass-table">
+            <thead>
+                <tr>
+                    <th>Income</th>
+                    <th>Amount</th>
+                    <th>Date</th>
+                    <th>Added by</th>
+                    <th style="width:70px;">Status</th>
+                </tr>
+            </thead>
+            <tbody id="income-events-body">
+                <tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--text-tertiary);">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+.income-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(0, 60, 120, 0.04);
+}
+.income-row:last-child { border-bottom: none; }
+
+.income-input {
+    width: 120px;
+    padding: 0.4rem 0.6rem;
+    background: rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(0, 60, 120, 0.1);
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    outline: none;
+}
+.income-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.15);
+}
+
+.tab-bar { display: flex; gap: 2px; background: rgba(255,255,255,0.3); border-radius: 10px; padding: 3px; border: 1px solid var(--border-glass); }
+.tab { flex: 1; padding: 0.5rem 1rem; border: none; background: none; border-radius: 8px; font-size: 0.8125rem; font-weight: 500; color: var(--text-secondary); cursor: pointer; transition: all 0.15s; }
+.tab:hover { color: var(--text-primary); }
+.tab.active { background: rgba(255,255,255,0.7); color: var(--text-primary); box-shadow: 0 1px 4px rgba(0,40,80,0.08); }
+
+.budget-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+.budget-bar-label {
+    font-size: 0.75rem;
+    width: 120px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+}
+.budget-bar-track {
+    flex: 1;
+    height: 20px;
+    background: rgba(0, 60, 120, 0.04);
+    border-radius: 6px;
+    overflow: hidden;
+}
+.budget-bar-fill {
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.budget-bar-amount {
+    font-size: 0.75rem;
+    width: 80px;
+    text-align: right;
+    color: var(--text-secondary);
+}
+
+.paid-badge {
+    display: inline-flex;
+    padding: 0.15rem 0.5rem;
+    border-radius: 100px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.paid-badge.unpaid { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+.paid-badge.paid { background: rgba(40, 205, 65, 0.1); color: var(--success); }
+</style>
+
+<script>
+const CSRF = "{{ csrf_token() }}";
+const COLORS = ['#0a84ff','#5856d6','#ff9500','#ff2d55','#af52de','#30b0c7','#ff3b30','#28cd41','#ffcc00','#8e8e93'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+let currentView = 'monthly';
+
+let currentYear = new Date().getFullYear();
+let currentMonth = new Date().getMonth() + 1;
+
+function updateMonthTitle() {
+    document.getElementById("month-title").textContent = `${MONTHS[currentMonth - 1]} ${currentYear}`;
+}
+
+function changeMonth(dir) {
+    currentMonth += dir;
+    if (currentMonth > 12) { currentMonth = 1; currentYear++; }
+    if (currentMonth < 1) { currentMonth = 12; currentYear--; }
+    updateMonthTitle();
+    load();
+}
+
+function getCurrencySymbol(code) {
+    return {GBP:'£', USD:'$', EUR:'€'}[code] || code + ' ';
+}
+
+function load() {
+    updateMonthTitle();
+    fetch(`/api/budget/summary?year=${currentYear}&month=${currentMonth}`)
+        .then(r => r.json())
+        .then(r => {
+            if (!r.ok) return;
+            const d = r.data;
+            const sym = '£';
+
+            // Overview
+            document.getElementById("total-income").textContent = sym + d.total_monthly_income.toFixed(2);
+            document.getElementById("total-bills").textContent = sym + d.monthly_bills.toFixed(2);
+            const remaining = d.monthly_remaining;
+            const remEl = document.getElementById("total-remaining");
+            remEl.textContent = (remaining >= 0 ? '+' : '') + sym + remaining.toFixed(2);
+            remEl.style.color = remaining >= 0 ? 'var(--success)' : 'var(--danger)';
+            document.getElementById("total-payments").textContent = sym + d.upcoming_payments_total.toFixed(2);
+            document.getElementById("total-income-events").textContent = sym + d.upcoming_income_total.toFixed(2);
+            document.getElementById("overview").style.display = "grid";
+
+            // Income
+            if (d.incomes.length > 0) {
+                document.getElementById("income-list").innerHTML = d.incomes.map(inc => `
+                    <div class="income-row">
+                        <span style="font-weight:500; min-width:80px;">${inc.username}</span>
+                        <span class="text-tertiary text-xs">${sym}</span>
+                        <input type="number" class="income-input" value="${inc.monthly_income || ''}" placeholder="0.00" step="0.01" onchange="saveIncome('${inc.username}', this.value)">
+                        <span class="text-tertiary text-xs">/month</span>
+                    </div>
+                `).join("");
+                document.getElementById("income-section").style.display = "";
+            }
+
+            // Chart
+            if (d.bills.length > 0) {
+                const maxMonthly = Math.max(...d.bills.map(b => b.monthly_equivalent));
+                document.getElementById("chart-bars").innerHTML = d.bills
+                    .sort((a, b) => b.monthly_equivalent - a.monthly_equivalent)
+                    .map((b, i) => {
+                        const pct = maxMonthly > 0 ? (b.monthly_equivalent / maxMonthly) * 100 : 0;
+                        const color = COLORS[i % COLORS.length];
+                        return `<div class="budget-bar-row">
+                            <span class="budget-bar-label">${b.title}</span>
+                            <div class="budget-bar-track">
+                                <div class="budget-bar-fill" style="width:${pct}%; background:${color};"></div>
+                            </div>
+                            <span class="budget-bar-amount">${getCurrencySymbol(b.currency)}${b.monthly_equivalent.toFixed(2)}</span>
+                        </div>`;
+                    }).join("");
+                document.getElementById("chart-card").style.display = "";
+            }
+
+            // Bills table
+            if (d.bills.length > 0) {
+                document.getElementById("bills-body").innerHTML = d.bills
+                    .sort((a, b) => b.monthly_equivalent - a.monthly_equivalent)
+                    .map(b => `<tr>
+                        <td class="font-medium">${b.title}</td>
+                        <td>${getCurrencySymbol(b.currency)}${b.amount.toFixed(2)}</td>
+                        <td><span class="badge badge-ghost">${b.recurrence}</span></td>
+                        <td>${getCurrencySymbol(b.currency)}${b.monthly_equivalent.toFixed(2)}</td>
+                        <td class="text-tertiary text-xs">${b.created_by || ''}</td>
+                        <td><span class="paid-badge ${b.is_paid ? 'paid' : 'unpaid'}" onclick="togglePaid(${b.id})">${b.is_paid ? 'Paid' : 'Due'}</span></td>
+                    </tr>`).join("");
+            } else {
+                document.getElementById("bills-body").innerHTML = '<tr><td colspan="6" style="text-align:center; padding:2rem; color:var(--text-tertiary);">No recurring bills</td></tr>';
+            }
+
+            // Payments table
+            if (d.payments.length > 0) {
+                document.getElementById("payments-body").innerHTML = d.payments
+                    .sort((a, b) => a.date.localeCompare(b.date))
+                    .map(p => `<tr>
+                        <td class="font-medium">${p.title}</td>
+                        <td>${getCurrencySymbol(p.currency)}${p.amount.toFixed(2)}</td>
+                        <td>${p.date}</td>
+                        <td class="text-tertiary text-xs">${p.created_by || ''}</td>
+                        <td><span class="paid-badge ${p.is_paid ? 'paid' : 'unpaid'}" onclick="togglePaid(${p.id})">${p.is_paid ? 'Paid' : 'Due'}</span></td>
+                    </tr>`).join("");
+            } else {
+                document.getElementById("payments-body").innerHTML = '<tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--text-tertiary);">No one-off payments</td></tr>';
+            }
+
+            // Income events table
+            if (d.income_events && d.income_events.length > 0) {
+                document.getElementById("income-events-body").innerHTML = d.income_events
+                    .sort((a, b) => a.date.localeCompare(b.date))
+                    .map(i => `<tr>
+                        <td class="font-medium">${i.title}</td>
+                        <td style="color:var(--success);">${getCurrencySymbol(i.currency)}${i.amount.toFixed(2)}</td>
+                        <td>${i.date}</td>
+                        <td class="text-tertiary text-xs">${i.created_by || ''}</td>
+                        <td><span class="paid-badge ${i.is_paid ? 'paid' : 'unpaid'}" onclick="togglePaid(${i.id})">${i.is_paid ? 'Received' : 'Pending'}</span></td>
+                    </tr>`).join("");
+            } else {
+                document.getElementById("income-events-body").innerHTML = '<tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--text-tertiary);">No one-off income</td></tr>';
+            }
+        });
+}
+
+function togglePaid(id) {
+    fetch(`/api/calendar/events/${id}/toggle-paid`, {
+        method: "POST",
+        headers: {"X-CSRFToken": CSRF}
+    }).then(r => r.json()).then(r => { if (r.ok) load(); });
+}
+
+function saveIncome(username, value) {
+    fetch("/api/budget/income", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({username: username, monthly_income: parseFloat(value) || 0})
+    }).then(r => r.json()).then(r => { if (r.ok) load(); });
+}
+
+function switchView(view) {
+    currentView = view;
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelector(`.tab[data-tab="${view}"]`).classList.add("active");
+
+    if (view === "monthly") {
+        document.getElementById("view-monthly").classList.remove("hidden");
+        document.getElementById("view-yearly").classList.add("hidden");
+        document.getElementById("overview").style.display = "grid";
+        document.getElementById("income-section").style.display = "";
+        document.getElementById("chart-card").style.display = "";
+        document.getElementById("bills-table").style.display = "";
+        document.getElementById("payments-table").style.display = "";
+        document.getElementById("income-events-table").style.display = "";
+        load();
+    } else {
+        document.getElementById("view-monthly").classList.add("hidden");
+        document.getElementById("view-yearly").classList.remove("hidden");
+        document.getElementById("overview").style.display = "none";
+        document.getElementById("income-section").style.display = "none";
+        document.getElementById("chart-card").style.display = "none";
+        document.getElementById("bills-table").style.display = "none";
+        document.getElementById("payments-table").style.display = "none";
+        document.getElementById("income-events-table").style.display = "none";
+        loadYear();
+    }
+}
+
+function changeYear(dir) {
+    currentYear += dir;
+    loadYear();
+}
+
+function loadYear() {
+    document.getElementById("year-title").textContent = currentYear;
+    fetch(`/api/budget/yearly?year=${currentYear}`).then(r => r.json()).then(r => {
+        if (!r.ok) return;
+        const d = r.data;
+        const sym = '£';
+
+        document.getElementById("year-overview").innerHTML = `
+            <div class="glass-card" style="text-align:center;">
+                <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Annual Income</p>
+                <p style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:var(--success);">${sym}${d.yearly_income.toLocaleString()}</p>
+            </div>
+            <div class="glass-card" style="text-align:center;">
+                <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Annual Bills</p>
+                <p style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:var(--danger);">${sym}${d.yearly_bills.toLocaleString()}</p>
+            </div>
+            <div class="glass-card" style="text-align:center;">
+                <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Annual Net</p>
+                <p style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:${d.yearly_net >= 0 ? 'var(--success)' : 'var(--danger)'};">${d.yearly_net >= 0 ? '+' : ''}${sym}${d.yearly_net.toLocaleString()}</p>
+            </div>
+        `;
+
+        document.getElementById("year-body").innerHTML = d.months.map(m => {
+            const monthName = MONTHS[m.month - 1];
+            const netColor = m.net >= 0 ? 'color:var(--success)' : 'color:var(--danger)';
+            return `<tr>
+                <td class="font-medium">${monthName}</td>
+                <td style="color:var(--success);">${sym}${m.income.toFixed(0)}</td>
+                <td style="color:var(--danger);">${sym}${m.bills.toFixed(0)}</td>
+                <td>${m.payments > 0 ? sym + m.payments.toFixed(0) : '—'}</td>
+                <td>${m.income_events > 0 ? sym + m.income_events.toFixed(0) : '—'}</td>
+                <td style="${netColor}; font-weight:600;">${m.net >= 0 ? '+' : ''}${sym}${m.net.toFixed(0)}</td>
+            </tr>`;
+        }).join("");
+    });
+}
+
+load();
+</script>
+{% endblock %}

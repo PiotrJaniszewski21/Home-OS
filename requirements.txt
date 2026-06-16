@@ -1,0 +1,11 @@
+flask>=3.0
+gunicorn>=21.2
+flask-login>=0.6
+flask-wtf>=1.2
+flask-sqlalchemy>=3.1
+sqlalchemy>=2.0
+argon2-cffi>=23.1
+psutil>=5.9
+pyyaml>=6.0
+python-dotenv>=1.0
+httpx>=0.25

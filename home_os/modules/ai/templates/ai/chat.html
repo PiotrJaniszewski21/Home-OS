@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}AI Assistant — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto flex flex-col" style="height: calc(100vh - 10rem);">
+    <div class="flex items-center justify-between mb-4">
+        <h1>AI Assistant</h1>
+        <a href="{{ url_for('ai.settings') }}" class="btn btn-ghost" style="font-size:0.75rem;">Settings</a>
+    </div>
+
+    <!-- Messages -->
+    <div id="messages" class="flex-1 overflow-y-auto space-y-4 mb-4 pr-2" style="padding: 1rem;">
+        <div class="text-center text-tertiary text-sm" style="padding: 3rem 0;">
+            Ask me about your files, storage, or system status.
+        </div>
+    </div>
+
+    <!-- Input -->
+    <div class="flex gap-3">
+        <input type="text" id="input" placeholder="Ask something..." class="glass-input flex-1" style="padding: 0.75rem 1rem;" onkeydown="if(event.key==='Enter')sendMessage()">
+        <button onclick="sendMessage()" id="send-btn" class="btn btn-primary">Send</button>
+    </div>
+</div>
+
+<script>
+const CSRF = "{{ csrf_token() }}";
+let history = [];
+
+function addMessage(role, content) {
+    const container = document.getElementById("messages");
+    const placeholder = container.querySelector(".text-center");
+    if (placeholder) placeholder.remove();
+
+    const div = document.createElement("div");
+    div.style.display = "flex";
+    div.style.justifyContent = role === "user" ? "flex-end" : "flex-start";
+
+    const bubble = document.createElement("div");
+    bubble.className = role === "user" ? "chat-bubble-user" : "chat-bubble-assistant";
+    bubble.textContent = content;
+
+    div.appendChild(bubble);
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function setLoading(on) {
+    document.getElementById("send-btn").disabled = on;
+    document.getElementById("input").disabled = on;
+    if (on) {
+        addMessage("assistant", "Thinking...");
+    }
+}
+
+function removeLoading() {
+    const container = document.getElementById("messages");
+    const last = container.lastElementChild;
+    if (last && last.textContent === "Thinking...") {
+        last.remove();
+    }
+}
+
+function sendMessage() {
+    const input = document.getElementById("input");
+    const message = input.value.trim();
+    if (!message) return;
+
+    input.value = "";
+    addMessage("user", message);
+    setLoading(true);
+
+    fetch("/api/ai/chat", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({message, history})
+    })
+    .then(r => r.json())
+    .then(r => {
+        removeLoading();
+        if (r.ok) {
+            addMessage("assistant", r.data.response);
+            history.push({role: "user", content: message});
+            history.push({role: "assistant", content: r.data.response});
+            if (history.length > 20) history = history.slice(-20);
+        } else {
+            addMessage("assistant", "Error: " + (r.error || "Something went wrong"));
+        }
+    })
+    .catch(e => {
+        removeLoading();
+        addMessage("assistant", "Error: Could not reach the server");
+    })
+    .finally(() => {
+        document.getElementById("send-btn").disabled = false;
+        document.getElementById("input").disabled = false;
+        document.getElementById("input").focus();
+    });
+}
+</script>
+{% endblock %}

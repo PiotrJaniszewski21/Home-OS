@@ -1,0 +1,578 @@
+{% extends "base.html" %}
+{% block title %}Media — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <h1 class="mb-6">Media</h1>
+
+    <!-- Plex Media Server -->
+    <div class="glass-card mb-4" id="plex-card">
+        <div class="flex items-center gap-3 mb-2">
+            <div class="service-icon" style="background:linear-gradient(135deg, #e5a00d, #f9c846);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="9,4 9,20 20,12"/></svg>
+            </div>
+            <div>
+                <h2 class="service-title">Plex Media Server</h2>
+                <p class="text-secondary text-xs" id="plex-version">Stream your media to any device</p>
+            </div>
+            <span id="plex-badge" class="badge" style="margin-left:auto;"></span>
+            <button class="gear-btn" onclick="toggleSettings('plex')" id="plex-gear" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            </button>
+        </div>
+        <div id="plex-settings" class="settings-popup hidden">
+            <div class="settings-popup-content">
+                <h4 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Plex Settings</h4>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Port</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="plex-port-input" class="port-input" onchange="savePort('plex', this.value)">
+                        <span id="plex-port-saved" class="port-saved hidden">Saved</span>
+                    </div>
+                </div>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Service</label>
+                    <div class="flex gap-2">
+                        <button id="plex-settings-toggle" onclick="toggleService('plex')" class="btn btn-ghost btn-sm"></button>
+                        <button onclick="updatePlex()" class="btn btn-ghost btn-sm">Update</button>
+                    </div>
+                </div>
+                <div class="settings-row" style="border-bottom:none;">
+                    <label class="text-secondary text-xs">Danger</label>
+                    <button onclick="uninstallService('plex')" class="btn btn-ghost btn-sm danger">Uninstall</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="plex-not-installed" class="hidden service-install-prompt">
+            <p class="text-secondary text-sm mb-4">Organize and stream movies, TV shows, music, and photos to any device.</p>
+            <button onclick="installService('plex')" id="plex-install-btn" class="btn btn-primary">Install</button>
+            <p id="plex-install-status" class="text-tertiary text-xs mt-3"></p>
+        </div>
+
+        <div id="plex-installed" class="hidden">
+            <div id="plex-stats" class="grid grid-cols-4 gap-3 mb-3 hidden">
+                <div class="stat-card"><p class="stat-label">Libraries</p><p id="stat-libraries" class="stat-value">—</p></div>
+                <div class="stat-card"><p class="stat-label">Items</p><p id="stat-items" class="stat-value">—</p></div>
+                <div class="stat-card"><p class="stat-label">Streaming</p><p id="stat-sessions" class="stat-value" style="color:var(--success);">—</p></div>
+                <div class="stat-card"><p class="stat-label">Server</p><p id="stat-server" class="stat-value">—</p></div>
+            </div>
+            <div id="plex-libraries" class="hidden mb-3">
+                <div class="glass-panel" style="padding:0; overflow:hidden;">
+                    <div style="padding:0.5rem 0.75rem; border-bottom:1px solid rgba(0,60,120,0.06);">
+                        <h3 class="text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Libraries</h3>
+                    </div>
+                    <div id="libraries-list" style="padding:0.4rem 0.75rem;"></div>
+                </div>
+            </div>
+            <div class="service-controls">
+                <a id="plex-open-link" href="https://app.plex.tv" target="_blank" class="btn btn-primary">Open Plex</a>
+                <button id="plex-toggle-btn" onclick="toggleService('plex')" class="btn btn-ghost"></button>
+            </div>
+        </div>
+
+        <div id="plex-loading" class="service-loading"><p class="text-tertiary text-sm">Checking...</p></div>
+    </div>
+
+    <!-- Sonarr -->
+    <div class="glass-card mb-4" id="sonarr-card">
+        <div class="flex items-center gap-3 mb-2">
+            <div class="service-icon" style="background:linear-gradient(135deg, #35c5f4, #2196F3);">
+                <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2" fill="none" stroke="white" stroke-width="2"/><path d="M8 12h8M8 16h5" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </div>
+            <div>
+                <h2 class="service-title">Sonarr</h2>
+                <p class="text-secondary text-xs">TV show management and automation</p>
+            </div>
+            <span id="sonarr-badge" class="badge" style="margin-left:auto;"></span>
+            <button class="gear-btn" onclick="toggleSettings('sonarr')" id="sonarr-gear" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            </button>
+        </div>
+        <div id="sonarr-settings" class="settings-popup hidden">
+            <div class="settings-popup-content">
+                <h4 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Sonarr Settings</h4>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Port</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="sonarr-port-input" class="port-input" onchange="savePort('sonarr', this.value)">
+                        <span id="sonarr-port-saved" class="port-saved hidden">Saved</span>
+                    </div>
+                </div>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Service</label>
+                    <button id="sonarr-settings-toggle" onclick="toggleService('sonarr')" class="btn btn-ghost btn-sm"></button>
+                </div>
+                <div class="settings-row" style="border-bottom:none;">
+                    <label class="text-secondary text-xs">Danger</label>
+                    <button onclick="uninstallService('sonarr')" class="btn btn-ghost btn-sm danger">Uninstall</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="sonarr-not-installed" class="hidden service-install-prompt">
+            <p class="text-secondary text-sm mb-4">Automatically download and manage your TV show collection.</p>
+            <button onclick="installService('sonarr')" id="sonarr-install-btn" class="btn btn-primary">Install</button>
+            <p id="sonarr-install-status" class="text-tertiary text-xs mt-3"></p>
+        </div>
+
+        <div id="sonarr-installed" class="hidden">
+            <div class="service-controls">
+                <a id="sonarr-open-link" href="" target="_blank" class="btn btn-primary">Open</a>
+                <button id="sonarr-toggle-btn" onclick="toggleService('sonarr')" class="btn btn-ghost"></button>
+            </div>
+        </div>
+
+        <div id="sonarr-loading" class="service-loading"><p class="text-tertiary text-sm">Checking...</p></div>
+    </div>
+
+    <!-- Radarr -->
+    <div class="glass-card mb-4" id="radarr-card">
+        <div class="flex items-center gap-3 mb-2">
+            <div class="service-icon" style="background:linear-gradient(135deg, #ffc230, #f5a623);">
+                <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="white" stroke-width="2"/><polygon points="10,8 10,16 16,12" fill="white"/></svg>
+            </div>
+            <div>
+                <h2 class="service-title">Radarr</h2>
+                <p class="text-secondary text-xs">Movie management and automation</p>
+            </div>
+            <span id="radarr-badge" class="badge" style="margin-left:auto;"></span>
+            <button class="gear-btn" onclick="toggleSettings('radarr')" id="radarr-gear" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            </button>
+        </div>
+        <div id="radarr-settings" class="settings-popup hidden">
+            <div class="settings-popup-content">
+                <h4 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Radarr Settings</h4>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Port</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="radarr-port-input" class="port-input" onchange="savePort('radarr', this.value)">
+                        <span id="radarr-port-saved" class="port-saved hidden">Saved</span>
+                    </div>
+                </div>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Service</label>
+                    <button id="radarr-settings-toggle" onclick="toggleService('radarr')" class="btn btn-ghost btn-sm"></button>
+                </div>
+                <div class="settings-row" style="border-bottom:none;">
+                    <label class="text-secondary text-xs">Danger</label>
+                    <button onclick="uninstallService('radarr')" class="btn btn-ghost btn-sm danger">Uninstall</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="radarr-not-installed" class="hidden service-install-prompt">
+            <p class="text-secondary text-sm mb-4">Automatically download and manage your movie collection.</p>
+            <button onclick="installService('radarr')" id="radarr-install-btn" class="btn btn-primary">Install</button>
+            <p id="radarr-install-status" class="text-tertiary text-xs mt-3"></p>
+        </div>
+
+        <div id="radarr-installed" class="hidden">
+            <div class="service-controls">
+                <a id="radarr-open-link" href="" target="_blank" class="btn btn-primary">Open</a>
+                <button id="radarr-toggle-btn" onclick="toggleService('radarr')" class="btn btn-ghost"></button>
+            </div>
+        </div>
+
+        <div id="radarr-loading" class="service-loading"><p class="text-tertiary text-sm">Checking...</p></div>
+    </div>
+
+    <!-- Prowlarr -->
+    <div class="glass-card mb-4" id="prowlarr-card">
+        <div class="flex items-center gap-3 mb-2">
+            <div class="service-icon" style="background:linear-gradient(135deg, #7b68ee, #5b4fcf);">
+                <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="white" stroke-width="2"/><path d="M16 16l4 4" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+            <div>
+                <h2 class="service-title">Prowlarr</h2>
+                <p class="text-secondary text-xs">Indexer management for Sonarr and Radarr</p>
+            </div>
+            <span id="prowlarr-badge" class="badge" style="margin-left:auto;"></span>
+            <button class="gear-btn" onclick="toggleSettings('prowlarr')" id="prowlarr-gear" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            </button>
+        </div>
+        <div id="prowlarr-settings" class="settings-popup hidden">
+            <div class="settings-popup-content">
+                <h4 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Prowlarr Settings</h4>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Port</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="prowlarr-port-input" class="port-input" onchange="savePort('prowlarr', this.value)">
+                        <span id="prowlarr-port-saved" class="port-saved hidden">Saved</span>
+                    </div>
+                </div>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Service</label>
+                    <button id="prowlarr-settings-toggle" onclick="toggleService('prowlarr')" class="btn btn-ghost btn-sm"></button>
+                </div>
+                <div class="settings-row" style="border-bottom:none;">
+                    <label class="text-secondary text-xs">Danger</label>
+                    <button onclick="uninstallService('prowlarr')" class="btn btn-ghost btn-sm danger">Uninstall</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="prowlarr-not-installed" class="hidden service-install-prompt">
+            <p class="text-secondary text-sm mb-4">Manage indexers and sync them to Sonarr, Radarr, and other apps.</p>
+            <button onclick="installService('prowlarr')" id="prowlarr-install-btn" class="btn btn-primary">Install</button>
+            <p id="prowlarr-install-status" class="text-tertiary text-xs mt-3"></p>
+        </div>
+
+        <div id="prowlarr-installed" class="hidden">
+            <div class="service-controls">
+                <a id="prowlarr-open-link" href="" target="_blank" class="btn btn-primary">Open</a>
+                <button id="prowlarr-toggle-btn" onclick="toggleService('prowlarr')" class="btn btn-ghost"></button>
+            </div>
+        </div>
+
+        <div id="prowlarr-loading" class="service-loading"><p class="text-tertiary text-sm">Checking...</p></div>
+    </div>
+
+    <!-- Overseerr -->
+    <div class="glass-card mb-4" id="overseerr-card">
+        <div class="flex items-center gap-3 mb-2">
+            <div class="service-icon" style="background:linear-gradient(135deg, #6366f1, #8b5cf6);">
+                <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div>
+                <h2 class="service-title">Overseerr</h2>
+                <p class="text-secondary text-xs">Media request and discovery</p>
+            </div>
+            <span id="overseerr-badge" class="badge" style="margin-left:auto;"></span>
+            <button class="gear-btn" onclick="toggleSettings('overseerr')" id="overseerr-gear" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            </button>
+        </div>
+        <div id="overseerr-settings" class="settings-popup hidden">
+            <div class="settings-popup-content">
+                <h4 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Overseerr Settings</h4>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Port</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="overseerr-port-input" class="port-input" onchange="savePort('overseerr', this.value)">
+                        <span id="overseerr-port-saved" class="port-saved hidden">Saved</span>
+                    </div>
+                </div>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Service</label>
+                    <button id="overseerr-settings-toggle" onclick="toggleService('overseerr')" class="btn btn-ghost btn-sm"></button>
+                </div>
+                <div class="settings-row" style="border-bottom:none;">
+                    <label class="text-secondary text-xs">Danger</label>
+                    <button onclick="uninstallService('overseerr')" class="btn btn-ghost btn-sm danger">Uninstall</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="overseerr-not-installed" class="hidden service-install-prompt">
+            <p class="text-secondary text-sm mb-4">Let users request movies and TV shows with automatic integration to Sonarr and Radarr.</p>
+            <button onclick="installService('overseerr')" id="overseerr-install-btn" class="btn btn-primary">Install</button>
+            <p id="overseerr-install-status" class="text-tertiary text-xs mt-3"></p>
+        </div>
+
+        <div id="overseerr-installed" class="hidden">
+            <div class="service-controls">
+                <a id="overseerr-open-link" href="" target="_blank" class="btn btn-primary">Open</a>
+                <button id="overseerr-toggle-btn" onclick="toggleService('overseerr')" class="btn btn-ghost"></button>
+            </div>
+        </div>
+
+        <div id="overseerr-loading" class="service-loading"><p class="text-tertiary text-sm">Checking...</p></div>
+    </div>
+
+    <!-- qBittorrent -->
+    <div class="glass-card mb-4" id="qbittorrent-card">
+        <div class="flex items-center gap-3 mb-2">
+            <div class="service-icon" style="background:linear-gradient(135deg, #2f67ba, #4b8be0);">
+                <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+            </div>
+            <div>
+                <h2 class="service-title">qBittorrent</h2>
+                <p class="text-secondary text-xs">Torrent client with web interface</p>
+            </div>
+            <span id="qbittorrent-badge" class="badge" style="margin-left:auto;"></span>
+            <button class="gear-btn" onclick="toggleSettings('qbittorrent')" id="qbittorrent-gear" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            </button>
+        </div>
+        <div id="qbittorrent-settings" class="settings-popup hidden">
+            <div class="settings-popup-content">
+                <h4 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">qBittorrent Settings</h4>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Port</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="qbittorrent-port-input" class="port-input" onchange="savePort('qbittorrent', this.value)">
+                        <span id="qbittorrent-port-saved" class="port-saved hidden">Saved</span>
+                    </div>
+                </div>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Service</label>
+                    <button id="qbittorrent-settings-toggle" onclick="toggleService('qbittorrent')" class="btn btn-ghost btn-sm"></button>
+                </div>
+                <div class="settings-row" style="border-bottom:none;">
+                    <label class="text-secondary text-xs">Danger</label>
+                    <button onclick="uninstallService('qbittorrent')" class="btn btn-ghost btn-sm danger">Uninstall</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="qbittorrent-not-installed" class="hidden service-install-prompt">
+            <p class="text-secondary text-sm mb-4">Lightweight torrent client with a built-in web UI for remote management.</p>
+            <button onclick="installService('qbittorrent')" id="qbittorrent-install-btn" class="btn btn-primary">Install</button>
+            <p id="qbittorrent-install-status" class="text-tertiary text-xs mt-3"></p>
+        </div>
+
+        <div id="qbittorrent-installed" class="hidden">
+            <div id="qbittorrent-frame-wrap" class="hidden" style="margin-bottom:0.75rem;">
+                <iframe id="qbittorrent-frame" src="" class="service-frame"></iframe>
+            </div>
+            <div class="service-controls">
+                <button id="qbittorrent-toggle-frame" onclick="toggleFrame('qbittorrent')" class="btn btn-primary">Open UI</button>
+                <a id="qbittorrent-open-link" href="/qbt/" target="_blank" class="btn btn-ghost" style="font-size:0.75rem;">New Tab</a>
+                <button id="qbittorrent-toggle-btn" onclick="toggleService('qbittorrent')" class="btn btn-ghost"></button>
+            </div>
+        </div>
+
+        <div id="qbittorrent-loading" class="service-loading"><p class="text-tertiary text-sm">Checking...</p></div>
+    </div>
+</div>
+
+<style>
+.service-icon { width:36px; height:36px; border-radius:9px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.service-title { font-size:1rem; font-weight:600; }
+.service-install-prompt { text-align:center; padding:1rem 0; }
+.service-controls { display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem; }
+.service-loading { text-align:center; padding:1rem 0; }
+.stat-card { background:rgba(255,255,255,0.4); border:1px solid var(--border-glass); border-radius:var(--radius-sm); text-align:center; padding:0.6rem; }
+.stat-label { font-size:0.625rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); }
+.stat-value { font-size:1.25rem; font-weight:700; margin-top:0.15rem; }
+.lib-row { display:flex; align-items:center; justify-content:space-between; padding:0.35rem 0; border-bottom:1px solid rgba(0,60,120,0.04); }
+.lib-row:last-child { border-bottom:none; }
+.lib-icon { font-size:0.875rem; width:1.25rem; text-align:center; }
+.lib-name { font-size:0.8125rem; font-weight:500; color:var(--text-primary); }
+.lib-count { font-size:0.75rem; color:var(--text-tertiary); }
+.lib-type { font-size:0.625rem; color:var(--text-tertiary); background:rgba(0,60,120,0.04); padding:0.1rem 0.35rem; border-radius:4px; }
+.gear-btn { background:none; border:none; color:var(--text-tertiary); cursor:pointer; padding:0.35rem; border-radius:6px; transition:color 0.15s, background 0.15s; display:flex; align-items:center; }
+.gear-btn:hover { color:var(--text-primary); background:rgba(0,60,120,0.06); }
+.settings-popup { margin-top:0.5rem; animation: slideDown 0.15s ease-out; }
+.settings-popup.hidden { display:none; }
+.settings-popup-content { background:rgba(255,255,255,0.6); backdrop-filter:blur(12px); border:1px solid var(--border-glass); border-radius:var(--radius-sm); padding:1rem; }
+.settings-row { display:flex; align-items:center; justify-content:space-between; padding:0.6rem 0; border-bottom:1px solid rgba(0,60,120,0.06); }
+.port-input { width:5rem; padding:0.3rem 0.5rem; font-size:0.75rem; border:1px solid var(--border-glass); border-radius:4px; background:rgba(255,255,255,0.8); }
+.port-saved { font-size:0.625rem; color:var(--success); }
+.btn-sm { font-size:0.75rem; padding:0.3rem 0.6rem; }
+.service-frame { width:100%; height:600px; border:1px solid var(--border-glass); border-radius:var(--radius-sm); background:#fff; }
+@keyframes slideDown { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+</style>
+
+<script>
+const CSRF = "{{ csrf_token() }}";
+const ALL_SERVICES = ["plex", "sonarr", "radarr", "prowlarr", "overseerr", "qbittorrent"];
+const LIB_ICONS = {"movie": "🎬", "show": "📺", "artist": "🎵", "photo": "📷"};
+let serviceState = {};
+
+function loadServiceStatus(service) {
+    fetch(`/api/media/${service}/status`).then(r => r.json()).then(r => {
+        const el = (id) => document.getElementById(id);
+        el(`${service}-loading`).classList.add("hidden");
+        const d = r.data;
+        const badge = el(`${service}-badge`);
+        serviceState[service] = d;
+
+        if (!d.installed) {
+            el(`${service}-not-installed`).classList.remove("hidden");
+            el(`${service}-installed`).classList.add("hidden");
+            badge.className = "badge badge-ghost";
+            badge.textContent = "Not Installed";
+        } else {
+            el(`${service}-not-installed`).classList.add("hidden");
+            el(`${service}-installed`).classList.remove("hidden");
+
+            if (PROXY_MAP[service]) {
+                el(`${service}-open-link`).href = PROXY_MAP[service];
+            } else if (service !== "plex") {
+                const webPath = d.web_path || "";
+                el(`${service}-open-link`).href = "http://" + window.location.hostname + ":" + d.port + webPath;
+            }
+
+            // Populate port input
+            const portInput = el(`${service}-port-input`);
+            if (portInput) portInput.value = d.port;
+
+            if (d.running) {
+                badge.className = "badge badge-success";
+                badge.textContent = "Running";
+                el(`${service}-toggle-btn`).textContent = "Stop";
+                el(`${service}-toggle-btn`).className = "btn btn-ghost danger";
+            } else {
+                badge.className = "badge badge-danger";
+                badge.textContent = "Stopped";
+                el(`${service}-toggle-btn`).textContent = "Start";
+                el(`${service}-toggle-btn`).className = "btn btn-ghost";
+            }
+
+            // Update settings popup toggle button
+            const settingsToggle = el(`${service}-settings-toggle`);
+            if (settingsToggle) {
+                settingsToggle.textContent = d.running ? "Stop" : "Start";
+                settingsToggle.className = d.running ? "btn btn-ghost btn-sm danger" : "btn btn-ghost btn-sm";
+            }
+
+            if (service === "plex" && d.running) loadPlexStats();
+        }
+    }).catch(() => {
+        document.getElementById(`${service}-loading`).innerHTML = '<p class="text-tertiary text-sm">Failed to check</p>';
+    });
+}
+
+function loadPlexStats() {
+    fetch("/api/media/plex/stats").then(r => r.json()).then(r => {
+        if (!r.ok) return;
+        const d = r.data;
+        document.getElementById("plex-version").textContent = "v" + d.version;
+        document.getElementById("stat-libraries").textContent = d.library_count;
+        document.getElementById("stat-items").textContent = d.total_items.toLocaleString();
+        document.getElementById("stat-sessions").textContent = d.active_sessions;
+        document.getElementById("stat-server").textContent = d.server_name;
+        document.getElementById("plex-stats").classList.remove("hidden");
+
+        if (d.libraries && d.libraries.length > 0) {
+            document.getElementById("plex-libraries").classList.remove("hidden");
+            document.getElementById("libraries-list").innerHTML = d.libraries.map(lib => `
+                <div class="lib-row">
+                    <div class="flex items-center gap-2">
+                        <span class="lib-icon">${LIB_ICONS[lib.type] || "📁"}</span>
+                        <span class="lib-name">${lib.title}</span>
+                        <span class="lib-type">${lib.type}</span>
+                    </div>
+                    <span class="lib-count">${lib.count.toLocaleString()} items</span>
+                </div>
+            `).join("");
+        }
+    }).catch(() => {});
+}
+
+function installService(service) {
+    const btn = document.getElementById(`${service}-install-btn`);
+    const status = document.getElementById(`${service}-install-status`);
+    btn.disabled = true;
+    btn.textContent = "Installing...";
+    status.textContent = "This may take a few minutes...";
+
+    fetch(`/api/media/${service}/install`, {method: "POST", headers: {"X-CSRFToken": CSRF}})
+        .then(r => r.json())
+        .then(r => {
+            if (r.ok) {
+                status.textContent = "Installed!";
+                status.style.color = "var(--success)";
+                setTimeout(() => loadServiceStatus(service), 1500);
+            } else {
+                status.textContent = r.error || "Failed";
+                status.style.color = "var(--danger)";
+                btn.disabled = false;
+                btn.textContent = "Retry";
+            }
+        })
+        .catch(() => { status.textContent = "Network error"; btn.disabled = false; btn.textContent = "Retry"; });
+}
+
+function toggleService(service) {
+    const running = serviceState[service] && serviceState[service].running;
+    const endpoint = running ? "stop" : "start";
+    const btn = document.getElementById(`${service}-toggle-btn`);
+    btn.disabled = true;
+    btn.textContent = running ? "Stopping..." : "Starting...";
+
+    fetch(`/api/media/${service}/${endpoint}`, {method: "POST", headers: {"X-CSRFToken": CSRF}})
+        .then(r => r.json())
+        .then(r => {
+            if (r.ok) setTimeout(() => loadServiceStatus(service), 1500);
+            else { alert(r.error || "Failed"); btn.disabled = false; loadServiceStatus(service); }
+        })
+        .catch(() => { btn.disabled = false; loadServiceStatus(service); });
+}
+
+function uninstallService(service) {
+    const name = service.charAt(0).toUpperCase() + service.slice(1);
+    if (!confirm(`Uninstall ${name}? This will remove the application and its configuration.`)) return;
+
+    fetch(`/api/media/${service}/uninstall`, {method: "POST", headers: {"X-CSRFToken": CSRF}})
+        .then(r => r.json())
+        .then(r => {
+            if (r.ok) loadServiceStatus(service);
+            else alert(r.error || "Uninstall failed");
+        });
+}
+
+function updatePlex() {
+    if (!confirm("Update Plex to the latest version? The server will restart.")) return;
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = "Updating...";
+
+    fetch("/api/media/plex/update", {method: "POST", headers: {"X-CSRFToken": CSRF}})
+        .then(r => r.json())
+        .then(r => {
+            if (r.ok) {
+                btn.textContent = "Updated!";
+                setTimeout(() => { btn.textContent = "Update"; btn.disabled = false; loadServiceStatus("plex"); }, 2000);
+            } else { alert(r.error || "Update failed"); btn.disabled = false; btn.textContent = "Update"; }
+        })
+        .catch(() => { btn.disabled = false; btn.textContent = "Update"; });
+}
+
+function toggleSettings(service) {
+    const popup = document.getElementById(`${service}-settings`);
+    const isOpen = !popup.classList.contains("hidden");
+    // Close all other popups
+    ALL_SERVICES.forEach(s => {
+        const p = document.getElementById(`${s}-settings`);
+        if (p) p.classList.add("hidden");
+    });
+    if (!isOpen) popup.classList.remove("hidden");
+}
+
+function savePort(service, value) {
+    const port = parseInt(value);
+    if (!port || port < 1 || port > 65535) return;
+    fetch(`/api/media/${service}/port`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({port: port})
+    }).then(r => r.json()).then(r => {
+        const saved = document.getElementById(`${service}-port-saved`);
+        if (r.ok) {
+            saved.classList.remove("hidden");
+            setTimeout(() => saved.classList.add("hidden"), 2000);
+        }
+    });
+}
+
+const PROXY_MAP = {
+    "sonarr": "/svc/sonarr/",
+    "radarr": "/svc/radarr/",
+    "prowlarr": "/svc/prowlarr/",
+    "overseerr": "/svc/overseerr/",
+    "qbittorrent": "/qbt/"
+};
+
+function toggleFrame(service) {
+    const wrap = document.getElementById(`${service}-frame-wrap`);
+    const frame = document.getElementById(`${service}-frame`);
+    const btn = document.getElementById(`${service}-toggle-frame`);
+    if (wrap.classList.contains("hidden")) {
+        frame.src = PROXY_MAP[service];
+        wrap.classList.remove("hidden");
+        btn.textContent = "Hide UI";
+    } else {
+        wrap.classList.add("hidden");
+        frame.src = "";
+        btn.textContent = "Open UI";
+    }
+}
+
+ALL_SERVICES.forEach(loadServiceStatus);
+setInterval(() => { ALL_SERVICES.forEach(s => { if (serviceState[s] && serviceState[s].running) loadServiceStatus(s); }); }, 30000);
+</script>
+{% endblock %}

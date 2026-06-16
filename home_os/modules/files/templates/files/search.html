@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Search — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-5xl">
+    <div class="flex items-center gap-4 mb-6">
+        <a href="{{ url_for('files.browse') }}" class="text-gray-400 hover:text-primary text-sm">&larr; Files</a>
+        <h1 class="text-xl font-semibold">Search</h1>
+    </div>
+
+    <form action="{{ url_for('files.search_page') }}" method="GET" class="flex items-center gap-3 mb-6">
+        <input type="text" name="q" value="{{ query }}" placeholder="Search files..." class="flex-1 bg-background border border-border rounded-lg px-4 py-2 text-gray-200 focus:outline-none focus:border-primary">
+        <input type="text" name="ext" value="{{ ext }}" placeholder="ext (e.g. pdf,txt)" class="w-40 bg-background border border-border rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-primary text-sm">
+        <button type="submit" class="bg-primary hover:bg-blue-600 text-white px-4 py-2 rounded-lg">Search</button>
+    </form>
+
+    {% if query %}
+    <p class="text-sm text-gray-400 mb-4">{{ results|length }} result{{ 's' if results|length != 1 }} for "{{ query }}"</p>
+
+    <div class="bg-surface border border-border rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="border-b border-border">
+                <tr class="text-gray-400 text-left">
+                    <th class="px-4 py-3">Name</th>
+                    <th class="px-4 py-3 w-24">Size</th>
+                    <th class="px-4 py-3">Path</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in results %}
+                <tr class="border-b border-border/50 hover:bg-background/50">
+                    <td class="px-4 py-2">
+                        {% if entry.is_dir %}
+                        <a href="{{ url_for('files.browse', filepath=entry.path.lstrip('/')) }}" class="text-primary hover:underline">{{ entry.name }}/</a>
+                        {% else %}
+                        <a href="{{ url_for('files.browse', filepath=entry.path.lstrip('/')) }}" class="text-gray-200 hover:text-primary">{{ entry.name }}</a>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-2 text-gray-400 text-xs">
+                        {% if entry.size is not none %}
+                            {% if entry.size > 1048576 %}{{ "%.1f"|format(entry.size / 1048576) }} MB
+                            {% elif entry.size > 1024 %}{{ "%.1f"|format(entry.size / 1024) }} KB
+                            {% else %}{{ entry.size }} B{% endif %}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="px-4 py-2 text-gray-500 text-xs">{{ entry.path }}</td>
+                </tr>
+                {% endfor %}
+                {% if not results %}
+                <tr><td colspan="3" class="px-4 py-8 text-center text-gray-500">No results found</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

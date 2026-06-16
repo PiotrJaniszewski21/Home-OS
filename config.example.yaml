@@ -1,0 +1,35 @@
+server:
+  host: 0.0.0.0
+  port: 5000
+  debug: false
+  secret_key: change-me-in-production
+
+database:
+  path: data/home_os.db
+
+storage:
+  root: storage
+  trash_path: data/trash
+  trash_retention_days: 30
+
+adguard:
+  url: http://localhost:3000
+  username: ""
+  password: ""
+
+ai:
+  provider: ""
+  ollama:
+    url: http://localhost:11434
+    model: llama3
+  claude:
+    api_key: ""
+    model: claude-sonnet-4-6-20250514
+  openai:
+    api_key: ""
+    model: gpt-4o
+  bedrock:
+    access_key: ""
+    secret_key: ""
+    region: us-east-1
+    model: anthropic.claude-sonnet-4-6-20250514-v1:0
