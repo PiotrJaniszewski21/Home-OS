@@ -51,6 +51,19 @@ def create_app(config_path=None):
         # Skip CSRF for the login endpoint (no session yet)
         if request.path == "/api/login":
             return
+        # Skip CSRF token for proxied service UIs (their own JS makes POSTs)
+        # but enforce same-origin check to prevent cross-site forgery
+        if request.path.startswith("/qbt/") or request.path.startswith("/svc/"):
+            origin = request.headers.get("Origin") or ""
+            referer = request.headers.get("Referer") or ""
+            host = request.host
+            if origin and not origin.endswith("://" + host):
+                from flask import abort
+                abort(403)
+            if not origin and referer and not referer.startswith("https://" + host) and not referer.startswith("http://" + host):
+                from flask import abort
+                abort(403)
+            return
         csrf.protect()
 
     @login_manager.user_loader
@@ -80,6 +93,7 @@ def create_app(config_path=None):
     from home_os.modules.calendar import calendar_bp
     from home_os.modules.dns import dns_bp
     from home_os.modules.files import files_bp
+    from home_os.modules.media import media_bp
     from home_os.modules.monitor import monitor_bp
     from home_os.modules.network import network_bp
     from home_os.modules.settings import settings_bp
@@ -93,6 +107,7 @@ def create_app(config_path=None):
     app.register_blueprint(calendar_bp)
     app.register_blueprint(dns_bp)
     app.register_blueprint(files_bp)
+    app.register_blueprint(media_bp)
     app.register_blueprint(monitor_bp)
     app.register_blueprint(network_bp)
     app.register_blueprint(settings_bp)
@@ -124,11 +139,14 @@ def create_app(config_path=None):
     @app.after_request
     def security_headers(response):
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=()"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com"
+        if request.path.startswith("/qbt/") or request.path.startswith("/svc/"):
+            response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        else:
+            response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; frame-src 'self'"
         return response
 
     # Error pages

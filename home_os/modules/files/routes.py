@@ -11,21 +11,40 @@ from home_os.extensions import csrf
 from home_os.modules.files import files_bp
 
 
-def get_file_service():
+def get_file_service(system=False):
     from home_os.services.file_service import FileService
 
     config = current_app.config["_raw_config"]
+    if system:
+        trash = config["storage"]["trash_path"]
+        retention = config["storage"].get("trash_retention_days", 30)
+        return FileService("/", trash, retention)
     root = config["storage"]["root"]
     trash = config["storage"]["trash_path"]
     retention = config["storage"].get("trash_retention_days", 30)
     return FileService(root, trash, retention)
 
 
+def _get_file_service_from_request():
+    system = request.form.get("system", request.args.get("system", "")).lower() in ("1", "true")
+    if not system:
+        data = request.get_json(silent=True)
+        if data and str(data.get("system", "")).lower() in ("1", "true"):
+            system = True
+    if system and not current_user.is_admin:
+        return None, (jsonify({"ok": False, "error": "Access denied"}), 403)
+    return get_file_service(system=system), None
+
+
 @files_bp.route("/files")
 @files_bp.route("/files/<path:filepath>")
 @login_required
 def browse(filepath=""):
-    svc = get_file_service()
+    system_mode = request.args.get("system", "").lower() in ("1", "true")
+    if system_mode and not current_user.is_admin:
+        return jsonify({"ok": False, "error": "Access denied"}), 403
+
+    svc = get_file_service(system=system_mode)
     path = "/" + filepath
 
     try:
@@ -49,12 +68,23 @@ def browse(filepath=""):
         return jsonify({"ok": True, "data": {"path": path, "entries": entries}})
 
     parts = [p for p in path.split("/") if p]
-    breadcrumbs = [{"name": "Root", "path": "/"}]
+    breadcrumbs = [{"name": "System /" if system_mode else "Root", "path": "/"}]
     for i, part in enumerate(parts):
         breadcrumbs.append({"name": part, "path": "/" + "/".join(parts[: i + 1])})
 
+    storage_info = None
+    if path == "/" and not system_mode:
+        from home_os.services.storage_service import StorageService
+        config = current_app.config["_raw_config"]
+        storage_svc = StorageService(config["storage"]["root"])
+        storage_info = {
+            "main": storage_svc.get_main_storage_usage(),
+            "drives": storage_svc.detect_external_drives(),
+        }
+
     return render_template(
-        "files/browse.html", entries=entries, path=path, breadcrumbs=breadcrumbs
+        "files/browse.html", entries=entries, path=path, breadcrumbs=breadcrumbs,
+        system_mode=system_mode, storage_info=storage_info,
     )
 
 
@@ -63,7 +93,9 @@ def browse(filepath=""):
 def upload():
     from flask import redirect, url_for
 
-    svc = get_file_service()
+    svc, err = _get_file_service_from_request()
+    if err:
+        return err
     dest = request.form.get("path", "/")
 
     if "file" not in request.files:
@@ -85,7 +117,9 @@ def upload():
 @files_bp.route("/api/files/mkdir", methods=["POST"])
 @login_required
 def mkdir():
-    svc = get_file_service()
+    svc, err = _get_file_service_from_request()
+    if err:
+        return err
     data = request.get_json()
     path = data.get("path", "")
 
@@ -104,7 +138,9 @@ def mkdir():
 @files_bp.route("/api/files/rename", methods=["POST"])
 @login_required
 def rename():
-    svc = get_file_service()
+    svc, err = _get_file_service_from_request()
+    if err:
+        return err
     data = request.get_json()
     path = data.get("path", "")
     new_name = data.get("new_name", "")
@@ -126,7 +162,9 @@ def rename():
 @files_bp.route("/api/files/move", methods=["POST"])
 @login_required
 def move():
-    svc = get_file_service()
+    svc, err = _get_file_service_from_request()
+    if err:
+        return err
     data = request.get_json()
     src = data.get("src", "")
     dest = data.get("dest", "")
@@ -148,7 +186,9 @@ def move():
 @files_bp.route("/api/files/copy", methods=["POST"])
 @login_required
 def copy():
-    svc = get_file_service()
+    svc, err = _get_file_service_from_request()
+    if err:
+        return err
     data = request.get_json()
     src = data.get("src", "")
     dest = data.get("dest", "")
@@ -170,7 +210,9 @@ def copy():
 @files_bp.route("/api/files/delete", methods=["POST"])
 @login_required
 def delete():
-    svc = get_file_service()
+    svc, err = _get_file_service_from_request()
+    if err:
+        return err
     data = request.get_json()
     path = data.get("path", "")
 

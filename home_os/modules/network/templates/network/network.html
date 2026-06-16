@@ -128,10 +128,21 @@
                 <p id="install-status" class="text-tertiary text-xs mt-3"></p>
             </div>
 
+            <div id="adguard-installed-noconfig" class="glass-card hidden" style="text-align:center; padding:2.5rem;">
+                <p style="font-size:2.5rem; margin-bottom:0.75rem;">🛡️</p>
+                <h2 class="mb-2">AdGuard Home Installed</h2>
+                <p class="text-secondary text-sm mb-4">AdGuard Home is running. Open the dashboard to manage DNS and ad blocking settings.</p>
+                <a id="adguard-open-link" href="" target="_blank" class="btn btn-primary">Open AdGuard Home</a>
+                <p class="text-tertiary text-xs mt-3">Once configured, add your AdGuard credentials in <a href="/settings" class="text-accent">Settings</a> to see stats here.</p>
+            </div>
+
             <div id="adguard-panel" class="hidden">
                 <div class="flex items-center justify-between mb-4">
                     <span id="protection-status" class="badge"></span>
-                    <button id="toggle-btn" onclick="toggleProtection()" class="btn btn-ghost" style="font-size:0.75rem;"></button>
+                    <div class="flex items-center gap-2">
+                        <a id="adguard-panel-link" href="" target="_blank" class="btn btn-ghost" style="font-size:0.75rem;">Open AdGuard</a>
+                        <button id="toggle-btn" onclick="toggleProtection()" class="btn btn-ghost" style="font-size:0.75rem;"></button>
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-4 gap-4 mb-4">
@@ -394,15 +405,25 @@ function measureSpeed() {
 // --- DNS ---
 function loadDNS() {
     fetch("/api/network/adguard/status").then(r => r.json()).then(r => {
-        if (!r.data.installed) { document.getElementById("adguard-install").classList.remove("hidden"); document.getElementById("adguard-panel").classList.add("hidden"); return; }
+        if (!r.data.installed) {
+            document.getElementById("adguard-install").classList.remove("hidden");
+            document.getElementById("adguard-installed-noconfig").classList.add("hidden");
+            document.getElementById("adguard-panel").classList.add("hidden");
+            return;
+        }
         document.getElementById("adguard-install").classList.add("hidden");
+        const port = r.data.port || 3000;
+        const adguardUrl = "http://" + window.location.hostname + ":" + port;
+        document.getElementById("adguard-open-link").href = adguardUrl;
+        document.getElementById("adguard-panel-link").href = adguardUrl;
         loadDNSStatus();
     }).catch(() => { document.getElementById("adguard-install").classList.remove("hidden"); });
 }
 
 function loadDNSStatus() {
     fetch("/api/dns/status").then(r => r.json()).then(r => {
-        if (!r.ok) { document.getElementById("adguard-install").classList.remove("hidden"); document.getElementById("adguard-panel").classList.add("hidden"); return; }
+        if (!r.ok) { document.getElementById("adguard-installed-noconfig").classList.remove("hidden"); document.getElementById("adguard-panel").classList.add("hidden"); return; }
+        document.getElementById("adguard-installed-noconfig").classList.add("hidden");
         document.getElementById("adguard-panel").classList.remove("hidden");
         const d = r.data;
         protectionEnabled = d.protection_enabled;
@@ -413,7 +434,7 @@ function loadDNSStatus() {
         document.getElementById("stat-time").textContent = ((d.avg_processing_time || 0) * 1000).toFixed(0) + "ms";
         document.getElementById("top-blocked").innerHTML = (d.top_blocked || []).slice(0,6).map(i => { const k=Object.keys(i)[0]; return `<div class="top-item"><span class="top-item-domain">${k}</span><span class="top-item-count">${i[k]}</span></div>`; }).join("") || '<p class="text-tertiary text-xs">No data</p>';
         document.getElementById("top-clients").innerHTML = (d.top_clients || []).slice(0,6).map(i => { const k=Object.keys(i)[0]; return `<div class="top-item"><span class="top-item-domain">${k}</span><span class="top-item-count">${i[k]}</span></div>`; }).join("") || '<p class="text-tertiary text-xs">No data</p>';
-    }).catch(() => { document.getElementById("adguard-install").classList.remove("hidden"); document.getElementById("adguard-panel").classList.add("hidden"); });
+    }).catch(() => { document.getElementById("adguard-installed-noconfig").classList.remove("hidden"); document.getElementById("adguard-panel").classList.add("hidden"); });
 
     fetch("/api/dns/rewrites").then(r => r.json()).then(r => {
         if (!r.ok || !r.data || !r.data.length) { document.getElementById("rewrites-body").innerHTML = '<tr><td colspan="3" style="text-align:center; padding:1.5rem; color:var(--text-tertiary);">No records</td></tr>'; return; }

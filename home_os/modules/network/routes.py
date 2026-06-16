@@ -161,13 +161,41 @@ def save_network_settings():
     return jsonify({"ok": True})
 
 
+def _adguard_binary():
+    """Find AdGuard Home binary path."""
+    paths = ["/opt/AdGuardHome/AdGuardHome", "/usr/local/bin/AdGuardHome", "/usr/bin/AdGuardHome"]
+    for p in paths:
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    result = subprocess.run(["which", "AdGuardHome"], capture_output=True, text=True, timeout=5)
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return None
+
+
+def _adguard_web_port():
+    """Read AdGuard Home web UI port from its config file."""
+    import yaml as _yaml
+    config_paths = ["/opt/AdGuardHome/AdGuardHome.yaml", "/etc/AdGuardHome/AdGuardHome.yaml"]
+    for path in config_paths:
+        if os.path.isfile(path):
+            try:
+                with open(path) as f:
+                    cfg = _yaml.safe_load(f)
+                address = cfg.get("http", {}).get("address", "")
+                if ":" in address:
+                    return int(address.rsplit(":", 1)[1])
+            except (OSError, ValueError, TypeError):
+                pass
+    return 3000
+
+
 @network_bp.route("/api/network/adguard/install", methods=["POST"])
 @admin_required
 def install_adguard():
     """One-click AdGuard Home installer (runs with sudo)."""
     try:
-        check = subprocess.run(["which", "AdGuardHome"], capture_output=True, timeout=5)
-        if check.returncode == 0:
+        if _adguard_binary():
             return jsonify({"ok": False, "error": "AdGuard Home is already installed"}), 409
 
         result = subprocess.run(
@@ -191,23 +219,19 @@ def install_adguard():
 @admin_required
 def adguard_installed():
     """Check if AdGuard Home is installed and running."""
-    installed = False
+    installed = _adguard_binary() is not None
     running = False
-
-    try:
-        check = subprocess.run(["which", "AdGuardHome"], capture_output=True, timeout=5)
-        installed = check.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+    port = 3000
 
     if installed:
+        port = _adguard_web_port()
         try:
             check = subprocess.run(["systemctl", "is-active", "AdGuardHome"], capture_output=True, text=True, timeout=5)
             running = check.stdout.strip() == "active"
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
-    return jsonify({"ok": True, "data": {"installed": installed, "running": running}})
+    return jsonify({"ok": True, "data": {"installed": installed, "running": running, "port": port}})
 
 
 def _get_default_gateway():

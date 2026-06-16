@@ -28,6 +28,11 @@ class FileService:
         relative_path = relative_path.lstrip("/")
         target = self.storage_root / relative_path
 
+        # System mode (root = /) allows full filesystem access
+        if str(self.storage_root) == "/":
+            resolved = target.resolve()
+            return resolved
+
         # Check for symlinks at any level of the path
         parts = Path(relative_path).parts
         check = self.storage_root

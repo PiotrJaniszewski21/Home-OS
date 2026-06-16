@@ -76,6 +76,29 @@
         </div>
     </div>
 
+    <!-- AdGuard Home -->
+    <div class="glass-card mb-4">
+        <h3 class="text-secondary text-xs mb-4" style="text-transform:uppercase; letter-spacing:0.06em;">AdGuard Home</h3>
+        <form method="POST" action="{{ url_for('settings.save_adguard') }}" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div>
+                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">URL</label>
+                <input type="url" name="adguard_url" class="glass-input" value="{{ config.get('adguard', {}).get('url', 'http://localhost:3000') }}" placeholder="http://localhost:3000">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Username</label>
+                    <input type="text" name="adguard_username" class="glass-input" value="{{ config.get('adguard', {}).get('username', '') }}" placeholder="AdGuard username">
+                </div>
+                <div>
+                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Password</label>
+                    <input type="password" name="adguard_password" class="glass-input" value="{{ config.get('adguard', {}).get('password', '') }}" placeholder="AdGuard password">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Save AdGuard Settings</button>
+        </form>
+    </div>
+
     <!-- Cloudflare Tunnel -->
     <div class="glass-card mb-4">
         <div class="flex items-center justify-between mb-2">

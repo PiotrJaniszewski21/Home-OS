@@ -6,10 +6,11 @@
     <!-- Toolbar (Finder-style) -->
     <div class="finder-toolbar">
         <div class="flex items-center gap-2">
+            {% set sys_param = '?system=1' if system_mode else '' %}
             {% if path != "/" %}
             {% set parts = path.rstrip('/').split('/')[:-1] %}
             {% set parent = '/'.join(parts) %}
-            <a href="{% if parent == '' or parent == '/' %}{{ url_for('files.browse') }}{% else %}{{ url_for('files.browse', filepath=parent.lstrip('/')) }}{% endif %}" class="toolbar-btn" title="Back">
+            <a href="{% if parent == '' or parent == '/' %}{{ url_for('files.browse') }}{{ sys_param }}{% else %}{{ url_for('files.browse', filepath=parent.lstrip('/')) }}{{ sys_param }}{% endif %}" class="toolbar-btn" title="Back">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
             </a>
             {% endif %}
@@ -18,9 +19,9 @@
                 {% for crumb in breadcrumbs %}
                 {% if not loop.last %}
                 {% if crumb.path == '/' or crumb.path == '' %}
-                <a href="{{ url_for('files.browse') }}">{{ crumb.name }}</a>
+                <a href="{{ url_for('files.browse') }}{{ sys_param }}">{{ crumb.name }}</a>
                 {% else %}
-                <a href="{{ url_for('files.browse', filepath=crumb.path.lstrip('/')) }}">{{ crumb.name }}</a>
+                <a href="{{ url_for('files.browse', filepath=crumb.path.lstrip('/')) }}{{ sys_param }}">{{ crumb.name }}</a>
                 {% endif %}
                 <span class="breadcrumb-sep">/</span>
                 {% else %}
@@ -30,13 +31,27 @@
             </div>
         </div>
         <div class="flex items-center gap-2">
+            {% if current_user.is_admin %}
+            {% if system_mode %}
+            <a href="{{ url_for('files.browse') }}" class="toolbar-btn system-toggle active" title="Switch to Storage">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </a>
+            {% else %}
+            <a href="{{ url_for('files.browse') }}?system=1" class="toolbar-btn" title="System Files">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M3 9h2m-2 6h2m14-6h2m-2 6h2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            </a>
+            {% endif %}
+            {% endif %}
             <form action="{{ url_for('files.search_page') }}" method="GET" class="finder-search">
                 <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M21 21l-4.35-4.35"/></svg>
                 <input type="text" name="q" placeholder="Search">
             </form>
+            {% if not system_mode %}
             <button onclick="document.getElementById('mkdir-modal').classList.remove('hidden')" class="toolbar-btn" title="New Folder">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v12m6-6H6"/></svg>
             </button>
+            {% endif %}
+            {% if not system_mode %}
             <form action="{{ url_for('files.upload') }}" method="POST" enctype="multipart/form-data" id="upload-form" class="flex items-center">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="path" value="{{ path }}">
@@ -48,6 +63,7 @@
             <a href="{{ url_for('files.trash') }}" class="toolbar-btn" title="Trash">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
             </a>
+            {% endif %}
         </div>
     </div>
 
@@ -58,6 +74,34 @@
         <button onclick="clearClipboard()" class="action-link" style="margin-left:0.5rem;">Cancel</button>
     </div>
 
+    {% if storage_info %}
+    <!-- Storage Overview -->
+    <div class="storage-summary">
+        <div class="storage-summary-item">
+            <div class="storage-summary-header">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" stroke-width="1.5"/><path stroke-width="1.5" d="M4 12h16"/><circle cx="7" cy="8" r="1" fill="currentColor"/></svg>
+                <span>Internal</span>
+                <span class="storage-summary-size">{{ "%.0f"|format(storage_info.main.used_bytes / 1073741824) }} / {{ "%.0f"|format(storage_info.main.total_bytes / 1073741824) }} GB</span>
+            </div>
+            <div class="storage-mini-bar">
+                <div class="storage-mini-bar-fill" style="width: {{ storage_info.main.percent_used }}%"></div>
+            </div>
+        </div>
+        {% for drive in storage_info.drives %}
+        <div class="storage-summary-item">
+            <div class="storage-summary-header">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="1.5" stroke-linecap="round" d="M12 18v3m-4 0h8"/><rect x="3" y="4" width="18" height="14" rx="3" stroke-width="1.5"/></svg>
+                <span>{{ drive.name }}</span>
+                <span class="storage-summary-size">{{ "%.0f"|format(drive.used_bytes / 1073741824) }} / {{ "%.0f"|format(drive.total_bytes / 1073741824) }} GB</span>
+            </div>
+            <div class="storage-mini-bar">
+                <div class="storage-mini-bar-fill external" style="width: {{ drive.percent_used }}%"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <!-- File grid (Finder icon view for folders, list for files) -->
     {% set folders = entries | selectattr('is_dir') | list %}
     {% set files = entries | rejectattr('is_dir') | list %}
@@ -65,7 +109,7 @@
     {% if folders %}
     <div class="finder-grid">
         {% for entry in folders %}
-        <a href="{{ url_for('files.browse', filepath=entry.path.lstrip('/')) }}" class="finder-grid-item" data-path="{{ entry.path }}" data-name="{{ entry.name }}" data-isdir="true" oncontextmenu="showContext(event, this)">
+        <a href="{{ url_for('files.browse', filepath=entry.path.lstrip('/')) }}{{ '?system=1' if system_mode else '' }}" class="finder-grid-item" data-path="{{ entry.path }}" data-name="{{ entry.name }}" data-isdir="true" oncontextmenu="showContext(event, this)">
             <div class="finder-grid-icon">
                 <svg viewBox="0 0 80 80" width="56" height="56">
                     <defs>
@@ -178,6 +222,67 @@
 </div>
 
 <style>
+/* Storage Summary */
+.storage-summary {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+    background: rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(30px);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+}
+
+.storage-summary-item {
+    flex: 1;
+    min-width: 0;
+}
+
+.storage-summary-header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.35rem;
+}
+
+.storage-summary-header svg {
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+.storage-summary-size {
+    margin-left: auto;
+    color: var(--text-tertiary);
+    font-size: 0.625rem;
+    white-space: nowrap;
+}
+
+.storage-mini-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(0, 60, 120, 0.06);
+    overflow: hidden;
+}
+
+.storage-mini-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(135deg, #4facfe 0%, #00c6fb 100%);
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.storage-mini-bar-fill.external {
+    background: linear-gradient(135deg, #28cd41 0%, #5af06a 100%);
+}
+
+@media (max-width: 640px) {
+    .storage-summary { flex-direction: column; gap: 0.5rem; }
+}
+
 /* Finder Grid (icon view for folders) */
 .finder-grid {
     display: grid;
@@ -279,6 +384,10 @@
 }
 .toolbar-btn:hover {
     background: var(--bg-glass-hover);
+    color: var(--accent);
+}
+.toolbar-btn.system-toggle.active {
+    background: rgba(10, 132, 255, 0.1);
     color: var(--accent);
 }
 
@@ -455,6 +564,8 @@
 <script>
 const CSRF = "{{ csrf_token() }}";
 const currentPath = "{{ path }}";
+const systemMode = {{ 'true' if system_mode else 'false' }};
+const sysParam = systemMode ? "?system=1" : "";
 let clipboard = JSON.parse(sessionStorage.getItem("fileClipboard") || "null");
 let ctxTarget = null;
 
@@ -498,12 +609,12 @@ function showContext(e, row) {
 
 function ctxOpen() {
     if (!ctxTarget) return;
-    window.location.href = "/files/" + ctxTarget.path.replace(/^\//, "");
+    window.location.href = "/files/" + ctxTarget.path.replace(/^\//, "") + sysParam;
 }
 
 function ctxDownload() {
     if (!ctxTarget) return;
-    window.location.href = "/files/" + ctxTarget.path.replace(/^\//, "") + "?download";
+    window.location.href = "/files/" + ctxTarget.path.replace(/^\//, "") + "?download" + (systemMode ? "&system=1" : "");
 }
 
 function ctxCopy() {

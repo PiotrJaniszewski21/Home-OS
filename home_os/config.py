@@ -6,13 +6,17 @@ import yaml
 ROOT_DIR = Path(__file__).parent.parent
 
 
-def load_config(config_path=None):
+def get_config_path(config_path=None):
     if config_path is None:
         config_path = os.environ.get(
             "HOME_OS_CONFIG",
             Path(__file__).parent.parent / "config.yaml",
         )
-    with open(config_path) as f:
+    return Path(config_path)
+
+
+def load_config(config_path=None):
+    with open(get_config_path(config_path)) as f:
         return yaml.safe_load(f)
 
 
