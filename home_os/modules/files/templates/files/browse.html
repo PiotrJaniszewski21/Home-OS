@@ -1,206 +1,376 @@
 {% extends "base.html" %}
-{% block title %}Files — Home OS{% endblock %}
+{% block title %}{% if drive is defined and drive %}{{ drive.name }}{% else %}Files{% endif %} — Home OS{% endblock %}
 {% block content %}
-<div class="finder-layout">
-<div class="finder-main">
-    <!-- Toolbar (Finder-style) -->
-    <div class="finder-toolbar">
-        <div class="flex items-center gap-2">
-            {% set sys_param = '?system=1' if system_mode else '' %}
+{% set drive_mode = drive is defined and drive %}
+{% set sys_param = '?system=1' if system_mode else '' %}
+<div class="finder-window">
+    <!-- Mobile search bar (replaces titlebar on small screens) -->
+    <div class="mobile-search-bar" id="mobile-search-bar">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" stroke-width="2.5"/><path stroke-linecap="round" stroke-width="2.5" d="M21 21l-4.35-4.35"/></svg>
+        <input type="text" id="mobile-search-input" placeholder="Search" autocomplete="off" spellcheck="false">
+        <button type="button" class="mobile-search-cancel" onclick="closeMobileSearch()">Cancel</button>
+    </div>
+
+    <!-- Window Title Bar -->
+    <div class="finder-titlebar" id="finder-titlebar">
+        <div class="titlebar-left">
             {% if path != "/" %}
             {% set parts = path.rstrip('/').split('/')[:-1] %}
             {% set parent = '/'.join(parts) %}
-            <a href="{% if parent == '' or parent == '/' %}{{ url_for('files.browse') }}{{ sys_param }}{% else %}{{ url_for('files.browse', filepath=parent.lstrip('/')) }}{{ sys_param }}{% endif %}" class="toolbar-btn" title="Back">
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-            </a>
-            {% endif %}
-            <!-- Breadcrumbs -->
-            <div class="breadcrumbs">
-                {% for crumb in breadcrumbs %}
-                {% if not loop.last %}
-                {% if crumb.path == '/' or crumb.path == '' %}
-                <a href="{{ url_for('files.browse') }}{{ sys_param }}">{{ crumb.name }}</a>
-                {% else %}
-                <a href="{{ url_for('files.browse', filepath=crumb.path.lstrip('/')) }}{{ sys_param }}">{{ crumb.name }}</a>
-                {% endif %}
-                <span class="breadcrumb-sep">/</span>
-                {% else %}
-                <span class="breadcrumb-current">{{ crumb.name }}</span>
-                {% endif %}
-                {% endfor %}
-            </div>
-        </div>
-        <div class="flex items-center gap-2">
-            {% if current_user.is_admin %}
-            {% if system_mode %}
-            <a href="{{ url_for('files.browse') }}" class="toolbar-btn system-toggle active" title="Switch to Storage">
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/></svg>
+            {% if drive_mode %}
+            <a href="{% if parent == '' or parent == '/' %}{{ url_for('storage.browse_drive', name=drive.name) }}{% else %}{{ url_for('storage.browse_drive', name=drive.name, filepath=parent.lstrip('/')) }}{% endif %}" class="nav-arrow" title="Back">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
             </a>
             {% else %}
-            <a href="{{ url_for('files.browse') }}?system=1" class="toolbar-btn" title="System Files">
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M3 9h2m-2 6h2m14-6h2m-2 6h2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            <a href="{% if parent == '' or parent == '/' %}{{ url_for('files.browse') }}{{ sys_param }}{% else %}{{ url_for('files.browse', filepath=parent.lstrip('/')) }}{{ sys_param }}{% endif %}" class="nav-arrow" title="Back">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+            </a>
+            {% endif %}
+            {% else %}
+            {% if drive_mode %}
+            <a href="{{ url_for('files.browse') }}" class="nav-arrow" title="Back to Files">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+            </a>
+            {% else %}
+            <span class="nav-arrow disabled">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+            </span>
+            {% endif %}
+            {% endif %}
+            <span class="nav-arrow disabled">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+            </span>
+        </div>
+
+        <div class="titlebar-center">
+            <span class="titlebar-title">
+                {% if breadcrumbs|length > 1 %}{{ breadcrumbs[-1].name }}{% elif drive_mode %}{{ drive.name }}{% elif system_mode %}System{% else %}Files{% endif %}
+            </span>
+        </div>
+
+        <div class="titlebar-right">
+            {% if not drive_mode and current_user.is_admin %}
+            {% if system_mode %}
+            <a href="{{ url_for('files.browse') }}" class="tb-btn active" title="Switch to Storage">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+            </a>
+            {% else %}
+            <a href="{{ url_for('files.browse') }}?system=1" class="tb-btn" title="System Mode">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M3 9h2m-2 6h2m14-6h2m-2 6h2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
             </a>
             {% endif %}
             {% endif %}
-            <form action="{{ url_for('files.search_page') }}" method="GET" class="finder-search">
-                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M21 21l-4.35-4.35"/></svg>
-                <input type="text" name="q" placeholder="Search">
-            </form>
-            {% if not system_mode %}
-            <button onclick="document.getElementById('mkdir-modal').classList.remove('hidden')" class="toolbar-btn" title="New Folder">
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v12m6-6H6"/></svg>
-            </button>
-            {% endif %}
-            {% if not system_mode %}
-            <form action="{{ url_for('files.upload') }}" method="POST" enctype="multipart/form-data" id="upload-form" class="flex items-center">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="path" value="{{ path }}">
-                <input type="file" name="file" multiple id="upload-input" style="display:none" onchange="document.getElementById('upload-form').submit()">
-                <button type="button" onclick="document.getElementById('upload-input').click()" class="toolbar-btn" title="Upload">
-                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12L8 8m4-4l4 4"/></svg>
-                </button>
-            </form>
-            <a href="{{ url_for('files.trash') }}" class="toolbar-btn" title="Trash">
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-            </a>
-            {% endif %}
+            <div class="finder-searchbar" id="search-bar">
+                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" stroke-width="2.5"/><path stroke-linecap="round" stroke-width="2.5" d="M21 21l-4.35-4.35"/></svg>
+                <input type="text" id="search-input" placeholder="Search" autocomplete="off" spellcheck="false">
+                <button type="button" id="search-clear" class="search-clear hidden" aria-label="Clear search">&times;</button>
+            </div>
         </div>
     </div>
 
-    <!-- Paste bar -->
-    <div id="paste-bar" class="paste-bar hidden">
-        <span id="paste-label"></span>
-        <button onclick="doPaste()" class="btn btn-primary" style="padding:0.35rem 0.75rem; font-size:0.75rem;">Paste Here</button>
-        <button onclick="clearClipboard()" class="action-link" style="margin-left:0.5rem;">Cancel</button>
-    </div>
-
-    {% if storage_info %}
-    <!-- Storage Overview -->
-    <div class="storage-summary">
-        <div class="storage-summary-item">
-            <div class="storage-summary-header">
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" stroke-width="1.5"/><path stroke-width="1.5" d="M4 12h16"/><circle cx="7" cy="8" r="1" fill="currentColor"/></svg>
-                <span>Internal</span>
-                <span class="storage-summary-size">{{ "%.0f"|format(storage_info.main.used_bytes / 1073741824) }} / {{ "%.0f"|format(storage_info.main.total_bytes / 1073741824) }} GB</span>
-            </div>
-            <div class="storage-mini-bar">
-                <div class="storage-mini-bar-fill" style="width: {{ storage_info.main.percent_used }}%"></div>
-            </div>
-        </div>
-        {% for drive in storage_info.drives %}
-        <div class="storage-summary-item">
-            <div class="storage-summary-header">
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="1.5" stroke-linecap="round" d="M12 18v3m-4 0h8"/><rect x="3" y="4" width="18" height="14" rx="3" stroke-width="1.5"/></svg>
-                <span>{{ drive.name }}</span>
-                <span class="storage-summary-size">{{ "%.0f"|format(drive.used_bytes / 1073741824) }} / {{ "%.0f"|format(drive.total_bytes / 1073741824) }} GB</span>
-            </div>
-            <div class="storage-mini-bar">
-                <div class="storage-mini-bar-fill external" style="width: {{ drive.percent_used }}%"></div>
-            </div>
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    <!-- File grid (Finder icon view for folders, list for files) -->
-    {% set folders = entries | selectattr('is_dir') | list %}
-    {% set files = entries | rejectattr('is_dir') | list %}
-
-    {% if folders %}
-    <div class="finder-grid">
-        {% for entry in folders %}
-        <a href="{{ url_for('files.browse', filepath=entry.path.lstrip('/')) }}{{ '?system=1' if system_mode else '' }}" class="finder-grid-item" data-path="{{ entry.path }}" data-name="{{ entry.name }}" data-isdir="true" oncontextmenu="showContext(event, this)">
-            <div class="finder-grid-icon">
-                <svg viewBox="0 0 80 80" width="56" height="56">
-                    <defs>
-                        <linearGradient id="folder-grad" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stop-color="#6EC6FF"/>
-                            <stop offset="100%" stop-color="#2196F3"/>
-                        </linearGradient>
-                    </defs>
-                    <path d="M8 20h24l4-5h28c3 0 5 2.5 5 5.5V62c0 3-2 5.5-5 5.5H8c-3 0-5-2.5-5-5.5V25.5C3 22.5 5 20 8 20z" fill="url(#folder-grad)" opacity="0.9"/>
-                    <path d="M3 30h69v32c0 3-2 5.5-5 5.5H8c-3 0-5-2.5-5-5.5V30z" fill="url(#folder-grad)"/>
-                    <path d="M3 30h69v4H3z" fill="rgba(255,255,255,0.12)"/>
-                </svg>
-            </div>
-            <span class="finder-grid-label">{{ entry.name }}</span>
+    <!-- Path Bar -->
+    <div class="finder-pathbar">
+        {% if drive_mode %}
+        <a href="{{ url_for('files.browse') }}" class="pathbar-item">
+            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+            Files
         </a>
+        <svg class="pathbar-chevron" width="7" height="10" viewBox="0 0 7 10"><path d="M1 1l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        {% endif %}
+        {% for crumb in breadcrumbs %}
+        {% if not loop.last %}
+        {% if drive_mode %}
+        <a href="{% if crumb.path == '' %}{{ url_for('storage.browse_drive', name=drive.name) }}{% else %}{{ url_for('storage.browse_drive', name=drive.name, filepath=crumb.path) }}{% endif %}" class="pathbar-item">{{ crumb.name }}</a>
+        {% else %}
+        <a href="{% if crumb.path == '/' or crumb.path == '' %}{{ url_for('files.browse') }}{{ sys_param }}{% else %}{{ url_for('files.browse', filepath=crumb.path.lstrip('/')) }}{{ sys_param }}{% endif %}" class="pathbar-item">
+            {% if loop.first %}
+            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+            {% endif %}
+            {{ crumb.name }}
+        </a>
+        {% endif %}
+        <svg class="pathbar-chevron" width="7" height="10" viewBox="0 0 7 10"><path d="M1 1l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        {% else %}
+        <span class="pathbar-item current">{{ crumb.name }}</span>
+        {% endif %}
         {% endfor %}
     </div>
-    {% endif %}
 
-    {% if files %}
-    <div class="finder-grid" {% if folders %}style="margin-top: 1rem;"{% endif %}>
-        {% for entry in files %}
-        <div class="finder-grid-item file-item" data-path="{{ entry.path }}" data-name="{{ entry.name }}" data-isdir="false" data-ext="{{ entry.extension or '' }}" data-size="{% if entry.size is not none %}{% if entry.size > 1073741824 %}{{ '%.1f'|format(entry.size / 1073741824) }} GB{% elif entry.size > 1048576 %}{{ '%.1f'|format(entry.size / 1048576) }} MB{% elif entry.size > 1024 %}{{ '%.1f'|format(entry.size / 1024) }} KB{% else %}{{ entry.size }} B{% endif %}{% endif %}" oncontextmenu="showContext(event, this)">
-            <div class="finder-grid-icon">
-                {% if entry.extension in ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'] %}
-                <img class="finder-thumb" src="{{ url_for('files.browse', filepath=entry.path.lstrip('/')) }}" alt="{{ entry.name }}">
-                {% elif entry.extension in ['pdf'] %}
-                <svg viewBox="0 0 64 64" width="44" height="44"><rect x="10" y="2" width="44" height="60" rx="4" fill="#fee2e2" stroke="#fca5a5" stroke-width="1"/><text x="32" y="40" font-family="Helvetica" font-size="13" font-weight="bold" fill="#dc2626" text-anchor="middle">PDF</text></svg>
-                {% elif entry.extension in ['mp4', 'mov', 'avi', 'mkv', 'webm'] %}
-                <svg viewBox="0 0 64 64" width="44" height="44"><rect x="6" y="6" width="52" height="52" rx="8" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/><polygon points="26,20 44,32 26,44" fill="#7c3aed"/></svg>
-                {% elif entry.extension in ['mp3', 'wav', 'flac', 'aac', 'ogg'] %}
-                <svg viewBox="0 0 64 64" width="44" height="44"><rect x="6" y="6" width="52" height="52" rx="8" fill="#fce7f3" stroke="#f9a8d4" stroke-width="1"/><circle cx="32" cy="34" r="10" fill="none" stroke="#ec4899" stroke-width="2.5"/><path d="M42 34V16l-10 4" stroke="#ec4899" stroke-width="2.5" fill="none"/></svg>
-                {% elif entry.extension in ['zip', 'tar', 'gz', 'rar', '7z'] %}
-                <svg viewBox="0 0 64 64" width="44" height="44"><rect x="10" y="2" width="44" height="60" rx="4" fill="#f3f4f6" stroke="#d1d5db" stroke-width="1"/><rect x="26" y="2" width="8" height="60" fill="#e5e7eb"/><rect x="26" y="36" width="8" height="12" rx="2" fill="#fbbf24"/></svg>
-                {% elif entry.extension in ['txt', 'md', 'log', 'csv'] %}
-                <svg viewBox="0 0 64 64" width="44" height="44"><rect x="10" y="2" width="44" height="60" rx="4" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/><path d="M20 18h24M20 26h24M20 34h18M20 42h22" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round"/></svg>
-                {% elif entry.extension in ['py', 'js', 'html', 'css', 'json', 'yaml', 'yml', 'sh', 'sql', 'xml', 'toml'] %}
-                <svg viewBox="0 0 64 64" width="44" height="44"><rect x="10" y="2" width="44" height="60" rx="4" fill="#eff6ff" stroke="#93c5fd" stroke-width="1"/><path d="M20 18h10M20 26h20M20 34h14M20 42h18" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round"/><text x="46" y="16" font-family="Menlo" font-size="9" fill="#3b82f6">{}</text></svg>
-                {% else %}
-                <svg viewBox="0 0 64 64" width="44" height="44"><path d="M14 2h24l16 16v40c0 2.2-1.8 4-4 4H14c-2.2 0-4-1.8-4-4V6c0-2.2 1.8-4 4-4z" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/><path d="M38 2v12c0 2.2 1.8 4 4 4h12" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1"/></svg>
-                {% endif %}
+    <!-- Mobile search trigger button -->
+    <button type="button" class="mobile-search-btn" style="display:none;" onclick="openMobileSearch()">
+        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+    </button>
+    <style>
+    @media (max-width: 900px) { .mobile-search-btn { display: flex !important; align-items: center; justify-content: center; width: 36px; height: 36px; position: absolute; top: 6px; right: 12px; z-index: 10; color: var(--text-secondary); border-radius: 8px; } .mobile-search-btn:active { background: rgba(0,0,0,0.05); } }
+    </style>
+
+    <!-- Toolbar: Default mode -->
+    <div class="finder-actions" id="toolbar-default">
+        <button onclick="document.getElementById('mkdir-modal').classList.remove('hidden')" class="tb-btn" title="New Folder">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v12m6-6H6"/></svg>
+        </button>
+        <form action="{{ url_for('files.upload') }}" method="POST" enctype="multipart/form-data" id="upload-form" style="display:flex;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="path" value="{{ path }}">
+            <input type="file" name="file" multiple id="upload-input" style="display:none" onchange="document.getElementById('upload-form').submit()">
+            <button type="button" onclick="document.getElementById('upload-input').click()" class="tb-btn" title="Upload">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12L8 8m4-4l4 4"/></svg>
+            </button>
+        </form>
+        <div class="tb-separator"></div>
+        <button onclick="enterSelectMode()" class="tb-btn-label" id="btn-select" title="Select items">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Select
+        </button>
+        <button onclick="doPaste()" class="tb-btn-label" id="btn-paste-default" title="Paste" style="display:none;">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            Paste
+        </button>
+        <div style="flex:1;"></div>
+        <a href="{{ url_for('files.trash') }}" class="tb-btn" title="Trash">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        </a>
+    </div>
+
+    <!-- Toolbar: Select mode (replaces default toolbar) -->
+    <div class="finder-actions select-toolbar" id="toolbar-select" style="display:none;">
+        <span class="select-count" id="select-count">0 selected</span>
+        <div style="flex:1;"></div>
+        <button onclick="copySelected()" class="tb-btn-label" id="btn-copy" disabled>
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/></svg>
+            Copy
+        </button>
+        <button onclick="cutSelected()" class="tb-btn-label" id="btn-cut" disabled>
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/></svg>
+            Move
+        </button>
+        <button onclick="deleteSelected()" class="tb-btn-label danger-label" id="btn-delete" disabled>
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            Delete
+        </button>
+        <div class="tb-separator"></div>
+        <button onclick="exitSelectMode()" class="tb-btn-label done-btn">Done</button>
+    </div>
+
+    <!-- Search Scope Bar (appears when searching) -->
+    <div class="search-scope-bar" id="search-scope-bar">
+        <span style="color: var(--text-tertiary);">Search:</span>
+        <span class="search-scope-pill selected" data-scope="current" id="scope-current">
+            {% if breadcrumbs|length > 1 %}"{{ breadcrumbs[-1].name }}"{% else %}This Folder{% endif %}
+        </span>
+        <span class="search-scope-pill" data-scope="all" id="scope-all">All Files</span>
+    </div>
+
+    <!-- Content Area -->
+    <div class="finder-content-area">
+        <div class="finder-body">
+            <!-- Search results (shown when searching, hides normal content) -->
+            <div class="search-results" id="search-results"></div>
+
+            <div id="finder-normal-content">
+            {% if locations %}
+            <!-- Drives section -->
+            <div class="finder-section-label">Drives</div>
+            <div class="finder-icon-grid drives">
+                <!-- Internal storage -->
+                <a href="{{ url_for('files.browse') }}?system=1" class="finder-icon-item">
+                    <div class="finder-icon-wrap">
+                        <svg viewBox="0 0 80 80" width="52" height="52">
+                            <defs><linearGradient id="internal-grad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#64748b"/><stop offset="100%" stop-color="#334155"/></linearGradient></defs>
+                            <rect x="8" y="20" width="64" height="40" rx="8" fill="url(#internal-grad)"/>
+                            <rect x="8" y="20" width="64" height="40" rx="8" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+                            <rect x="16" y="32" width="28" height="3" rx="1.5" fill="rgba(255,255,255,0.5)"/>
+                            <rect x="16" y="38" width="20" height="3" rx="1.5" fill="rgba(255,255,255,0.3)"/>
+                            <rect x="16" y="44" width="14" height="3" rx="1.5" fill="rgba(255,255,255,0.2)"/>
+                            <circle cx="58" cy="40" r="5" fill="rgba(255,255,255,0.35)"/>
+                            <circle cx="58" cy="40" r="2" fill="rgba(255,255,255,0.6)"/>
+                        </svg>
+                    </div>
+                    <span class="finder-icon-name">Internal</span>
+                    <span class="finder-icon-meta">{% if locations.disk_used > 1073741824 %}{{ "%.0f"|format(locations.disk_used / 1073741824) }}{% else %}{{ "%.0f"|format(locations.disk_used / 1048576) }}{% endif %} / {% if locations.disk_total > 1073741824 %}{{ "%.0f"|format(locations.disk_total / 1073741824) }} GB{% else %}{{ "%.0f"|format(locations.disk_total / 1048576) }} MB{% endif %}</span>
+                </a>
+
+                <!-- External drives -->
+                {% for drive in storage_info.drives %}
+                <a href="{{ url_for('storage.browse_drive', name=drive.name) }}" class="finder-icon-item">
+                    <div class="finder-icon-wrap">
+                        <svg viewBox="0 0 80 80" width="52" height="52">
+                            <defs><linearGradient id="drive-ext-{{ loop.index }}" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#7deda0"/><stop offset="100%" stop-color="#28cd41"/></linearGradient></defs>
+                            <rect x="8" y="22" width="64" height="36" rx="6" fill="url(#drive-ext-{{ loop.index }})"/>
+                            <rect x="8" y="22" width="64" height="36" rx="6" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+                            <rect x="16" y="34" width="26" height="3" rx="1.5" fill="rgba(255,255,255,0.6)"/>
+                            <rect x="16" y="40" width="18" height="3" rx="1.5" fill="rgba(255,255,255,0.4)"/>
+                            <circle cx="58" cy="40" r="4" fill="rgba(255,255,255,0.5)"/>
+                        </svg>
+                    </div>
+                    <span class="finder-icon-name">{{ drive.name }}</span>
+                    <span class="finder-icon-meta">{{ "%.0f"|format(drive.used_bytes / 1073741824) }} / {{ "%.0f"|format(drive.total_bytes / 1073741824) }} GB</span>
+                </a>
+                {% endfor %}
             </div>
-            <span class="finder-grid-label">{{ entry.name }}</span>
+
+            <!-- Locations section -->
+            <div class="finder-section-label">Locations</div>
+            <div class="finder-icon-grid drives">
+                <!-- HomeOS shared folder -->
+                <a href="{{ url_for('files.browse', filepath='HomeOS') }}" class="finder-icon-item">
+                    <div class="finder-icon-wrap">
+                        <svg viewBox="0 0 80 80" width="52" height="52">
+                            <defs><linearGradient id="homeos-grad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#a8d8ff"/><stop offset="100%" stop-color="#4facfe"/></linearGradient></defs>
+                            <rect x="8" y="18" width="64" height="44" rx="8" fill="url(#homeos-grad)"/>
+                            <rect x="8" y="18" width="64" height="44" rx="8" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+                            <path d="M40 30l-14 10v14h10v-8h8v8h10V40z" fill="rgba(255,255,255,0.85)"/>
+                        </svg>
+                    </div>
+                    <span class="finder-icon-name">HomeOS</span>
+                    <span class="finder-icon-meta">{% if locations.homeos.used_bytes > 1073741824 %}{{ "%.1f"|format(locations.homeos.used_bytes / 1073741824) }} GB{% elif locations.homeos.used_bytes > 1048576 %}{{ "%.0f"|format(locations.homeos.used_bytes / 1048576) }} MB{% else %}{{ "%.0f"|format(locations.homeos.used_bytes / 1024) }} KB{% endif %} used</span>
+                </a>
+
+                <!-- User folders -->
+                {% for uf in locations.user_folders %}
+                <a href="{{ url_for('files.browse', filepath='users/' + uf.name) }}" class="finder-icon-item">
+                    <div class="finder-icon-wrap">
+                        <svg viewBox="0 0 80 80" width="52" height="52">
+                            <defs><linearGradient id="user-grad-{{ loop.index }}" x1="0%" y1="0%" x2="0%" y2="100%">
+                                {% if uf.name == locations.current_user %}<stop offset="0%" stop-color="#a78bfa"/><stop offset="100%" stop-color="#7c3aed"/>
+                                {% else %}<stop offset="0%" stop-color="#94a3b8"/><stop offset="100%" stop-color="#64748b"/>{% endif %}
+                            </linearGradient></defs>
+                            <rect x="8" y="18" width="64" height="44" rx="8" fill="url(#user-grad-{{ loop.index }})"/>
+                            <rect x="8" y="18" width="64" height="44" rx="8" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>
+                            <circle cx="40" cy="34" r="8" fill="rgba(255,255,255,0.8)"/>
+                            <path d="M26 54c0-7.7 6.3-14 14-14s14 6.3 14 14" fill="rgba(255,255,255,0.6)" stroke="none"/>
+                        </svg>
+                    </div>
+                    <span class="finder-icon-name">{{ uf.name }}{% if uf.name == locations.current_user %} (You){% endif %}</span>
+                    <span class="finder-icon-meta">{% if uf.used_bytes > 1073741824 %}{{ "%.1f"|format(uf.used_bytes / 1073741824) }} GB{% elif uf.used_bytes > 1048576 %}{{ "%.0f"|format(uf.used_bytes / 1048576) }} MB{% else %}{{ "%.0f"|format(uf.used_bytes / 1024) }} KB{% endif %} used</span>
+                </a>
+                {% endfor %}
+
+                <!-- User shortcuts -->
+                {% for sc in locations.shortcuts %}
+                <a href="{{ url_for('files.browse', filepath=sc.path.lstrip('/')) }}" class="finder-icon-item" style="position:relative;">
+                    <div class="finder-icon-wrap">
+                        <svg viewBox="0 0 80 80" width="52" height="52">
+                            <defs><linearGradient id="sc-grad-{{ loop.index }}" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#fbbf24"/><stop offset="100%" stop-color="#f59e0b"/></linearGradient></defs>
+                            <rect x="8" y="18" width="64" height="44" rx="8" fill="url(#sc-grad-{{ loop.index }})"/>
+                            <rect x="8" y="18" width="64" height="44" rx="8" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+                            <path d="M40 28l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z" fill="rgba(255,255,255,0.9)"/>
+                        </svg>
+                    </div>
+                    <span class="finder-icon-name">{{ sc.name }}</span>
+                    <span class="shortcut-remove" onclick="event.preventDefault();event.stopPropagation();removeShortcut('{{ sc.name }}');">&times;</span>
+                </a>
+                {% endfor %}
+
+                <!-- Add Shortcut button -->
+                <div class="finder-icon-item add-shortcut-btn" onclick="document.getElementById('shortcut-modal').classList.remove('hidden')">
+                    <div class="finder-icon-wrap" style="opacity:0.4;">
+                        <svg width="52" height="52" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6v12m6-6H6"/></svg>
+                    </div>
+                    <span class="finder-icon-name" style="opacity:0.5;">Add Shortcut</span>
+                </div>
+            </div>
+            {% endif %}
+
+            {% set folders = entries | selectattr('is_dir') | list %}
+            {% set files = entries | rejectattr('is_dir') | list %}
+
+            {% if folders %}
+            <div class="finder-icon-grid">
+                {% for entry in folders %}
+                <div class="finder-icon-item" data-path="{{ entry.path }}" data-name="{{ entry.name }}" data-isdir="true" data-href="{% if drive_mode %}{{ url_for('storage.browse_drive', name=drive.name, filepath=entry.path) }}{% else %}{{ url_for('files.browse', filepath=entry.path.lstrip('/')) }}{{ sys_param }}{% endif %}">
+                    <div class="finder-icon-wrap">
+                        <svg viewBox="0 0 80 80" width="52" height="52">
+                            <defs><linearGradient id="folder-grad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#6EC6FF"/><stop offset="100%" stop-color="#2196F3"/></linearGradient></defs>
+                            <path d="M8 22h22l4-5h26c3 0 5 2.5 5 5v30c0 3-2 5-5 5H8c-3 0-5-2-5-5V27c0-3 2-5 5-5z" fill="url(#folder-grad)" opacity="0.9"/>
+                            <path d="M3 30h62v22c0 3-2 5-5 5H8c-3 0-5-2-5-5V30z" fill="url(#folder-grad)"/>
+                            <path d="M3 30h62v3H3z" fill="rgba(255,255,255,0.15)"/>
+                        </svg>
+                    </div>
+                    <span class="finder-icon-name">{{ entry.name }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if files %}
+            {% if folders or locations %}<div class="finder-section-label">Files</div>{% endif %}
+            <!-- List view for files (like Finder's list mode) -->
+            <div class="finder-list">
+                <div class="finder-list-header">
+                    <span class="flist-col flist-name">Name</span>
+                    <span class="flist-col flist-size">Size</span>
+                    <span class="flist-col flist-kind">Kind</span>
+                </div>
+                {% for entry in files %}
+                <div class="finder-list-row" data-path="{{ entry.path }}" data-name="{{ entry.name }}" data-isdir="false" data-ext="{{ entry.extension or '' }}" data-size="{% if entry.size is not none %}{% if entry.size > 1073741824 %}{{ '%.1f'|format(entry.size / 1073741824) }} GB{% elif entry.size > 1048576 %}{{ '%.1f'|format(entry.size / 1048576) }} MB{% elif entry.size > 1024 %}{{ '%.1f'|format(entry.size / 1024) }} KB{% else %}{{ entry.size }} B{% endif %}{% endif %}">
+                    <span class="flist-col flist-name">
+                        <span class="flist-file-icon">
+                            {% if entry.extension in ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'] %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.5"/><circle cx="5.5" cy="5.5" r="1.5" fill="#60a5fa"/><path d="M1 11l4-3 2 2 4-4 4 3v4a2 2 0 01-2 2H3a2 2 0 01-2-2z" fill="#93c5fd" opacity="0.7"/></svg>
+                            {% elif entry.extension in ['pdf'] %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.5" fill="#fee2e2" stroke="#fca5a5" stroke-width="0.5"/><text x="8" y="10.5" font-size="5" font-weight="bold" fill="#dc2626" text-anchor="middle" font-family="system-ui">PDF</text></svg>
+                            {% elif entry.extension in ['mp4', 'mov', 'avi', 'mkv', 'webm'] %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="10" rx="2" fill="#ede9fe" stroke="#c4b5fd" stroke-width="0.5"/><polygon points="6.5,5.5 6.5,10.5 11,8" fill="#7c3aed"/></svg>
+                            {% elif entry.extension in ['mp3', 'wav', 'flac', 'aac', 'ogg'] %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="#fce7f3" stroke="#f9a8d4" stroke-width="0.5"/><circle cx="8" cy="9" r="3" fill="none" stroke="#ec4899" stroke-width="1.2"/><path d="M11 9V4l-3 1.2" stroke="#ec4899" stroke-width="1.2" fill="none"/></svg>
+                            {% elif entry.extension in ['zip', 'tar', 'gz', 'rar', '7z'] %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.5" fill="#f3f4f6" stroke="#d1d5db" stroke-width="0.5"/><rect x="7" y="1" width="2" height="14" fill="#e5e7eb"/><rect x="7" y="10" width="2" height="3" rx="0.5" fill="#fbbf24"/></svg>
+                            {% elif entry.extension in ['py', 'js', 'ts', 'html', 'css', 'json', 'yaml', 'yml', 'sh', 'sql', 'xml', 'toml'] %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.5" fill="#eff6ff" stroke="#93c5fd" stroke-width="0.5"/><path d="M5 5h4M5 7.5h6M5 10h3" stroke="#3b82f6" stroke-width="0.8" stroke-linecap="round"/></svg>
+                            {% elif entry.extension in ['txt', 'md', 'log', 'csv'] %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.5" fill="#f8fafc" stroke="#cbd5e1" stroke-width="0.5"/><path d="M5 5h6M5 7.5h6M5 10h4" stroke="#94a3b8" stroke-width="0.8" stroke-linecap="round"/></svg>
+                            {% else %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 1h6l4 4v9a2 2 0 01-2 2H4a2 2 0 01-2-2V3a2 2 0 012-2z" fill="#f8fafc" stroke="#cbd5e1" stroke-width="0.5"/><path d="M10 1v3a1 1 0 001 1h3" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="0.5"/></svg>
+                            {% endif %}
+                        </span>
+                        <span class="flist-filename">{{ entry.name }}</span>
+                    </span>
+                    <span class="flist-col flist-size">{% if entry.size is not none %}{% if entry.size > 1073741824 %}{{ '%.1f'|format(entry.size / 1073741824) }} GB{% elif entry.size > 1048576 %}{{ '%.1f'|format(entry.size / 1048576) }} MB{% elif entry.size > 1024 %}{{ '%.1f'|format(entry.size / 1024) }} KB{% else %}{{ entry.size }} B{% endif %}{% endif %}</span>
+                    <span class="flist-col flist-kind">{% if entry.extension %}{{ entry.extension|upper }}{% else %}Document{% endif %}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if not entries and not locations %}
+            <div class="finder-empty">
+                <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="opacity:0.3;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                <p>This folder is empty</p>
+            </div>
+            {% endif %}
+            </div><!-- /finder-normal-content -->
         </div>
-        {% endfor %}
-    </div>
-    {% endif %}
 
-    {% if not entries %}
-    <div class="glass-panel" style="padding: 4rem; text-align: center; color: var(--text-tertiary);">
-        This folder is empty
+        <!-- Preview Panel -->
+        <div class="finder-preview" id="preview-panel">
+            <div id="preview-empty" class="preview-placeholder">
+                <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="opacity:0.25;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                <p>No Preview</p>
+            </div>
+            <div id="preview-content" class="preview-content hidden">
+                <img id="preview-img" src="" alt="" class="hidden">
+                <div id="preview-name" class="preview-name"></div>
+                <div id="preview-meta" class="preview-meta"></div>
+            </div>
+        </div>
     </div>
-    {% endif %}
-</div><!-- end .finder-main -->
 
-<!-- Preview Panel (sidebar) -->
-<div class="preview-panel glass-panel" id="preview-panel">
-    <div id="preview-empty" class="preview-empty">
-        <p class="text-tertiary text-xs">Select an image to preview</p>
-    </div>
-    <div id="preview-content" class="preview-content hidden">
-        <img id="preview-img" src="" alt="">
-        <div id="preview-name" class="preview-name"></div>
-        <div id="preview-meta" class="preview-meta"></div>
+    <!-- Status bar (like Finder bottom bar) -->
+    <div class="finder-statusbar">
+        <span>{{ entries|length }} item{{ 's' if entries|length != 1 else '' }}</span>
+        {% if storage_info %}
+        <span>{{ "%.1f"|format((storage_info.main.total_bytes - storage_info.main.used_bytes) / 1073741824) }} GB free</span>
+        {% endif %}
     </div>
 </div>
-</div><!-- end .finder-layout -->
 
-<!-- Context Menu -->
-<div id="image-preview" class="image-preview hidden">
-    <img id="preview-img" src="" alt="">
-    <div id="preview-name" class="image-preview-name"></div>
-</div>
-
-<!-- Context Menu -->
-<div id="context-menu" class="context-menu hidden">
-    <div class="context-item" onclick="ctxOpen()"><span class="ctx-icon">📂</span> Open</div>
-    <div class="context-item" onclick="ctxDownload()" id="ctx-download"><span class="ctx-icon">⬇️</span> Download</div>
-    <div class="context-sep"></div>
-    <div class="context-item" onclick="ctxCopy()"><span class="ctx-icon">📋</span> Copy</div>
-    <div class="context-item" onclick="ctxCut()"><span class="ctx-icon">✂️</span> Cut</div>
-    <div class="context-item" onclick="ctxRename()"><span class="ctx-icon">✏️</span> Rename</div>
-    <div class="context-sep"></div>
-    <div class="context-item danger" onclick="ctxDelete()"><span class="ctx-icon">🗑️</span> Move to Trash</div>
-</div>
 
 <!-- New Folder Modal -->
 <div id="mkdir-modal" class="modal-backdrop hidden" onclick="if(event.target===this)this.classList.add('hidden')">
     <div class="modal-content">
         <h3 style="margin-bottom:1rem;">New Folder</h3>
-        <input type="text" id="mkdir-name" placeholder="Untitled Folder" class="glass-input mb-4">
+        <input type="text" id="mkdir-name" placeholder="Untitled Folder" class="glass-input mb-4" autofocus>
         <div class="flex justify-end gap-3">
             <button onclick="document.getElementById('mkdir-modal').classList.add('hidden')" class="btn btn-ghost">Cancel</button>
             <button onclick="createFolder()" class="btn btn-primary">Create</button>
@@ -221,290 +391,480 @@
     </div>
 </div>
 
+<!-- Add Shortcut Modal -->
+<div id="shortcut-modal" class="modal-backdrop hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal-content">
+        <h3 style="margin-bottom:1rem;">Add Shortcut</h3>
+        <input type="text" id="shortcut-name" placeholder="Shortcut name" class="glass-input mb-3">
+        <div class="flex items-center gap-2 mb-4">
+            <input type="text" id="shortcut-path" placeholder="Path (e.g. /HomeOS/Movies)" class="glass-input" style="flex:1;">
+            <button type="button" onclick="openPathPicker(function(p){ document.getElementById('shortcut-path').value = p; })" class="btn btn-ghost" style="padding:0.4rem 0.7rem; font-size:12px; white-space:nowrap;">Browse</button>
+        </div>
+        <div class="flex justify-end gap-3">
+            <button onclick="document.getElementById('shortcut-modal').classList.add('hidden')" class="btn btn-ghost">Cancel</button>
+            <button onclick="addShortcut()" class="btn btn-primary">Add</button>
+        </div>
+    </div>
+</div>
+
 <style>
-/* Storage Summary */
-.storage-summary {
-    display: flex;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    margin-bottom: 0.75rem;
-    background: rgba(255, 255, 255, 0.4);
-    backdrop-filter: blur(30px);
-    border: 1px solid var(--border-glass);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-card);
-}
-
-.storage-summary-item {
-    flex: 1;
-    min-width: 0;
-}
-
-.storage-summary-header {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.6875rem;
-    color: var(--text-secondary);
-    margin-bottom: 0.35rem;
-}
-
-.storage-summary-header svg {
-    flex-shrink: 0;
-    opacity: 0.7;
-}
-
-.storage-summary-size {
-    margin-left: auto;
-    color: var(--text-tertiary);
-    font-size: 0.625rem;
-    white-space: nowrap;
-}
-
-.storage-mini-bar {
-    height: 6px;
-    border-radius: 3px;
-    background: rgba(0, 60, 120, 0.06);
+/* ─── Finder Window ─── */
+.finder-window {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(60px) saturate(1.5);
+    -webkit-backdrop-filter: blur(60px) saturate(1.5);
+    border: 0.5px solid rgba(255, 255, 255, 0.85);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 50, 120, 0.1), 0 0 1px rgba(0, 0, 0, 0.08);
     overflow: hidden;
-}
-
-.storage-mini-bar-fill {
-    height: 100%;
-    border-radius: 3px;
-    background: linear-gradient(135deg, #4facfe 0%, #00c6fb 100%);
-    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.storage-mini-bar-fill.external {
-    background: linear-gradient(135deg, #28cd41 0%, #5af06a 100%);
-}
-
-@media (max-width: 640px) {
-    .storage-summary { flex-direction: column; gap: 0.5rem; }
-}
-
-/* Finder Grid (icon view for folders) */
-.finder-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    gap: 0.5rem;
-    padding: 1rem;
-    background: rgba(255, 255, 255, 0.4);
-    backdrop-filter: blur(30px);
-    border: 1px solid var(--border-glass);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-card);
-}
-
-.finder-grid-item {
+    max-width: 72rem;
     display: flex;
     flex-direction: column;
+    min-height: calc(100vh - 10rem);
+}
+
+/* Title Bar */
+.finder-titlebar {
+    display: flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.75rem 0.5rem;
-    border-radius: 12px;
-    text-decoration: none;
-    transition: all 0.15s ease;
-    cursor: default;
+    height: 38px;
+    padding: 0 12px;
+    background: rgba(245, 248, 252, 0.85);
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.08);
+    -webkit-app-region: drag;
+    flex-shrink: 0;
 }
 
-.finder-grid-item:hover {
-    background: rgba(255, 255, 255, 0.6);
-    transform: scale(1.03);
+.titlebar-left {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 60px;
 }
 
-.finder-grid-item:active {
-    transform: scale(0.97);
+.titlebar-center {
+    flex: 1;
+    text-align: center;
 }
 
-.finder-grid-item[class*="selected"],
-.finder-grid-item.selected {
-    background: rgba(10, 132, 255, 0.1);
-    box-shadow: 0 0 0 1.5px rgba(10, 132, 255, 0.3);
+.titlebar-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
 }
 
-.finder-grid-icon {
+.titlebar-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 60px;
+    justify-content: flex-end;
+}
+
+.nav-arrow {
     display: flex;
     align-items: center;
     justify-content: center;
-    filter: drop-shadow(0 3px 6px rgba(0, 80, 180, 0.15));
-    transition: filter 0.2s;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: all 0.12s ease;
 }
 
-.finder-grid-item:hover .finder-grid-icon {
-    filter: drop-shadow(0 5px 12px rgba(0, 80, 180, 0.25));
+.nav-arrow:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+.nav-arrow:active { background: rgba(0, 0, 0, 0.07); }
+.nav-arrow.disabled { color: var(--text-quaternary); pointer-events: none; }
+
+/* Path Bar */
+.finder-pathbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 12px;
+    background: rgba(0, 60, 140, 0.02);
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.06);
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex-shrink: 0;
 }
 
-.finder-thumb {
-    width: 56px;
-    height: 56px;
-    object-fit: cover;
+.finder-pathbar::-webkit-scrollbar { display: none; }
+
+.pathbar-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: all 0.12s ease;
+}
+
+.pathbar-item:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+.pathbar-item.current { color: var(--text-primary); font-weight: 600; }
+
+.pathbar-chevron { color: var(--text-quaternary); flex-shrink: 0; }
+
+/* Actions Bar */
+.finder-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 5px 12px;
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.06);
+    flex-shrink: 0;
+}
+
+.tb-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.12s ease;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.tb-btn:hover { background: rgba(0, 0, 0, 0.05); color: var(--text-primary); }
+.tb-btn:active { background: rgba(0, 0, 0, 0.08); transform: scale(0.92); }
+.tb-btn.active { background: var(--accent-light); color: var(--accent); }
+
+.tb-separator { width: 1px; height: 18px; background: rgba(0, 60, 140, 0.08); margin: 0 4px; }
+
+/* Search Bar (in title bar) */
+.finder-searchbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: rgba(0, 0, 0, 0.04);
+    border: 0.5px solid rgba(0, 0, 0, 0.06);
+    border-radius: 6px;
+    color: var(--text-tertiary);
+    transition: all 0.15s ease;
+}
+
+.finder-searchbar:focus-within {
+    background: white;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2.5px var(--accent-glow);
+}
+
+.finder-searchbar input {
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-size: 12px;
+    width: 100px;
+    font-family: inherit;
+}
+
+.finder-searchbar input::placeholder { color: var(--text-quaternary); }
+
+.search-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.15);
+    color: white;
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+    border: none;
+    padding: 0;
+    flex-shrink: 0;
+}
+.search-clear:hover { background: rgba(0, 0, 0, 0.25); }
+.search-clear.hidden { display: none; }
+
+/* Search scope bar */
+.search-scope-bar {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.06);
+    background: rgba(245, 248, 252, 0.6);
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.search-scope-bar.active { display: flex; }
+.search-scope-pill {
+    padding: 3px 10px;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.04);
+    cursor: pointer;
+    transition: all 0.12s ease;
+    font-weight: 500;
+}
+.search-scope-pill:hover { background: rgba(0, 0, 0, 0.07); }
+.search-scope-pill.selected { background: var(--accent); color: white; }
+
+/* Search results — reuses finder-list styles */
+.search-results {
+    display: none;
+}
+.search-results.active {
+    display: block;
+}
+.search-results .finder-list-row.focused {
+    background: var(--accent);
+    color: white;
+}
+.search-results .finder-list-row.focused .flist-size,
+.search-results .finder-list-row.focused .flist-path { color: rgba(255, 255, 255, 0.7); }
+.flist-path {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.search-empty {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-quaternary);
+    font-size: 13px;
+}
+.search-loading {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-quaternary);
+    font-size: 12px;
+}
+
+/* Mobile search bar */
+.mobile-search-bar {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: rgba(245, 248, 252, 0.95);
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.08);
+}
+.mobile-search-bar input {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.04);
+    border: 0.5px solid rgba(0, 0, 0, 0.06);
     border-radius: 8px;
-    border: 1px solid rgba(0, 60, 120, 0.08);
-    background: rgba(255, 255, 255, 0.5);
+    padding: 8px 12px;
+    font-size: 15px;
+    font-family: inherit;
+    color: var(--text-primary);
+    outline: none;
+}
+.mobile-search-bar input:focus { background: white; border-color: var(--accent); box-shadow: 0 0 0 2.5px var(--accent-glow); }
+.mobile-search-bar input::placeholder { color: var(--text-quaternary); }
+.mobile-search-bar svg { color: var(--text-tertiary); flex-shrink: 0; }
+.mobile-search-cancel {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 4px 8px;
+    white-space: nowrap;
+}
+.mobile-search-bar.active { display: flex; }
+@media (min-width: 901px) { .mobile-search-bar { display: none !important; } }
+
+/* Content Area */
+.finder-content-area {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
 }
 
-.finder-grid-label {
-    font-size: 0.6875rem;
+.finder-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    min-width: 0;
+}
+
+.finder-section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-tertiary);
+    padding: 8px 4px 6px;
+}
+
+/* Icon Grid (folders + drives) */
+.finder-icon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 2px;
+    margin-bottom: 8px;
+}
+
+.finder-icon-grid.drives {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    margin-bottom: 12px;
+}
+
+.finder-icon-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 10px 6px 8px;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: background 0.1s ease;
+    cursor: default;
+    position: relative;
+}
+
+.finder-icon-item:hover { background: rgba(0, 122, 255, 0.06); }
+.finder-icon-item:active { background: rgba(0, 122, 255, 0.1); }
+
+.finder-icon-item.selected,
+.finder-icon-item.mobile-selected {
+    background: var(--accent-medium);
+    box-shadow: 0 0 0 1.5px rgba(0, 122, 255, 0.3);
+}
+
+.finder-icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    filter: drop-shadow(0 2px 4px rgba(0, 60, 140, 0.12));
+}
+
+.finder-icon-item:hover .finder-icon-wrap {
+    filter: drop-shadow(0 3px 6px rgba(0, 60, 140, 0.18));
+}
+
+.finder-icon-name {
+    font-size: 11px;
     color: var(--text-primary);
     text-align: center;
-    max-width: 90px;
+    max-width: 84px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     line-height: 1.3;
 }
 
-/* Finder-specific styles */
-.finder-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0.75rem;
-    margin-bottom: 0.75rem;
-    background: rgba(255, 255, 255, 0.5);
-    backdrop-filter: blur(30px);
-    border: 1px solid var(--border-glass);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-card);
-}
-
-.toolbar-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    border: none;
-    background: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all var(--transition);
-}
-.toolbar-btn:hover {
-    background: var(--bg-glass-hover);
-    color: var(--accent);
-}
-.toolbar-btn.system-toggle.active {
-    background: rgba(10, 132, 255, 0.1);
-    color: var(--accent);
-}
-
-.breadcrumbs {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.8125rem;
-}
-.breadcrumbs a { color: var(--text-secondary); }
-.breadcrumbs a:hover { color: var(--accent); }
-.breadcrumb-sep { color: var(--text-tertiary); font-size: 0.75rem; }
-.breadcrumb-current { color: var(--text-primary); font-weight: 500; }
-
-.finder-search {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.35rem 0.7rem;
-    background: rgba(255, 255, 255, 0.6);
-    border: 1px solid rgba(0, 80, 160, 0.1);
-    border-radius: 8px;
+.finder-icon-meta {
+    font-size: 9px;
     color: var(--text-tertiary);
 }
-.finder-search input {
-    background: none;
-    border: none;
-    outline: none;
-    color: var(--text-primary);
-    font-size: 0.8125rem;
-    width: 120px;
-}
-.finder-search input::placeholder { color: var(--text-tertiary); }
 
-.paste-bar {
-    display: flex;
+/* Shortcut remove button */
+.finder-icon-item .shortcut-remove {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.5);
+    color: white;
+    font-size: 10px;
+    display: none;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 1rem;
-    margin-bottom: 0.5rem;
-    background: rgba(10, 132, 255, 0.06);
-    border: 1px solid rgba(10, 132, 255, 0.15);
-    border-radius: var(--radius-sm);
-    font-size: 0.75rem;
-    color: var(--accent);
-}
-
-
-/* Context Menu */
-.context-menu {
-    position: fixed;
-    z-index: 3000;
-    min-width: 180px;
-    background: rgba(255, 255, 255, 0.82);
-    backdrop-filter: blur(50px) saturate(1.8);
-    -webkit-backdrop-filter: blur(50px) saturate(1.8);
-    border: 1px solid rgba(255, 255, 255, 0.9);
-    border-radius: 10px;
-    padding: 4px;
-    box-shadow: 0 12px 40px rgba(0, 40, 100, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.05);
-}
-
-.context-item {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.4rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    color: var(--text-primary);
+    justify-content: center;
     cursor: pointer;
-    transition: background 0.12s;
+    line-height: 1;
 }
-.context-item:hover {
-    background: rgba(10, 132, 255, 0.1);
-}
-.context-item.danger { color: var(--danger); }
-.context-item.danger:hover { background: rgba(255, 59, 48, 0.08); }
+.finder-icon-item:hover .shortcut-remove { display: flex; }
 
-.ctx-icon { font-size: 0.875rem; width: 1.2rem; text-align: center; }
-
-.context-sep {
-    height: 1px;
-    background: rgba(0, 60, 120, 0.08);
-    margin: 3px 8px;
+/* List View (files) */
+.finder-list {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 0.5px solid rgba(0, 60, 140, 0.06);
 }
 
-/* Finder Layout (main + preview sidebar) */
-.finder-layout {
+.finder-list-header {
     display: flex;
-    gap: 1rem;
-    max-width: 72rem;
+    align-items: center;
+    padding: 6px 12px;
+    background: rgba(0, 60, 140, 0.03);
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.06);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
 }
 
-.finder-main {
-    flex: 1;
-    min-width: 0;
+.finder-list-row {
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.04);
+    font-size: 13px;
+    cursor: default;
+    transition: background 0.08s ease;
 }
 
-.preview-panel {
-    width: 240px;
+.finder-list-row:last-child { border-bottom: none; }
+.finder-list-row:hover { background: rgba(0, 122, 255, 0.04); }
+.finder-list-row:active { background: rgba(0, 122, 255, 0.08); }
+.finder-list-row.selected { background: var(--accent); color: white; }
+.finder-list-row.selected .flist-size,
+.finder-list-row.selected .flist-kind { color: rgba(255, 255, 255, 0.7); }
+
+.flist-col { display: flex; align-items: center; }
+.flist-name { flex: 1; min-width: 0; gap: 8px; }
+.flist-size { width: 80px; font-size: 12px; color: var(--text-tertiary); }
+.flist-kind { width: 80px; font-size: 12px; color: var(--text-tertiary); }
+
+.flist-file-icon { display: flex; align-items: center; flex-shrink: 0; }
+.flist-filename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Preview Sidebar */
+.finder-preview {
+    width: 220px;
     flex-shrink: 0;
-    padding: 1rem;
+    padding: 16px;
+    border-left: 0.5px solid rgba(0, 60, 140, 0.06);
+    background: rgba(245, 248, 252, 0.5);
     display: flex;
     flex-direction: column;
     align-items: center;
-    align-self: flex-start;
-    position: sticky;
-    top: 2rem;
+    overflow-y: auto;
 }
 
-.preview-empty {
+.preview-placeholder {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 180px;
-    text-align: center;
+    gap: 8px;
+    height: 100%;
+    min-height: 200px;
+}
+
+.preview-placeholder p {
+    font-size: 11px;
+    color: var(--text-quaternary);
 }
 
 .preview-content {
@@ -516,48 +876,247 @@
 
 .preview-content img {
     width: 100%;
-    max-height: 240px;
+    max-height: 200px;
     object-fit: contain;
-    border-radius: 8px;
-    display: block;
+    border-radius: 6px;
 }
 
 .preview-name {
-    margin-top: 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 500;
+    margin-top: 12px;
+    font-size: 12px;
+    font-weight: 600;
     color: var(--text-primary);
     text-align: center;
     word-break: break-all;
 }
 
 .preview-meta {
-    margin-top: 0.25rem;
-    font-size: 0.6875rem;
+    margin-top: 3px;
+    font-size: 11px;
     color: var(--text-tertiary);
     text-align: center;
 }
 
 .preview-text-content {
     width: 100%;
-    max-height: 240px;
+    max-height: 200px;
     overflow-y: auto;
-    padding: 0.75rem;
-    background: rgba(255, 255, 255, 0.4);
-    border: 1px solid rgba(0, 60, 120, 0.06);
-    border-radius: 8px;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.5);
+    border: 0.5px solid rgba(0, 60, 140, 0.06);
+    border-radius: 6px;
     font-family: 'SF Mono', Menlo, Monaco, monospace;
-    font-size: 0.625rem;
+    font-size: 10px;
     line-height: 1.5;
     color: var(--text-primary);
     white-space: pre-wrap;
     word-break: break-all;
-    margin: 0;
 }
 
+/* Status Bar */
+.finder-statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 14px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    background: rgba(245, 248, 252, 0.6);
+    border-top: 0.5px solid rgba(0, 60, 140, 0.06);
+    flex-shrink: 0;
+}
+
+/* Empty State */
+.finder-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 4rem 2rem;
+    color: var(--text-quaternary);
+    font-size: 13px;
+}
+
+
+/* Mobile select checkmark */
+.finder-icon-item.mobile-selected::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E") no-repeat center / 8px;
+}
+
+/* Responsive */
 @media (max-width: 900px) {
-    .finder-layout { flex-direction: column; }
-    .preview-panel { width: 100%; position: static; }
+    .finder-preview { display: none; }
+    .finder-window { min-height: calc(100vh - 8rem); border-radius: 0; margin: -1.25rem -1rem; }
+    .finder-icon-grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); }
+    .flist-kind, .flist-path { display: none; }
+    .finder-searchbar { display: none; }
+    .search-scope-bar { font-size: 11px; overflow-x: auto; }
+}
+
+@media (min-width: 901px) {
+    .mobile-action-bar { display: none !important; }
+    .mobile-paste-fab { display: none !important; }
+    .mobile-only-btn { display: none !important; }
+    .finder-icon-item.mobile-selected::after { display: none; }
+}
+
+/* Labeled toolbar buttons */
+.tb-btn-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    text-decoration: none;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.tb-btn-label:hover { background: var(--accent-light); color: var(--accent); }
+.tb-btn-label:active { transform: scale(0.95); }
+.tb-btn-label:disabled { opacity: 0.35; pointer-events: none; }
+.tb-btn-label.danger-label:not(:disabled):hover { background: var(--danger-light); color: var(--danger); }
+.tb-btn-label.done-btn { color: var(--accent); font-weight: 600; }
+.tb-btn-label.done-btn:hover { background: var(--accent-light); }
+
+/* Select mode toolbar */
+.select-toolbar { background: rgba(0, 122, 255, 0.03); }
+.select-count { font-size: 12px; font-weight: 600; color: var(--accent); }
+
+/* Selected items in select mode get checkmark */
+.select-mode .finder-icon-item,
+.select-mode .finder-list-row {
+    cursor: pointer;
+}
+
+.select-mode .finder-icon-item.checked {
+    background: var(--accent-medium);
+    box-shadow: 0 0 0 1.5px rgba(0, 122, 255, 0.3);
+}
+
+.select-mode .finder-icon-item.checked::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E") no-repeat center / 9px;
+}
+
+.select-mode .finder-list-row.checked {
+    background: var(--accent-light);
+}
+
+.select-mode .finder-list-row.checked::before {
+    content: '';
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E") no-repeat center / 8px;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+/* Toast notifications */
+.toast-container {
+    position: fixed;
+    bottom: 80px;
+    right: 16px;
+    z-index: 5000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    min-width: 240px;
+    max-width: 320px;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(40px) saturate(1.6);
+    -webkit-backdrop-filter: blur(40px) saturate(1.6);
+    border: 0.5px solid rgba(0, 0, 0, 0.08);
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0, 40, 100, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+    pointer-events: auto;
+    animation: toastIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.toast.removing {
+    opacity: 0;
+    transform: translateX(20px);
+}
+
+@keyframes toastIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.toast-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.toast-icon.copying { background: var(--accent-light); color: var(--accent); }
+.toast-icon.success { background: rgba(52, 199, 89, 0.1); color: var(--success); }
+.toast-icon.error { background: var(--danger-light); color: var(--danger); }
+
+.toast-body { flex: 1; min-width: 0; }
+.toast-title { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+.toast-detail { font-size: 11px; color: var(--text-tertiary); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.toast-progress {
+    height: 3px;
+    background: rgba(0, 60, 140, 0.06);
+    border-radius: 2px;
+    margin-top: 6px;
+    overflow: hidden;
+}
+
+.toast-progress-bar {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--accent);
+    transition: width 0.3s ease;
+}
+
+.toast-progress-bar.indeterminate {
+    width: 40%;
+    animation: indeterminate 1.2s infinite ease-in-out;
+}
+
+@keyframes indeterminate {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
 }
 </style>
 
@@ -565,16 +1124,96 @@
 const CSRF = "{{ csrf_token() }}";
 const currentPath = "{{ path }}";
 const systemMode = {{ 'true' if system_mode else 'false' }};
+const driveMode = {{ 'true' if drive is defined and drive else 'false' }};
+const driveName = "{{ drive.name if drive is defined and drive else '' }}";
 const sysParam = systemMode ? "?system=1" : "";
 let clipboard = JSON.parse(sessionStorage.getItem("fileClipboard") || "null");
-let ctxTarget = null;
+let selectMode = false;
+let checkedItems = [];
 
-updatePasteBar();
+updatePasteUI();
+checkPendingOperations();
 
-// Close context menu on click elsewhere
-document.addEventListener("click", () => {
-    document.getElementById("context-menu").classList.add("hidden");
-});
+// === Select Mode ===
+function enterSelectMode() {
+    selectMode = true;
+    checkedItems = [];
+    document.getElementById("toolbar-default").style.display = "none";
+    document.getElementById("toolbar-select").style.display = "";
+    document.querySelector(".finder-body").classList.add("select-mode");
+    updateSelectUI();
+}
+
+function exitSelectMode() {
+    selectMode = false;
+    checkedItems = [];
+    document.getElementById("toolbar-default").style.display = "";
+    document.getElementById("toolbar-select").style.display = "none";
+    document.querySelector(".finder-body").classList.remove("select-mode");
+    document.querySelectorAll(".checked").forEach(el => el.classList.remove("checked"));
+}
+
+function toggleCheck(el) {
+    const path = el.dataset.path;
+    const idx = checkedItems.findIndex(i => i.path === path);
+    if (idx >= 0) {
+        checkedItems.splice(idx, 1);
+        el.classList.remove("checked");
+    } else {
+        checkedItems.push({
+            path: el.dataset.path,
+            name: el.dataset.name || el.querySelector(".finder-icon-name, .flist-filename").textContent.trim(),
+            isDir: el.dataset.isdir === "true"
+        });
+        el.classList.add("checked");
+    }
+    updateSelectUI();
+}
+
+function updateSelectUI() {
+    const n = checkedItems.length;
+    document.getElementById("select-count").textContent = n === 0 ? "Tap items to select" : n + " selected";
+    document.getElementById("btn-copy").disabled = n === 0;
+    document.getElementById("btn-cut").disabled = n === 0;
+    document.getElementById("btn-delete").disabled = n === 0;
+}
+
+function copySelected() {
+    if (checkedItems.length === 0) return;
+    clipboard = {paths: checkedItems.map(i => i.path), mode: "copy"};
+    if (driveMode) clipboard.drive = driveName;
+    sessionStorage.setItem("fileClipboard", JSON.stringify(clipboard));
+    exitSelectMode();
+    updatePasteUI();
+}
+
+function cutSelected() {
+    if (checkedItems.length === 0) return;
+    clipboard = {paths: checkedItems.map(i => i.path), mode: "cut"};
+    if (driveMode) clipboard.drive = driveName;
+    sessionStorage.setItem("fileClipboard", JSON.stringify(clipboard));
+    exitSelectMode();
+    updatePasteUI();
+}
+
+function deleteSelected() {
+    if (checkedItems.length === 0) return;
+    const names = checkedItems.map(i => i.name).join(", ");
+    const msg = driveMode ? "Permanently delete?\n" + names : "Move to Trash?\n" + names;
+    if (!confirm(msg)) return;
+    const payload = driveMode ? checkedItems.map(i => ({path: i.path, src_drive: driveName})) : checkedItems.map(i => ({path: i.path}));
+    Promise.all(payload.map(p => apiPost("/api/files/delete", p)))
+        .then(() => location.reload());
+}
+
+function updatePasteUI() {
+    const pasteBtn = document.getElementById("btn-paste-default");
+    if (clipboard) {
+        pasteBtn.style.display = "";
+    } else {
+        pasteBtn.style.display = "none";
+    }
+}
 
 function apiPost(url, data) {
     return fetch(url, {
@@ -582,69 +1221,6 @@ function apiPost(url, data) {
         headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
         body: JSON.stringify(data)
     }).then(r => r.json());
-}
-
-// Context menu
-function showContext(e, row) {
-    e.preventDefault();
-    e.stopPropagation();
-    ctxTarget = {
-        path: row.dataset.path,
-        name: row.dataset.name,
-        isDir: row.dataset.isdir === "true"
-    };
-
-    // Highlight row
-    document.querySelectorAll(".finder-row.selected").forEach(r => r.classList.remove("selected"));
-    row.classList.add("selected");
-
-    const menu = document.getElementById("context-menu");
-    const dl = document.getElementById("ctx-download");
-    dl.style.display = ctxTarget.isDir ? "none" : "";
-
-    menu.classList.remove("hidden");
-    menu.style.left = Math.min(e.clientX, window.innerWidth - 200) + "px";
-    menu.style.top = Math.min(e.clientY, window.innerHeight - 250) + "px";
-}
-
-function ctxOpen() {
-    if (!ctxTarget) return;
-    window.location.href = "/files/" + ctxTarget.path.replace(/^\//, "") + sysParam;
-}
-
-function ctxDownload() {
-    if (!ctxTarget) return;
-    window.location.href = "/files/" + ctxTarget.path.replace(/^\//, "") + "?download" + (systemMode ? "&system=1" : "");
-}
-
-function ctxCopy() {
-    if (!ctxTarget) return;
-    clipboard = {path: ctxTarget.path, mode: "copy"};
-    sessionStorage.setItem("fileClipboard", JSON.stringify(clipboard));
-    updatePasteBar();
-}
-
-function ctxCut() {
-    if (!ctxTarget) return;
-    clipboard = {path: ctxTarget.path, mode: "cut"};
-    sessionStorage.setItem("fileClipboard", JSON.stringify(clipboard));
-    updatePasteBar();
-}
-
-function ctxRename() {
-    if (!ctxTarget) return;
-    document.getElementById("rename-path").value = ctxTarget.path;
-    document.getElementById("rename-name").value = ctxTarget.name;
-    document.getElementById("rename-modal").classList.remove("hidden");
-}
-
-function ctxDelete() {
-    if (!ctxTarget) return;
-    if (!confirm("Move \"" + ctxTarget.name + "\" to Trash?")) return;
-    apiPost("/api/files/delete", {path: ctxTarget.path}).then(r => {
-        if (r.ok) location.reload();
-        else alert(r.error);
-    });
 }
 
 function createFolder() {
@@ -667,30 +1243,103 @@ function doRename() {
     });
 }
 
+function addShortcut() {
+    const name = document.getElementById("shortcut-name").value.trim();
+    const path = document.getElementById("shortcut-path").value.trim();
+    if (!name || !path) return;
+    apiPost("/api/files/shortcuts", {name, path}).then(r => {
+        if (r.ok) location.reload();
+        else alert(r.error || "Failed");
+    });
+}
+
+function removeShortcut(name) {
+    if (!confirm('Remove shortcut "' + name + '"?')) return;
+    apiPost("/api/files/shortcuts/delete", {name}).then(r => {
+        if (r.ok) location.reload();
+        else alert(r.error || "Failed");
+    });
+}
+
 function updatePasteBar() {
-    const bar = document.getElementById("paste-bar");
-    const label = document.getElementById("paste-label");
-    if (clipboard) {
-        const name = clipboard.path.split("/").pop();
-        const action = clipboard.mode === "cut" ? "Move" : "Copy";
-        label.textContent = action + ' "' + name + '"';
-        bar.classList.remove("hidden");
-    } else {
-        bar.classList.add("hidden");
-    }
+    updatePasteUI();
 }
 
 function doPaste() {
-    if (!clipboard) return;
-    const endpoint = clipboard.mode === "cut" ? "/api/files/move" : "/api/files/copy";
-    apiPost(endpoint, {src: clipboard.path, dest: currentPath}).then(r => {
-        if (r.ok) {
-            if (clipboard.mode === "cut") clearClipboard();
-            location.reload();
-        } else {
-            alert(r.error);
-        }
+    if (!clipboard || !clipboard.paths || clipboard.paths.length === 0) return;
+    const paths = clipboard.paths;
+    const action = clipboard.mode === "cut" ? "Moving" : "Copying";
+    const label = paths.length === 1 ? paths[0].split("/").pop() : paths.length + " items";
+    const wasCut = clipboard.mode === "cut";
+
+    const toastId = showToast(action, label, "progress");
+
+    const requests = paths.map(srcPath => {
+        const payload = {
+            src: srcPath,
+            dest: currentPath,
+            mode: wasCut ? "cut" : "copy",
+        };
+        if (clipboard.drive) payload.src_drive = clipboard.drive;
+        return apiPost("/api/files/transfer", payload);
     });
+
+    Promise.all(requests).then(results => {
+        const failed = results.filter(r => !r.ok);
+        if (failed.length === results.length) {
+            updateToast(toastId, "Failed", failed[0].error || "Could not start transfer", "error");
+            return;
+        }
+        if (failed.length > 0) {
+            updateToast(toastId, "Partial", failed.length + " of " + results.length + " failed", "error");
+        }
+
+        const succeeded = results.filter(r => r.ok);
+        const transferIds = succeeded.map(r => r.data.id);
+
+        if (wasCut) clearClipboard();
+        else updatePasteUI();
+
+        // Poll the last transfer to determine when to reload
+        const lastId = transferIds[transferIds.length - 1];
+        const lastFileName = paths.length === 1 ? paths[0].split("/").pop() : label;
+        localStorage.setItem("activeTransfer", JSON.stringify({
+            id: lastId,
+            fileName: lastFileName,
+            action: action,
+            clearClipboard: wasCut,
+            toastId: toastId,
+        }));
+        pollTransfer(lastId, toastId, lastFileName, wasCut);
+    }).catch(() => {
+        updateToast(toastId, "Failed", "Network error", "error");
+    });
+}
+
+function pollTransfer(transferId, toastId, fileName, wasCut) {
+    const poll = () => {
+        fetch("/api/files/transfer/" + transferId).then(r => r.json()).then(r => {
+            if (!r.ok) {
+                updateToast(toastId, "Failed", "Transfer lost", "error");
+                localStorage.removeItem("activeTransfer");
+                return;
+            }
+            const t = r.data;
+            if (t.status === "done") {
+                updateToast(toastId, wasCut ? "Moved" : "Copied", fileName, "success");
+                localStorage.removeItem("activeTransfer");
+                setTimeout(() => location.reload(), 1500);
+            } else if (t.status === "error") {
+                updateToast(toastId, "Failed", t.error || "Transfer failed", "error");
+                localStorage.removeItem("activeTransfer");
+            } else {
+                setTimeout(poll, 500);
+            }
+        }).catch(() => {
+            setTimeout(poll, 2000);
+        });
+    };
+    poll();
 }
 
 function clearClipboard() {
@@ -699,16 +1348,7 @@ function clearClipboard() {
     updatePasteBar();
 }
 
-
-// Grid items context menu (folders shown as icons)
-document.querySelectorAll(".finder-grid-item").forEach(item => {
-    item.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        showContext(e, item);
-    });
-});
-
-// Preview sidebar
+// Preview
 const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
 const TEXT_EXTS = ['txt', 'md', 'json', 'yaml', 'yml', 'xml', 'csv', 'log', 'py', 'js', 'html', 'css', 'sh', 'conf', 'ini', 'toml', 'env', 'sql'];
 const VIDEO_EXTS = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
@@ -724,7 +1364,6 @@ function showPreview(path, name, size, ext) {
     nameEl.textContent = name;
     metaEl.textContent = size || "";
 
-    // Reset content
     img.classList.add("hidden");
     let textEl = document.getElementById("preview-text");
     if (textEl) textEl.remove();
@@ -741,7 +1380,7 @@ function showPreview(path, name, size, ext) {
         video.controls = false;
         video.muted = true;
         video.preload = "metadata";
-        video.style.cssText = "width:100%; max-height:200px; border-radius:8px; object-fit:contain; background:#000;";
+        video.style.cssText = "width:100%; max-height:180px; border-radius:6px; object-fit:contain; background:#000;";
         video.addEventListener("loadeddata", () => { video.currentTime = 1; });
         content.insertBefore(video, nameEl);
     } else if (TEXT_EXTS.includes(ext)) {
@@ -770,13 +1409,17 @@ function hidePreview() {
     if (videoEl) videoEl.remove();
 }
 
-// File grid items — click to select & preview
-document.querySelectorAll(".finder-grid-item.file-item").forEach(item => {
+// File list rows
+document.querySelectorAll(".finder-list-row").forEach(item => {
     item.addEventListener("click", (e) => {
-        e.preventDefault();
-        document.querySelectorAll(".finder-grid-item.selected").forEach(i => i.classList.remove("selected"));
+        if (selectMode) {
+            e.preventDefault();
+            toggleCheck(item);
+            return;
+        }
+        // Normal mode: show preview
+        document.querySelectorAll(".finder-list-row.selected").forEach(i => i.classList.remove("selected"));
         item.classList.add("selected");
-
         const ext = item.dataset.ext;
         if (IMAGE_EXTS.includes(ext) || TEXT_EXTS.includes(ext) || VIDEO_EXTS.includes(ext)) {
             showPreview(item.dataset.path, item.dataset.name, item.dataset.size || "", ext);
@@ -786,8 +1429,350 @@ document.querySelectorAll(".finder-grid-item.file-item").forEach(item => {
     });
 
     item.addEventListener("dblclick", (e) => {
+        if (selectMode) return;
         window.location.href = "/files/" + item.dataset.path.replace(/^\//, "") + "?download";
     });
+
 });
+
+// Folder icon items — click navigates normally, in select mode it ticks
+document.querySelectorAll(".finder-icon-item[data-path]").forEach(item => {
+    item.addEventListener("click", (e) => {
+        if (selectMode) {
+            e.preventDefault();
+            toggleCheck(item);
+            return;
+        }
+        // Normal mode: navigate into folder
+        const href = item.dataset.href;
+        if (href) window.location.href = href;
+    });
+});
+
+// === Persistent Operation State ===
+function checkPendingOperations() {
+    const active = localStorage.getItem("activeTransfer");
+    if (!active) return;
+
+    const t = JSON.parse(active);
+    const toastId = showToast(t.action, t.fileName, "progress");
+    pollTransfer(t.id, toastId, t.fileName, t.clearClipboard);
+}
+
+// === Toast Notifications ===
+function escHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+let toastCounter = 0;
+
+function getToastContainer() {
+    let c = document.getElementById("toast-container");
+    if (!c) {
+        c = document.createElement("div");
+        c.id = "toast-container";
+        c.className = "toast-container";
+        document.body.appendChild(c);
+    }
+    return c;
+}
+
+function showToast(title, detail, type) {
+    const id = ++toastCounter;
+    const container = getToastContainer();
+
+    const icons = {
+        progress: '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4"/></svg>',
+        success: '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>',
+        error: '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>',
+    };
+
+    const iconClass = type === "progress" ? "copying" : type;
+
+    const toast = document.createElement("div");
+    toast.className = "toast";
+    toast.id = "toast-" + id;
+    toast.innerHTML = `
+        <div class="toast-icon ${iconClass}">${icons[type] || icons.progress}</div>
+        <div class="toast-body">
+            <div class="toast-title">${escHtml(title)}</div>
+            <div class="toast-detail">${escHtml(detail)}</div>
+            ${type === "progress" ? '<div class="toast-progress"><div class="toast-progress-bar indeterminate"></div></div>' : ''}
+        </div>
+    `;
+
+    container.appendChild(toast);
+    return id;
+}
+
+function updateToast(id, title, detail, type) {
+    const toast = document.getElementById("toast-" + id);
+    if (!toast) return;
+
+    const icons = {
+        success: '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>',
+        error: '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>',
+    };
+
+    const iconEl = toast.querySelector(".toast-icon");
+    iconEl.className = "toast-icon " + type;
+    iconEl.innerHTML = icons[type] || "";
+
+    toast.querySelector(".toast-title").textContent = title;
+    toast.querySelector(".toast-detail").textContent = detail;
+
+    const progress = toast.querySelector(".toast-progress");
+    if (progress) progress.remove();
+
+    if (type !== "error") {
+        setTimeout(() => removeToast(id), 3000);
+    } else {
+        setTimeout(() => removeToast(id), 5000);
+    }
+}
+
+function removeToast(id) {
+    const toast = document.getElementById("toast-" + id);
+    if (!toast) return;
+    toast.classList.add("removing");
+    setTimeout(() => toast.remove(), 200);
+}
+
+// === Inline Search ===
+const searchInput = document.getElementById("search-input");
+const searchClear = document.getElementById("search-clear");
+const searchResults = document.getElementById("search-results");
+const normalContent = document.getElementById("finder-normal-content");
+const scopeBar = document.getElementById("search-scope-bar");
+const scopeCurrent = document.getElementById("scope-current");
+const scopeAll = document.getElementById("scope-all");
+
+let searchTimeout = null;
+let searchAbort = null;
+let searchScope = "current";
+let searchFocusIdx = -1;
+
+function isSearchActive() {
+    return searchInput.value.trim().length > 0;
+}
+
+function enterSearchMode() {
+    normalContent.style.display = "none";
+    searchResults.classList.add("active");
+    scopeBar.classList.add("active");
+}
+
+function exitSearchMode() {
+    normalContent.style.display = "";
+    searchResults.classList.remove("active");
+    scopeBar.classList.remove("active");
+    searchResults.innerHTML = "";
+    searchFocusIdx = -1;
+}
+
+function formatSize(bytes) {
+    if (bytes == null) return "";
+    if (bytes > 1073741824) return (bytes / 1073741824).toFixed(1) + " GB";
+    if (bytes > 1048576) return (bytes / 1048576).toFixed(1) + " MB";
+    if (bytes > 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return bytes + " B";
+}
+
+function getFileIcon(entry) {
+    if (entry.is_dir) {
+        return '<svg viewBox="0 0 80 80" width="16" height="16"><defs><linearGradient id="sr-f" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#6EC6FF"/><stop offset="100%" stop-color="#2196F3"/></linearGradient></defs><path d="M8 22h22l4-5h26c3 0 5 2.5 5 5v30c0 3-2 5-5 5H8c-3 0-5-2-5-5V27c0-3 2-5 5-5z" fill="url(#sr-f)" opacity="0.9"/><path d="M3 30h62v22c0 3-2 5-5 5H8c-3 0-5-2-5-5V30z" fill="url(#sr-f)"/></svg>';
+    }
+    const ext = entry.extension || "";
+    if (['jpg','jpeg','png','gif','webp','svg','bmp'].includes(ext))
+        return '<svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.5"/><circle cx="5.5" cy="5.5" r="1.5" fill="#60a5fa"/><path d="M1 11l4-3 2 2 4-4 4 3v4a2 2 0 01-2 2H3a2 2 0 01-2-2z" fill="#93c5fd" opacity="0.7"/></svg>';
+    if (['pdf'].includes(ext))
+        return '<svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.5" fill="#fee2e2" stroke="#fca5a5" stroke-width="0.5"/><text x="8" y="10.5" font-size="5" font-weight="bold" fill="#dc2626" text-anchor="middle" font-family="system-ui">PDF</text></svg>';
+    if (['mp4','mov','avi','mkv','webm'].includes(ext))
+        return '<svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="10" rx="2" fill="#ede9fe" stroke="#c4b5fd" stroke-width="0.5"/><polygon points="6.5,5.5 6.5,10.5 11,8" fill="#7c3aed"/></svg>';
+    if (['mp3','wav','flac','aac','ogg'].includes(ext))
+        return '<svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="#fce7f3" stroke="#f9a8d4" stroke-width="0.5"/><circle cx="8" cy="9" r="3" fill="none" stroke="#ec4899" stroke-width="1.2"/><path d="M11 9V4l-3 1.2" stroke="#ec4899" stroke-width="1.2" fill="none"/></svg>';
+    if (['py','js','ts','html','css','json','yaml','yml','sh','sql','xml','toml'].includes(ext))
+        return '<svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.5" fill="#eff6ff" stroke="#93c5fd" stroke-width="0.5"/><path d="M5 5h4M5 7.5h6M5 10h3" stroke="#3b82f6" stroke-width="0.8" stroke-linecap="round"/></svg>';
+    return '<svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 1h6l4 4v9a2 2 0 01-2 2H4a2 2 0 01-2-2V3a2 2 0 012-2z" fill="#f8fafc" stroke="#cbd5e1" stroke-width="0.5"/><path d="M10 1v3a1 1 0 001 1h3" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="0.5"/></svg>';
+}
+
+function renderSearchResults(results, query) {
+    if (results.length === 0) {
+        searchResults.innerHTML = '<div class="search-empty">No results for "' + escHtml(query) + '"</div>';
+        return;
+    }
+    let html = '<div class="finder-list">';
+    html += '<div class="finder-list-header">'
+        + '<span class="flist-col flist-name">Name</span>'
+        + '<span class="flist-col flist-size">Size</span>'
+        + '<span class="flist-col flist-path">Location</span>'
+        + '</div>';
+    results.forEach((entry, i) => {
+        const parentPath = entry.path.split("/").slice(0, -1).join("/") || "/";
+        const safePath = entry.path.split("/").map(s => encodeURIComponent(s)).join("/");
+        const safeParentPath = parentPath.split("/").map(s => encodeURIComponent(s)).join("/");
+        const href = entry.is_dir
+            ? "/files/" + safePath.replace(/^\//, "") + sysParam
+            : "/files/" + safeParentPath.replace(/^\//, "") + sysParam;
+        html += '<a href="' + href + '" class="finder-list-row" data-idx="' + i + '" style="text-decoration:none;color:inherit;">'
+            + '<span class="flist-col flist-name">'
+            + '<span class="flist-file-icon">' + getFileIcon(entry) + '</span>'
+            + '<span class="flist-filename">' + escHtml(entry.name) + '</span>'
+            + '</span>'
+            + '<span class="flist-col flist-size">' + formatSize(entry.size) + '</span>'
+            + '<span class="flist-col flist-path">' + escHtml(parentPath) + '</span>'
+            + '</a>';
+    });
+    html += '</div>';
+    searchResults.innerHTML = html;
+    searchFocusIdx = -1;
+}
+
+function doSearch(query) {
+    if (searchAbort) searchAbort.abort();
+    if (!query) {
+        exitSearchMode();
+        return;
+    }
+    enterSearchMode();
+    searchResults.innerHTML = '<div class="search-loading">Searching...</div>';
+
+    searchAbort = new AbortController();
+    const path = searchScope === "current" ? currentPath : "/";
+    fetch("/api/files/search?q=" + encodeURIComponent(query) + "&path=" + encodeURIComponent(path), {
+        signal: searchAbort.signal
+    })
+    .then(r => r.json())
+    .then(r => {
+        if (r.ok) renderSearchResults(r.data, query);
+        else searchResults.innerHTML = '<div class="search-empty">Search failed</div>';
+    })
+    .catch(e => {
+        if (e.name !== "AbortError") {
+            searchResults.innerHTML = '<div class="search-empty">Search failed</div>';
+        }
+    });
+}
+
+searchInput.addEventListener("input", () => {
+    const q = searchInput.value.trim();
+    searchClear.classList.toggle("hidden", !q);
+    clearTimeout(searchTimeout);
+    if (!q) {
+        exitSearchMode();
+        return;
+    }
+    searchTimeout = setTimeout(() => doSearch(q), 250);
+});
+
+searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+        searchInput.value = "";
+        searchClear.classList.add("hidden");
+        exitSearchMode();
+        searchInput.blur();
+        return;
+    }
+    const items = searchResults.querySelectorAll(".finder-list-row");
+    if (!items.length) return;
+    if (e.key === "ArrowDown") {
+        e.preventDefault();
+        searchFocusIdx = Math.min(searchFocusIdx + 1, items.length - 1);
+        items.forEach((el, i) => el.classList.toggle("focused", i === searchFocusIdx));
+        items[searchFocusIdx].scrollIntoView({block: "nearest"});
+    } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        searchFocusIdx = Math.max(searchFocusIdx - 1, 0);
+        items.forEach((el, i) => el.classList.toggle("focused", i === searchFocusIdx));
+        items[searchFocusIdx].scrollIntoView({block: "nearest"});
+    } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (searchFocusIdx >= 0 && items[searchFocusIdx]) {
+            window.location.href = items[searchFocusIdx].href;
+        }
+    }
+});
+
+searchClear.addEventListener("click", () => {
+    searchInput.value = "";
+    searchClear.classList.add("hidden");
+    exitSearchMode();
+    searchInput.focus();
+});
+
+// Scope switching
+scopeCurrent.addEventListener("click", () => {
+    if (searchScope === "current") return;
+    searchScope = "current";
+    scopeCurrent.classList.add("selected");
+    scopeAll.classList.remove("selected");
+    if (searchInput.value.trim()) doSearch(searchInput.value.trim());
+});
+
+scopeAll.addEventListener("click", () => {
+    if (searchScope === "all") return;
+    searchScope = "all";
+    scopeAll.classList.add("selected");
+    scopeCurrent.classList.remove("selected");
+    if (searchInput.value.trim()) doSearch(searchInput.value.trim());
+});
+
+// Cmd/Ctrl+F to focus search
+document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        searchInput.focus();
+        searchInput.select();
+    }
+});
+
+// Mobile search
+const mobileSearchBar = document.getElementById("mobile-search-bar");
+const mobileSearchInput = document.getElementById("mobile-search-input");
+const finderTitlebar = document.getElementById("finder-titlebar");
+
+function openMobileSearch() {
+    mobileSearchBar.classList.add("active");
+    finderTitlebar.style.display = "none";
+    mobileSearchInput.focus();
+}
+
+function closeMobileSearch() {
+    mobileSearchBar.classList.remove("active");
+    finderTitlebar.style.display = "";
+    mobileSearchInput.value = "";
+    exitSearchMode();
+}
+
+// Sync mobile search input with the search logic
+mobileSearchInput.addEventListener("input", () => {
+    const q = mobileSearchInput.value.trim();
+    clearTimeout(searchTimeout);
+    if (!q) {
+        exitSearchMode();
+        return;
+    }
+    searchTimeout = setTimeout(() => doSearch(q), 250);
+});
+
+mobileSearchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+        closeMobileSearch();
+        return;
+    }
+    const items = searchResults.querySelectorAll(".finder-list-row");
+    if (!items.length) return;
+    if (e.key === "Enter") {
+        e.preventDefault();
+        if (searchFocusIdx >= 0 && items[searchFocusIdx]) {
+            window.location.href = items[searchFocusIdx].href;
+        } else if (items[0]) {
+            window.location.href = items[0].href;
+        }
+    }
+});
+
 </script>
 {% endblock %}

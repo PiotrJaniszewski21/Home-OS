@@ -4,6 +4,7 @@ from flask import jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from home_os.extensions import db
+from home_os.models.bill_payment import BillPayment
 from home_os.models.calendar import CalendarEvent
 from home_os.models.user import User
 from home_os.modules.budget import budget_bp
@@ -43,7 +44,20 @@ def budget_summary():
     one_off_income = income_query.all()
     users = User.query.filter_by(is_active=True).all()
 
-    # Calculate monthly bill total
+    # Get paid bill instances for this month
+    paid_this_month = set()
+    if year and month:
+        from calendar import monthrange
+        month_start = date(year, month, 1)
+        _, last_day = monthrange(year, month)
+        month_end = date(year, month, last_day)
+        bill_payments = BillPayment.query.filter(
+            BillPayment.period_date >= month_start,
+            BillPayment.period_date <= month_end,
+        ).all()
+        paid_this_month = {(bp.event_id, bp.period_date) for bp in bill_payments}
+
+    # Calculate monthly bill total and determine per-bill paid status for this month
     monthly_bills = 0.0
     bill_list = []
 
@@ -56,6 +70,19 @@ def budget_summary():
         else:
             monthly_equiv = amount
 
+        bill_paid = False
+        paid_count = 0
+        expected_count = 1
+        if year and month:
+            paid_count = sum(1 for eid, _ in paid_this_month if eid == bill.id)
+            if bill.recurrence == "weekly":
+                expected_count = 4
+            elif bill.recurrence == "daily":
+                from calendar import monthrange as mr
+                _, days = mr(year, month)
+                expected_count = days
+            bill_paid = paid_count >= expected_count
+
         bill_list.append({
             "id": bill.id,
             "title": bill.title,
@@ -63,14 +90,15 @@ def budget_summary():
             "currency": bill.currency or "GBP",
             "recurrence": bill.recurrence or "monthly",
             "monthly_equivalent": round(monthly_equiv, 2),
-            "is_paid": bill.is_paid,
+            "is_paid": bill_paid,
+            "paid_count": paid_count,
+            "expected_count": expected_count,
             "next_date": bill.date.isoformat(),
             "created_by": bill.creator.username if bill.creator else None,
         })
         monthly_bills += monthly_equiv
 
-    # One-off payments (upcoming, not paid)
-    today = date.today()
+    # One-off payments
     payment_list = []
     for p in payments:
         payment_list.append({
@@ -111,7 +139,9 @@ def budget_summary():
         })
         total_monthly_income += income
 
-    monthly_remaining = total_monthly_income - monthly_bills
+    total_income_events = sum(i["amount"] for i in income_event_list)
+    total_payments = sum(p["amount"] for p in payment_list)
+    monthly_remaining = total_monthly_income + total_income_events - monthly_bills - total_payments
 
     return jsonify({
         "ok": True,
@@ -127,7 +157,7 @@ def budget_summary():
             "upcoming_income_total": round(upcoming_income_total, 2),
             "total_monthly_income": round(total_monthly_income, 2),
             "monthly_remaining": round(monthly_remaining, 2),
-            "yearly_remaining": round(monthly_remaining * 12, 2),
+            "yearly_remaining": round((total_monthly_income - monthly_bills) * 12, 2),
         }
     })
 

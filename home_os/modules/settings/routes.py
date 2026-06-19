@@ -122,41 +122,4 @@ def save_media():
 @settings_bp.route("/settings/cloudflare")
 @admin_required
 def cloudflare_setup():
-    from home_os.models.settings import Setting
-
-    tunnel_url = Setting.get("cloudflare_tunnel_url", "")
-    tunnel_domain = Setting.get("cloudflare_domain", "")
-    tunnel_configured = Setting.get("cloudflare_configured", "false") == "true"
-    return render_template("settings/cloudflare.html",
-                           tunnel_url=tunnel_url,
-                           tunnel_domain=tunnel_domain,
-                           tunnel_configured=tunnel_configured)
-
-
-@settings_bp.route("/settings/cloudflare", methods=["POST"])
-@admin_required
-def save_cloudflare():
-    from home_os.models.settings import Setting
-
-    tunnel_url = request.form.get("tunnel_url", "").strip()
-    tunnel_domain = request.form.get("tunnel_domain", "").strip()
-
-    Setting.set("cloudflare_tunnel_url", tunnel_url)
-    Setting.set("cloudflare_domain", tunnel_domain)
-    Setting.set("cloudflare_configured", "true" if tunnel_url else "false")
-
-    flash("Cloudflare Tunnel configured.", "success")
-    return redirect(url_for("settings.settings_view"))
-
-
-@settings_bp.route("/settings/cloudflare/reset", methods=["POST"])
-@admin_required
-def reset_cloudflare():
-    from home_os.models.settings import Setting
-
-    Setting.set("cloudflare_tunnel_url", "")
-    Setting.set("cloudflare_domain", "")
-    Setting.set("cloudflare_configured", "false")
-
-    flash("Cloudflare Tunnel configuration removed.", "success")
-    return redirect(url_for("settings.settings_view"))
+    return redirect(url_for("network.network_view") + "#tunnel")

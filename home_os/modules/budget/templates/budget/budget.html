@@ -72,7 +72,7 @@
         <div class="glass-card" style="text-align:center;">
             <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Remaining</p>
             <p id="total-remaining" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem;"></p>
-            <p class="text-tertiary text-xs">/month</p>
+            <p class="text-tertiary text-xs" id="remaining-label">this month</p>
         </div>
         <div class="glass-card" style="text-align:center;">
             <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">One-off Due</p>
@@ -326,7 +326,7 @@ function load() {
                         <td><span class="badge badge-ghost">${b.recurrence}</span></td>
                         <td>${getCurrencySymbol(b.currency)}${b.monthly_equivalent.toFixed(2)}</td>
                         <td class="text-tertiary text-xs">${b.created_by || ''}</td>
-                        <td><span class="paid-badge ${b.is_paid ? 'paid' : 'unpaid'}" onclick="togglePaid(${b.id})">${b.is_paid ? 'Paid' : 'Due'}</span></td>
+                        <td><span class="paid-badge ${b.is_paid ? 'paid' : 'unpaid'}" onclick="togglePaid(${b.id})">${b.expected_count > 1 ? b.paid_count + '/' + b.expected_count : (b.is_paid ? 'Paid' : 'Due')}</span></td>
                     </tr>`).join("");
             } else {
                 document.getElementById("bills-body").innerHTML = '<tr><td colspan="6" style="text-align:center; padding:2rem; color:var(--text-tertiary);">No recurring bills</td></tr>';
@@ -367,7 +367,8 @@ function load() {
 function togglePaid(id) {
     fetch(`/api/calendar/events/${id}/toggle-paid`, {
         method: "POST",
-        headers: {"X-CSRFToken": CSRF}
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({year: currentYear, month: currentMonth})
     }).then(r => r.json()).then(r => { if (r.ok) load(); });
 }
 

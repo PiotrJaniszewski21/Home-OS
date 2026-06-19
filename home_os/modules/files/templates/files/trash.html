@@ -1,53 +1,162 @@
 {% extends "base.html" %}
 {% block title %}Trash — Home OS{% endblock %}
 {% block content %}
-<div class="max-w-4xl mx-auto">
-    <div class="flex items-center justify-between mb-6">
-        <div class="flex items-center gap-4">
-            <a href="{{ url_for('files.browse') }}" class="text-gray-400 hover:text-primary text-sm">&larr; Files</a>
-            <h1 class="text-xl font-semibold">Trash</h1>
+<div class="finder-window" style="max-width: 56rem;">
+    <div class="finder-titlebar">
+        <div class="titlebar-left">
+            <a href="{{ url_for('files.browse') }}" class="nav-arrow" title="Back to Files">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+            </a>
+        </div>
+        <div class="titlebar-center">
+            <span class="titlebar-title">Trash</span>
+        </div>
+        <div class="titlebar-right">
             {% if entries %}
-            <span class="text-xs text-gray-500">{{ entries|length }} item{{ 's' if entries|length != 1 }}</span>
+            <button onclick="emptyTrash()" class="tb-btn-label danger-label">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                Empty Trash
+            </button>
             {% endif %}
         </div>
-        {% if entries %}
-        <button onclick="emptyTrash()" class="text-sm bg-red-900/50 border border-red-800 hover:bg-red-900 text-red-200 px-3 py-1 rounded">Empty Trash</button>
-        {% endif %}
     </div>
 
-    <div class="bg-surface border border-border rounded-xl overflow-hidden">
-        <table class="w-full text-sm">
-            <thead class="border-b border-border">
-                <tr class="text-gray-400 text-left">
-                    <th class="px-4 py-3">Original Path</th>
-                    <th class="px-4 py-3 w-24">Size</th>
-                    <th class="px-4 py-3 w-36">Deleted</th>
-                    <th class="px-4 py-3 w-32">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
+    <div class="finder-content-area">
+        <div class="finder-body" style="padding: 0;">
+            {% if entries %}
+            <div class="finder-list" style="border: none; border-radius: 0;">
+                <div class="finder-list-header">
+                    <span class="flist-col flist-name">Original Location</span>
+                    <span class="flist-col flist-size">Size</span>
+                    <span class="flist-col flist-date">Deleted</span>
+                    <span class="flist-col flist-actions"></span>
+                </div>
                 {% for entry in entries %}
-                <tr class="border-b border-border/50 hover:bg-background/50 group">
-                    <td class="px-4 py-2 text-gray-200">{{ entry.original_path }}</td>
-                    <td class="px-4 py-2 text-gray-400 text-xs">
-                        {% if entry.size_bytes > 1048576 %}{{ "%.1f"|format(entry.size_bytes / 1048576) }} MB
+                <div class="finder-list-row">
+                    <span class="flist-col flist-name">
+                        <span class="flist-file-icon">
+                            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 1h6l4 4v9a2 2 0 01-2 2H4a2 2 0 01-2-2V3a2 2 0 012-2z" fill="#f8fafc" stroke="#cbd5e1" stroke-width="0.5"/><path d="M10 1v3a1 1 0 001 1h3" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="0.5"/></svg>
+                        </span>
+                        <span class="flist-filename">{{ entry.original_path }}</span>
+                    </span>
+                    <span class="flist-col flist-size">
+                        {% if entry.size_bytes > 1073741824 %}{{ "%.1f"|format(entry.size_bytes / 1073741824) }} GB
+                        {% elif entry.size_bytes > 1048576 %}{{ "%.1f"|format(entry.size_bytes / 1048576) }} MB
                         {% elif entry.size_bytes > 1024 %}{{ "%.1f"|format(entry.size_bytes / 1024) }} KB
                         {% else %}{{ entry.size_bytes }} B{% endif %}
-                    </td>
-                    <td class="px-4 py-2 text-gray-500 text-xs">{{ entry.deleted_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                    <td class="px-4 py-2">
-                        <button onclick="restoreItem({{ entry.id }})" class="text-xs text-primary hover:underline mr-3">Restore</button>
-                        <button onclick="permanentDelete({{ entry.id }})" class="text-xs text-gray-400 hover:text-red-400">Delete</button>
-                    </td>
-                </tr>
+                    </span>
+                    <span class="flist-col flist-date">{{ entry.deleted_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                    <span class="flist-col flist-actions">
+                        <button onclick="restoreItem({{ entry.id }})" class="tb-btn" title="Restore" style="width:24px; height:24px;">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a5 5 0 015 5v2M3 10l4-4M3 10l4 4"/></svg>
+                        </button>
+                        <button onclick="permanentDelete({{ entry.id }})" class="tb-btn danger-action" title="Delete Forever" style="width:24px; height:24px;">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    </span>
+                </div>
                 {% endfor %}
-                {% if not entries %}
-                <tr><td colspan="4" class="px-4 py-8 text-center text-gray-500">Trash is empty</td></tr>
-                {% endif %}
-            </tbody>
-        </table>
+            </div>
+            {% else %}
+            <div class="finder-empty">
+                <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="opacity:0.3;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                <p>Trash is empty</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="finder-statusbar">
+        <span>{{ entries|length }} item{{ 's' if entries|length != 1 else '' }}</span>
     </div>
 </div>
+
+<style>
+.finder-window {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(60px) saturate(1.5);
+    -webkit-backdrop-filter: blur(60px) saturate(1.5);
+    border: 0.5px solid rgba(255, 255, 255, 0.85);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 50, 120, 0.1), 0 0 1px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 10rem);
+}
+.finder-titlebar {
+    display: flex; align-items: center; height: 38px; padding: 0 12px;
+    background: rgba(245, 248, 252, 0.85);
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.08); flex-shrink: 0;
+}
+.titlebar-left { display: flex; align-items: center; gap: 4px; min-width: 60px; }
+.titlebar-center { flex: 1; text-align: center; }
+.titlebar-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.titlebar-right { display: flex; align-items: center; gap: 6px; min-width: 60px; justify-content: flex-end; }
+.nav-arrow {
+    display: flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 6px;
+    color: var(--text-secondary); text-decoration: none; transition: all 0.12s ease;
+}
+.nav-arrow:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+.finder-content-area { display: flex; flex: 1; overflow: hidden; }
+.finder-body { flex: 1; overflow-y: auto; min-width: 0; }
+.finder-list { border-radius: 0; overflow: hidden; }
+.finder-list-header {
+    display: flex; align-items: center; padding: 6px 12px;
+    background: rgba(0, 60, 140, 0.03);
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.06);
+    font-size: 11px; font-weight: 500; color: var(--text-tertiary);
+    text-transform: uppercase; letter-spacing: 0.03em;
+}
+.finder-list-row {
+    display: flex; align-items: center; padding: 6px 12px;
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.04);
+    font-size: 13px; transition: background 0.08s ease;
+}
+.finder-list-row:last-child { border-bottom: none; }
+.finder-list-row:hover { background: rgba(0, 122, 255, 0.04); }
+.flist-col { display: flex; align-items: center; }
+.flist-name { flex: 1; min-width: 0; gap: 8px; }
+.flist-size { width: 80px; font-size: 12px; color: var(--text-tertiary); }
+.flist-date { width: 120px; font-size: 12px; color: var(--text-tertiary); }
+.flist-actions { width: 70px; justify-content: flex-end; gap: 2px; opacity: 0; transition: opacity 0.12s; }
+.finder-list-row:hover .flist-actions { opacity: 1; }
+.flist-file-icon { display: flex; align-items: center; flex-shrink: 0; }
+.flist-filename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.tb-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 6px;
+    border: none; background: none; color: var(--text-secondary);
+    cursor: pointer; transition: all 0.12s ease; text-decoration: none;
+}
+.tb-btn:hover { background: rgba(0, 0, 0, 0.05); color: var(--text-primary); }
+.tb-btn.danger-action:hover { background: var(--danger-light); color: var(--danger); }
+.tb-btn-label {
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 6px; border: none; background: none;
+    color: var(--text-secondary); font-size: 12px; font-weight: 500;
+    font-family: inherit; cursor: pointer; transition: all 0.12s ease;
+    white-space: nowrap;
+}
+.tb-btn-label:hover { background: var(--accent-light); color: var(--accent); }
+.tb-btn-label.danger-label:hover { background: var(--danger-light); color: var(--danger); }
+.finder-statusbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 5px 14px; font-size: 11px; color: var(--text-tertiary);
+    background: rgba(245, 248, 252, 0.6);
+    border-top: 0.5px solid rgba(0, 60, 140, 0.06); flex-shrink: 0;
+}
+.finder-empty {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 12px; padding: 4rem 2rem;
+    color: var(--text-quaternary); font-size: 13px;
+}
+@media (max-width: 900px) {
+    .finder-window { border-radius: 0; margin: -1.25rem -1rem; min-height: calc(100vh - 8rem); }
+    .flist-date { display: none; }
+}
+</style>
 
 <script>
 const CSRF = "{{ csrf_token() }}";

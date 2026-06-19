@@ -33,20 +33,41 @@ class FileService:
             resolved = target.resolve()
             return resolved
 
-        # Check for symlinks at any level of the path
+        # Allow symlinks at the top level of storage root (e.g. drive mounts)
+        # but block symlinks in subdirectories to prevent traversal attacks
         parts = Path(relative_path).parts
+        top_level_symlink = None
         check = self.storage_root
-        for part in parts:
+        for i, part in enumerate(parts):
             check = check / part
             if check.is_symlink():
-                raise PermissionError("Access denied: symlinks not allowed")
+                if i == 0:
+                    top_level_symlink = check.resolve()
+                else:
+                    raise PermissionError("Access denied: symlinks not allowed")
 
         resolved = target.resolve()
 
-        try:
-            resolved.relative_to(self.storage_root.resolve())
-        except ValueError:
-            raise PermissionError("Access denied: path outside storage root")
+        if top_level_symlink:
+            # Reject symlinks pointing to overly broad targets
+            try:
+                top_level_symlink.relative_to(self.storage_root.resolve())
+            except ValueError:
+                # Target is outside storage root — ensure it's not an ancestor of it
+                try:
+                    self.storage_root.resolve().relative_to(top_level_symlink)
+                    raise PermissionError("Access denied: symlink target too broad")
+                except ValueError:
+                    pass
+            try:
+                resolved.relative_to(top_level_symlink)
+            except ValueError:
+                raise PermissionError("Access denied: path outside storage root")
+        else:
+            try:
+                resolved.relative_to(self.storage_root.resolve())
+            except ValueError:
+                raise PermissionError("Access denied: path outside storage root")
 
         return resolved
 

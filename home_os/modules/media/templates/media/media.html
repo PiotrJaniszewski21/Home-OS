@@ -281,6 +281,58 @@
         <div id="overseerr-loading" class="service-loading"><p class="text-tertiary text-sm">Checking...</p></div>
     </div>
 
+    <!-- FlareSolverr -->
+    <div class="glass-card mb-4" id="flaresolverr-card">
+        <div class="flex items-center gap-3 mb-2">
+            <div class="service-icon" style="background:linear-gradient(135deg, #f97316, #dc2626);">
+                <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
+            </div>
+            <div>
+                <h2 class="service-title">FlareSolverr</h2>
+                <p class="text-secondary text-xs">Cloudflare challenge bypass proxy for Prowlarr</p>
+            </div>
+            <span id="flaresolverr-badge" class="badge" style="margin-left:auto;"></span>
+            <button class="gear-btn" onclick="toggleSettings('flaresolverr')" id="flaresolverr-gear" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            </button>
+        </div>
+        <div id="flaresolverr-settings" class="settings-popup hidden">
+            <div class="settings-popup-content">
+                <h4 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">FlareSolverr Settings</h4>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Port</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="flaresolverr-port-input" class="port-input" onchange="savePort('flaresolverr', this.value)">
+                        <span id="flaresolverr-port-saved" class="port-saved hidden">Saved</span>
+                    </div>
+                </div>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Service</label>
+                    <button id="flaresolverr-settings-toggle" onclick="toggleService('flaresolverr')" class="btn btn-ghost btn-sm"></button>
+                </div>
+                <div class="settings-row" style="border-bottom:none;">
+                    <label class="text-secondary text-xs">Danger</label>
+                    <button onclick="uninstallService('flaresolverr')" class="btn btn-ghost btn-sm danger">Uninstall</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="flaresolverr-not-installed" class="hidden service-install-prompt">
+            <p class="text-secondary text-sm mb-4">Proxy server to bypass Cloudflare and DDoS-GUARD protection. Used by Prowlarr indexers.</p>
+            <button onclick="installService('flaresolverr')" id="flaresolverr-install-btn" class="btn btn-primary">Install</button>
+            <p id="flaresolverr-install-status" class="text-tertiary text-xs mt-3"></p>
+        </div>
+
+        <div id="flaresolverr-installed" class="hidden">
+            <div class="service-controls">
+                <span class="text-secondary text-xs">API endpoint: http://localhost:<span id="flaresolverr-port-display">8191</span></span>
+                <button id="flaresolverr-toggle-btn" onclick="toggleService('flaresolverr')" class="btn btn-ghost"></button>
+            </div>
+        </div>
+
+        <div id="flaresolverr-loading" class="service-loading"><p class="text-tertiary text-sm">Checking...</p></div>
+    </div>
+
     <!-- qBittorrent -->
     <div class="glass-card mb-4" id="qbittorrent-card">
         <div class="flex items-center gap-3 mb-2">
@@ -336,39 +388,186 @@
 
         <div id="qbittorrent-loading" class="service-loading"><p class="text-tertiary text-sm">Checking...</p></div>
     </div>
+
+    <!-- Auto-Delete Watched Media -->
+    <div class="glass-card mb-4" id="autodelete-card">
+        <div class="flex items-center gap-3 mb-2">
+            <div class="service-icon" style="background:linear-gradient(135deg, #ef4444, #9333ea);">
+                <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" opacity="0.7"/><path d="M3 6l18 12M3 6l2-2" stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M18 4l2 2v3l-2 2h-3l-2-2V6l2-2h3z" fill="white" opacity="0.9"/></svg>
+            </div>
+            <div>
+                <h2 class="service-title">Auto-Delete Watched</h2>
+                <p class="text-secondary text-xs">Remove media after you finish watching</p>
+            </div>
+            <span id="autodelete-badge" class="badge" style="margin-left:auto;"></span>
+            <button class="gear-btn" onclick="toggleAutodeleteSettings()" id="autodelete-gear" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            </button>
+        </div>
+
+        <!-- Settings popup (shown when configured) -->
+        <div id="autodelete-settings" class="settings-popup hidden">
+            <div class="settings-popup-content">
+                <h4 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Auto-Delete Settings</h4>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Enabled</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="ad-enabled" onchange="saveAutodeleteConfig()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Delay (hours after watched)</label>
+                    <input type="number" id="ad-delay" class="port-input" min="1" max="720" value="24" onchange="saveAutodeleteConfig()">
+                </div>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Delete threshold (<span id="ad-threshold-label">85</span>%) <span style="opacity:0.6;">(% watched before auto-deleting)</span></label>
+                    <input type="range" id="ad-threshold" min="60" max="95" step="5" value="85" oninput="document.getElementById('ad-threshold-label').textContent=this.value" onchange="saveAutodeleteConfig()" style="width:100px;">
+                </div>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Movies</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="ad-movies" checked onchange="saveAutodeleteConfig()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">TV Shows</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="ad-tv" checked onchange="saveAutodeleteConfig()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <label class="text-secondary text-xs">Plex Token</label>
+                    <div class="flex items-center gap-1">
+                        <input type="password" id="ad-plex-token" class="port-input" style="width:8rem;" placeholder="Token" onchange="saveAutodeleteConfig()">
+                        <button class="gear-btn" onclick="togglePasswordVisibility('ad-plex-token')" title="Show/hide">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                        <button class="btn btn-ghost btn-sm" onclick="testConnection('plex', 'ad-plex-token', this)" style="font-size:10px; padding:0.2rem 0.4rem;">Test</button>
+                    </div>
+                </div>
+                <div class="settings-row" id="ad-sonarr-row">
+                    <label class="text-secondary text-xs">Sonarr API Key</label>
+                    <div class="flex items-center gap-1">
+                        <input type="password" id="ad-sonarr-key" class="port-input" style="width:8rem;" placeholder="API Key" onchange="saveAutodeleteConfig()">
+                        <button class="btn btn-ghost btn-sm" onclick="testConnection('sonarr', 'ad-sonarr-key', this)" style="font-size:10px; padding:0.2rem 0.4rem;">Test</button>
+                    </div>
+                </div>
+                <div class="settings-row" id="ad-radarr-row">
+                    <label class="text-secondary text-xs">Radarr API Key</label>
+                    <div class="flex items-center gap-1">
+                        <input type="password" id="ad-radarr-key" class="port-input" style="width:8rem;" placeholder="API Key" onchange="saveAutodeleteConfig()">
+                        <button class="btn btn-ghost btn-sm" onclick="testConnection('radarr', 'ad-radarr-key', this)" style="font-size:10px; padding:0.2rem 0.4rem;">Test</button>
+                    </div>
+                </div>
+                <div class="settings-row" style="border-bottom:none;">
+                    <label class="text-secondary text-xs">Manual</label>
+                    <button onclick="runAutodeleteNow()" id="ad-run-btn" class="btn btn-ghost btn-sm">Run Now</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Not configured state -->
+        <div id="autodelete-not-configured" class="hidden service-install-prompt">
+            <p class="text-secondary text-sm mb-4">Automatically remove movies and TV episodes after you finish watching them. Requires a Plex token to detect watched status.</p>
+            <div style="max-width:280px; margin:0 auto; text-align:left;">
+                <div class="mb-3">
+                    <label class="text-secondary text-xs block mb-1">Plex Token</label>
+                    <div class="flex items-center gap-1">
+                        <input type="password" id="ad-setup-plex-token" class="port-input" style="width:100%;" placeholder="Your Plex token">
+                        <button class="gear-btn" onclick="togglePasswordVisibility('ad-setup-plex-token')" title="Show/hide">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                        <button class="btn btn-ghost btn-sm" onclick="testConnection('plex', 'ad-setup-plex-token', this)" style="font-size:10px; padding:0.2rem 0.4rem;">Test</button>
+                    </div>
+                </div>
+                <div class="mb-3" id="ad-setup-sonarr-row">
+                    <label class="text-secondary text-xs block mb-1">Sonarr API Key <span class="text-tertiary">(optional)</span></label>
+                    <div class="flex items-center gap-1">
+                        <input type="password" id="ad-setup-sonarr-key" class="port-input" style="width:100%;" placeholder="For TV show cleanup">
+                        <button class="btn btn-ghost btn-sm" onclick="testConnection('sonarr', 'ad-setup-sonarr-key', this)" style="font-size:10px; padding:0.2rem 0.4rem;">Test</button>
+                    </div>
+                </div>
+                <div class="mb-3" id="ad-setup-radarr-row">
+                    <label class="text-secondary text-xs block mb-1">Radarr API Key <span class="text-tertiary">(optional)</span></label>
+                    <div class="flex items-center gap-1">
+                        <input type="password" id="ad-setup-radarr-key" class="port-input" style="width:100%;" placeholder="For movie cleanup">
+                        <button class="btn btn-ghost btn-sm" onclick="testConnection('radarr', 'ad-setup-radarr-key', this)" style="font-size:10px; padding:0.2rem 0.4rem;">Test</button>
+                    </div>
+                </div>
+            </div>
+            <button onclick="enableAutodelete()" id="ad-enable-btn" class="btn btn-primary mt-3">Enable Auto-Delete</button>
+            <p id="ad-setup-status" class="text-tertiary text-xs mt-3"></p>
+        </div>
+
+        <!-- Configured state -->
+        <div id="autodelete-configured" class="hidden">
+            <div id="autodelete-status-section">
+                <div id="autodelete-pending" class="hidden mb-3">
+                    <div class="glass-panel" style="padding:0; overflow:hidden;">
+                        <div style="padding:0.5rem 0.75rem; border-bottom:1px solid rgba(0,60,120,0.06);">
+                            <h3 class="text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Pending Deletion</h3>
+                        </div>
+                        <div id="autodelete-pending-list" style="padding:0.4rem 0.75rem;"></div>
+                    </div>
+                </div>
+                <div id="autodelete-recent" class="hidden mb-3">
+                    <div class="glass-panel" style="padding:0; overflow:hidden;">
+                        <div style="padding:0.5rem 0.75rem; border-bottom:1px solid rgba(0,60,120,0.06);">
+                            <h3 class="text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Recently Deleted</h3>
+                        </div>
+                        <div id="autodelete-recent-list" style="padding:0.4rem 0.75rem;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="service-controls">
+                <span class="text-secondary text-xs" id="ad-summary">Checking every 5 min</span>
+            </div>
+        </div>
+
+        <div id="autodelete-loading" class="service-loading"><p class="text-tertiary text-sm">Checking...</p></div>
+    </div>
 </div>
 
 <style>
-.service-icon { width:36px; height:36px; border-radius:9px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-.service-title { font-size:1rem; font-weight:600; }
-.service-install-prompt { text-align:center; padding:1rem 0; }
-.service-controls { display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem; }
+.toggle-switch { position:relative; display:inline-block; width:36px; height:20px; }
+.toggle-switch input { opacity:0; width:0; height:0; }
+.toggle-slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:rgba(0,60,140,0.12); border-radius:20px; transition:0.2s; }
+.toggle-slider:before { position:absolute; content:""; height:16px; width:16px; left:2px; bottom:2px; background:#fff; border-radius:50%; transition:0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.15); }
+.toggle-switch input:checked + .toggle-slider { background:var(--success); }
+.toggle-switch input:checked + .toggle-slider:before { transform:translateX(16px); }
+.service-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+.service-title { font-size:15px; font-weight:600; letter-spacing:-0.01em; }
+.service-install-prompt { text-align:center; padding:1.25rem 0; }
+.service-controls { display:flex; align-items:center; gap:0.5rem; margin-top:0.75rem; }
 .service-loading { text-align:center; padding:1rem 0; }
-.stat-card { background:rgba(255,255,255,0.4); border:1px solid var(--border-glass); border-radius:var(--radius-sm); text-align:center; padding:0.6rem; }
-.stat-label { font-size:0.625rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-tertiary); }
-.stat-value { font-size:1.25rem; font-weight:700; margin-top:0.15rem; }
-.lib-row { display:flex; align-items:center; justify-content:space-between; padding:0.35rem 0; border-bottom:1px solid rgba(0,60,120,0.04); }
+.stat-card { background:rgba(255,255,255,0.5); border:0.5px solid var(--border-glass); border-radius:var(--radius-sm); text-align:center; padding:0.75rem; }
+.stat-label { font-size:10px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-tertiary); font-weight:500; }
+.stat-value { font-size:20px; font-weight:700; margin-top:2px; letter-spacing:-0.02em; }
+.lib-row { display:flex; align-items:center; justify-content:space-between; padding:0.4rem 0; border-bottom:0.5px solid rgba(0,60,120,0.04); }
 .lib-row:last-child { border-bottom:none; }
-.lib-icon { font-size:0.875rem; width:1.25rem; text-align:center; }
-.lib-name { font-size:0.8125rem; font-weight:500; color:var(--text-primary); }
-.lib-count { font-size:0.75rem; color:var(--text-tertiary); }
-.lib-type { font-size:0.625rem; color:var(--text-tertiary); background:rgba(0,60,120,0.04); padding:0.1rem 0.35rem; border-radius:4px; }
-.gear-btn { background:none; border:none; color:var(--text-tertiary); cursor:pointer; padding:0.35rem; border-radius:6px; transition:color 0.15s, background 0.15s; display:flex; align-items:center; }
-.gear-btn:hover { color:var(--text-primary); background:rgba(0,60,120,0.06); }
-.settings-popup { margin-top:0.5rem; animation: slideDown 0.15s ease-out; }
+.lib-icon { font-size:14px; width:1.25rem; text-align:center; }
+.lib-name { font-size:13px; font-weight:500; color:var(--text-primary); }
+.lib-count { font-size:12px; color:var(--text-tertiary); }
+.lib-type { font-size:10px; color:var(--text-tertiary); background:rgba(0,60,140,0.04); padding:2px 6px; border-radius:4px; font-weight:500; }
+.gear-btn { background:none; border:none; color:var(--text-quaternary); cursor:pointer; padding:6px; border-radius:var(--radius-xs); transition:all var(--duration-fast) var(--ease-out); display:flex; align-items:center; }
+.gear-btn:hover { color:var(--text-secondary); background:rgba(0,60,140,0.05); }
+.settings-popup { margin-top:0.75rem; animation: modalIn 0.2s var(--ease-spring); }
 .settings-popup.hidden { display:none; }
-.settings-popup-content { background:rgba(255,255,255,0.6); backdrop-filter:blur(12px); border:1px solid var(--border-glass); border-radius:var(--radius-sm); padding:1rem; }
-.settings-row { display:flex; align-items:center; justify-content:space-between; padding:0.6rem 0; border-bottom:1px solid rgba(0,60,120,0.06); }
-.port-input { width:5rem; padding:0.3rem 0.5rem; font-size:0.75rem; border:1px solid var(--border-glass); border-radius:4px; background:rgba(255,255,255,0.8); }
-.port-saved { font-size:0.625rem; color:var(--success); }
-.btn-sm { font-size:0.75rem; padding:0.3rem 0.6rem; }
-.service-frame { width:100%; height:600px; border:1px solid var(--border-glass); border-radius:var(--radius-sm); background:#fff; }
-@keyframes slideDown { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+.settings-popup-content { background:rgba(255,255,255,0.7); backdrop-filter:blur(var(--blur-sm)); -webkit-backdrop-filter:blur(var(--blur-sm)); border:0.5px solid var(--border-glass); border-radius:var(--radius-md); padding:1rem 1.25rem; }
+.settings-row { display:flex; align-items:center; justify-content:space-between; padding:0.6rem 0; border-bottom:0.5px solid var(--border-divider); }
+.port-input { width:5rem; padding:0.3rem 0.5rem; font-size:12px; border:1px solid rgba(0,60,140,0.1); border-radius:var(--radius-xs); background:rgba(255,255,255,0.8); font-family:inherit; outline:none; transition: border-color var(--duration-fast); }
+.port-input:focus { border-color: var(--accent); }
+.port-saved { font-size:10px; color:var(--success); font-weight:500; }
+.btn-sm { font-size:12px; padding:0.3rem 0.6rem; }
+.service-frame { width:100%; height:600px; border:0.5px solid var(--border-glass); border-radius:var(--radius-md); background:#fff; }
 </style>
 
 <script>
 const CSRF = "{{ csrf_token() }}";
-const ALL_SERVICES = ["plex", "sonarr", "radarr", "prowlarr", "overseerr", "qbittorrent"];
+const ALL_SERVICES = ["plex", "sonarr", "radarr", "prowlarr", "overseerr", "flaresolverr", "qbittorrent"];
 const LIB_ICONS = {"movie": "🎬", "show": "📺", "artist": "🎵", "photo": "📷"};
 let serviceState = {};
 
@@ -392,8 +591,7 @@ function loadServiceStatus(service) {
             if (PROXY_MAP[service]) {
                 el(`${service}-open-link`).href = PROXY_MAP[service];
             } else if (service !== "plex") {
-                const webPath = d.web_path || "";
-                el(`${service}-open-link`).href = "http://" + window.location.hostname + ":" + d.port + webPath;
+                el(`${service}-open-link`).href = "http://" + window.location.hostname + ":" + d.port;
             }
 
             // Populate port input
@@ -417,6 +615,11 @@ function loadServiceStatus(service) {
             if (settingsToggle) {
                 settingsToggle.textContent = d.running ? "Stop" : "Start";
                 settingsToggle.className = d.running ? "btn btn-ghost btn-sm danger" : "btn btn-ghost btn-sm";
+            }
+
+            if (service === "flaresolverr") {
+                const portDisplay = el("flaresolverr-port-display");
+                if (portDisplay) portDisplay.textContent = d.port;
             }
 
             if (service === "plex" && d.running) loadPlexStats();
@@ -530,6 +733,7 @@ function toggleSettings(service) {
         const p = document.getElementById(`${s}-settings`);
         if (p) p.classList.add("hidden");
     });
+    document.getElementById("autodelete-settings").classList.add("hidden");
     if (!isOpen) popup.classList.remove("hidden");
 }
 
@@ -553,7 +757,6 @@ const PROXY_MAP = {
     "sonarr": "/svc/sonarr/",
     "radarr": "/svc/radarr/",
     "prowlarr": "/svc/prowlarr/",
-    "overseerr": "/svc/overseerr/",
     "qbittorrent": "/qbt/"
 };
 
@@ -574,5 +777,271 @@ function toggleFrame(service) {
 
 ALL_SERVICES.forEach(loadServiceStatus);
 setInterval(() => { ALL_SERVICES.forEach(s => { if (serviceState[s] && serviceState[s].running) loadServiceStatus(s); }); }, 30000);
+
+// === Auto-Delete Watched Media ===
+
+let autodeleteConfig = null;
+
+function loadAutodeleteConfig() {
+    fetch("/api/media/autodelete/config").then(r => r.json()).then(r => {
+        document.getElementById("autodelete-loading").classList.add("hidden");
+        if (!r.ok) return;
+        autodeleteConfig = r.data;
+        const badge = document.getElementById("autodelete-badge");
+        const isConfigured = r.data.plex_token && r.data.plex_token.length > 0;
+
+        if (!isConfigured) {
+            document.getElementById("autodelete-not-configured").classList.remove("hidden");
+            document.getElementById("autodelete-configured").classList.add("hidden");
+            badge.className = "badge badge-ghost";
+            badge.textContent = "Not Configured";
+            // Show/hide sonarr/radarr rows based on installed services
+            if (serviceState.sonarr && serviceState.sonarr.installed) {
+                document.getElementById("ad-setup-sonarr-row").classList.remove("hidden");
+            } else {
+                document.getElementById("ad-setup-sonarr-row").classList.add("hidden");
+            }
+            if (serviceState.radarr && serviceState.radarr.installed) {
+                document.getElementById("ad-setup-radarr-row").classList.remove("hidden");
+            } else {
+                document.getElementById("ad-setup-radarr-row").classList.add("hidden");
+            }
+        } else {
+            document.getElementById("autodelete-not-configured").classList.add("hidden");
+            document.getElementById("autodelete-configured").classList.remove("hidden");
+
+            if (r.data.enabled) {
+                badge.className = "badge badge-success";
+                badge.textContent = "Active";
+            } else {
+                badge.className = "badge badge-ghost";
+                badge.textContent = "Off";
+            }
+
+            // Populate settings inputs
+            document.getElementById("ad-enabled").checked = r.data.enabled;
+            document.getElementById("ad-delay").value = r.data.delay_hours;
+            document.getElementById("ad-threshold").value = r.data.threshold;
+            document.getElementById("ad-threshold-label").textContent = r.data.threshold;
+            document.getElementById("ad-movies").checked = r.data.movies;
+            document.getElementById("ad-tv").checked = r.data.tv;
+            document.getElementById("ad-plex-token").value = r.data.plex_token;
+            document.getElementById("ad-sonarr-key").value = r.data.sonarr_api_key || "";
+            document.getElementById("ad-radarr-key").value = r.data.radarr_api_key || "";
+
+            // Show/hide arr key rows
+            if (serviceState.sonarr && serviceState.sonarr.installed) {
+                document.getElementById("ad-sonarr-row").classList.remove("hidden");
+            } else {
+                document.getElementById("ad-sonarr-row").classList.add("hidden");
+            }
+            if (serviceState.radarr && serviceState.radarr.installed) {
+                document.getElementById("ad-radarr-row").classList.remove("hidden");
+            } else {
+                document.getElementById("ad-radarr-row").classList.add("hidden");
+            }
+
+            loadAutodeleteStatus();
+        }
+    }).catch(() => {
+        document.getElementById("autodelete-loading").innerHTML = '<p class="text-tertiary text-sm">Failed to load</p>';
+    });
+}
+
+function loadAutodeleteStatus() {
+    fetch("/api/media/autodelete/status").then(r => r.json()).then(r => {
+        if (!r.ok) return;
+        const d = r.data;
+
+        // Pending items
+        const pendingEl = document.getElementById("autodelete-pending");
+        const pendingList = document.getElementById("autodelete-pending-list");
+        if (d.pending && d.pending.length > 0) {
+            pendingEl.classList.remove("hidden");
+            pendingList.innerHTML = d.pending.slice(0, 10).map(item => `
+                <div class="lib-row">
+                    <div class="flex items-center gap-2">
+                        <span class="lib-icon">${item.type === "movie" ? "🎬" : "📺"}</span>
+                        <span class="lib-name">${item.title || item.series_title || "Unknown"}</span>
+                    </div>
+                    <span class="lib-count">${item.hours_remaining != null ? item.hours_remaining + "h left" : ""}</span>
+                </div>
+            `).join("");
+        } else {
+            pendingEl.classList.add("hidden");
+        }
+
+        // Recent deletions
+        const recentEl = document.getElementById("autodelete-recent");
+        const recentList = document.getElementById("autodelete-recent-list");
+        const deletions = d.recent_deletions || d.deleted || [];
+        if (deletions.length > 0) {
+            recentEl.classList.remove("hidden");
+            recentList.innerHTML = deletions.slice(-10).reverse().map(item => `
+                <div class="lib-row">
+                    <div class="flex items-center gap-2">
+                        <span class="lib-icon">${item.type === "movie" ? "🎬" : "📺"}</span>
+                        <span class="lib-name" style="text-decoration:line-through; opacity:0.7;">${item.title || "Unknown"}</span>
+                    </div>
+                    <span class="lib-count">${item.deleted_at ? new Date(item.deleted_at).toLocaleDateString() : ""}</span>
+                </div>
+            `).join("");
+        } else {
+            recentEl.classList.add("hidden");
+        }
+
+        // Summary text
+        const summary = document.getElementById("ad-summary");
+        const pendingCount = d.pending_count || (d.pending ? d.pending.length : 0);
+        if (autodeleteConfig && autodeleteConfig.enabled) {
+            summary.textContent = `${pendingCount} pending · Runs every 5 min`;
+        } else {
+            summary.textContent = "Disabled";
+        }
+    }).catch(() => {});
+}
+
+function saveAutodeleteConfig() {
+    const config = {
+        enabled: document.getElementById("ad-enabled").checked,
+        delay_hours: parseInt(document.getElementById("ad-delay").value) || 24,
+        threshold: parseInt(document.getElementById("ad-threshold").value) || 85,
+        movies: document.getElementById("ad-movies").checked,
+        tv: document.getElementById("ad-tv").checked,
+        plex_token: document.getElementById("ad-plex-token").value,
+        sonarr_api_key: document.getElementById("ad-sonarr-key").value,
+        radarr_api_key: document.getElementById("ad-radarr-key").value,
+    };
+
+    fetch("/api/media/autodelete/config", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify(config)
+    }).then(r => r.json()).then(r => {
+        if (r.ok) {
+            // Refresh the card state
+            setTimeout(loadAutodeleteConfig, 500);
+        }
+    });
+}
+
+function enableAutodelete() {
+    const btn = document.getElementById("ad-enable-btn");
+    const status = document.getElementById("ad-setup-status");
+    const token = document.getElementById("ad-setup-plex-token").value.trim();
+
+    if (!token) {
+        status.textContent = "Plex token is required";
+        status.style.color = "var(--danger)";
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Enabling...";
+
+    const config = {
+        enabled: true,
+        delay_hours: 24,
+        threshold: 85,
+        movies: true,
+        tv: true,
+        plex_token: token,
+        sonarr_api_key: document.getElementById("ad-setup-sonarr-key").value.trim(),
+        radarr_api_key: document.getElementById("ad-setup-radarr-key").value.trim(),
+    };
+
+    fetch("/api/media/autodelete/config", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify(config)
+    }).then(r => r.json()).then(r => {
+        if (r.ok) {
+            status.textContent = "Enabled!";
+            status.style.color = "var(--success)";
+            setTimeout(loadAutodeleteConfig, 1000);
+        } else {
+            status.textContent = r.error || "Failed";
+            status.style.color = "var(--danger)";
+            btn.disabled = false;
+            btn.textContent = "Enable Auto-Delete";
+        }
+    }).catch(() => {
+        status.textContent = "Network error";
+        btn.disabled = false;
+        btn.textContent = "Enable Auto-Delete";
+    });
+}
+
+function runAutodeleteNow() {
+    const btn = document.getElementById("ad-run-btn");
+    btn.disabled = true;
+    btn.textContent = "Running...";
+
+    fetch("/api/media/autodelete/run", {
+        method: "POST",
+        headers: {"X-CSRFToken": CSRF}
+    }).then(r => r.json()).then(r => {
+        if (r.ok) {
+            const d = r.data;
+            btn.textContent = d.deleted ? `Deleted ${d.deleted}` : "Done";
+            setTimeout(() => { btn.textContent = "Run Now"; btn.disabled = false; loadAutodeleteStatus(); }, 2000);
+        } else {
+            btn.textContent = "Failed";
+            setTimeout(() => { btn.textContent = "Run Now"; btn.disabled = false; }, 2000);
+        }
+    }).catch(() => {
+        btn.textContent = "Error";
+        setTimeout(() => { btn.textContent = "Run Now"; btn.disabled = false; }, 2000);
+    });
+}
+
+function toggleAutodeleteSettings() {
+    const popup = document.getElementById("autodelete-settings");
+    const isOpen = !popup.classList.contains("hidden");
+    // Close all other popups
+    ALL_SERVICES.forEach(s => {
+        const p = document.getElementById(`${s}-settings`);
+        if (p) p.classList.add("hidden");
+    });
+    if (isOpen) {
+        popup.classList.add("hidden");
+    } else {
+        popup.classList.remove("hidden");
+    }
+}
+
+function togglePasswordVisibility(inputId) {
+    const input = document.getElementById(inputId);
+    input.type = input.type === "password" ? "text" : "password";
+}
+
+function testConnection(service, inputId, btn) {
+    const key = document.getElementById(inputId).value.trim();
+    if (!key) { btn.textContent = "Empty"; setTimeout(() => btn.textContent = "Test", 2000); return; }
+    btn.disabled = true;
+    btn.textContent = "...";
+    fetch("/api/media/autodelete/test", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({service, key})
+    }).then(r => r.json()).then(r => {
+        if (r.ok) {
+            btn.textContent = "✓";
+            btn.style.color = "var(--success)";
+        } else {
+            btn.textContent = "✗";
+            btn.style.color = "var(--danger)";
+            btn.title = r.error || "Failed";
+        }
+        setTimeout(() => { btn.textContent = "Test"; btn.style.color = ""; btn.title = ""; btn.disabled = false; }, 3000);
+    }).catch(() => {
+        btn.textContent = "✗";
+        btn.style.color = "var(--danger)";
+        setTimeout(() => { btn.textContent = "Test"; btn.style.color = ""; btn.disabled = false; }, 3000);
+    });
+}
+
+// Load auto-delete config after service status is loaded (so we know which arr services are installed)
+setTimeout(loadAutodeleteConfig, 1500);
 </script>
 {% endblock %}

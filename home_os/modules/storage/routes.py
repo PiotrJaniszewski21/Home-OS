@@ -80,10 +80,11 @@ def browse_drive(name, filepath=""):
         breadcrumbs.append({"name": part, "path": "/".join(parts[: i + 1])})
 
     return render_template(
-        "storage/browse_drive.html",
-        drive=drive,
+        "files/browse.html",
         entries=entries,
         path=path,
-        filepath=filepath,
         breadcrumbs=breadcrumbs,
+        system_mode=False,
+        storage_info=None,
+        drive=drive,
     )

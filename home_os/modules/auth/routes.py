@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
 from functools import wraps
+from pathlib import Path
 
 import hashlib
 import secrets
 
-from flask import abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from home_os.extensions import csrf, db
@@ -27,7 +28,8 @@ def admin_required(f):
 
 @auth_bp.route("/setup", methods=["GET", "POST"])
 def setup():
-    if User.query.first() is not None:
+    lock_file = Path(current_app.instance_path) / "setup.lock"
+    if lock_file.exists() or User.query.first() is not None:
         return redirect(url_for("auth.login"))
 
     form = SetupForm()
@@ -41,6 +43,8 @@ def setup():
         user.set_password(form.password.data)
         db.session.add(user)
         db.session.commit()
+        lock_file.parent.mkdir(parents=True, exist_ok=True)
+        lock_file.write_text(datetime.now(timezone.utc).isoformat())
         login_user(user)
         flash("Admin account created. Welcome to Home OS!", "success")
         return redirect(url_for("monitor.dashboard"))
@@ -65,9 +69,15 @@ def login():
 
     form = LoginForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data).first()
+        username = form.username.data
+        if login_limiter.is_limited(username, max_attempts=login_limiter.per_account_max):
+            flash("This account is temporarily locked. Try again later.", "error")
+            return render_template("auth/login.html", form=form)
+
+        user = User.query.filter_by(username=username).first()
         if user and user.check_password(form.password.data) and user.is_active:
             login_limiter.reset(client_ip)
+            login_limiter.reset(username)
             user.last_login = datetime.now(timezone.utc)
             db.session.commit()
             login_user(user, remember=form.remember_me.data)
@@ -76,6 +86,7 @@ def login():
                 next_page = None
             return redirect(next_page or url_for("monitor.dashboard"))
         login_limiter.record(client_ip)
+        login_limiter.record(username)
         flash("Invalid username or password.", "error")
 
     return render_template("auth/login.html", form=form)
@@ -98,9 +109,13 @@ def api_login():
     username = data.get("username", "")
     password = data.get("password", "")
 
+    if login_limiter.is_limited(username, max_attempts=login_limiter.per_account_max):
+        return jsonify({"ok": False, "error": "Account temporarily locked"}), 429
+
     user = User.query.filter_by(username=username).first()
     if user and user.check_password(password) and user.is_active:
         login_limiter.reset(client_ip)
+        login_limiter.reset(username)
         user.last_login = datetime.now(timezone.utc)
         token = secrets.token_urlsafe(32)
         user.api_token_hash = hashlib.sha256(token.encode()).hexdigest()
@@ -114,6 +129,7 @@ def api_login():
         })
 
     login_limiter.record(client_ip)
+    login_limiter.record(username)
     return jsonify({"ok": False, "error": "Invalid credentials"}), 401
 
 

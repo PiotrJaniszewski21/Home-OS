@@ -6,26 +6,26 @@
 
     <!-- Profile -->
     <div class="glass-card mb-4">
-        <h3 class="text-secondary text-xs mb-4" style="text-transform:uppercase; letter-spacing:0.06em;">Profile</h3>
+        <p class="section-label">Profile</p>
         <form method="POST" action="{{ url_for('settings.save_profile') }}" class="space-y-4">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Username</label>
-                    <input type="text" class="glass-input" value="{{ user.username }}" disabled style="opacity:0.6;">
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Username</label>
+                    <input type="text" class="glass-input" value="{{ user.username }}" disabled style="opacity:0.5;">
                 </div>
                 <div>
-                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Email</label>
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Email</label>
                     <input type="email" name="email" class="glass-input" value="{{ user.email or '' }}" placeholder="Optional">
                 </div>
             </div>
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">New Password</label>
-                    <input type="password" name="new_password" class="glass-input" placeholder="Leave blank to keep current">
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">New Password</label>
+                    <input type="password" name="new_password" class="glass-input" placeholder="Leave blank to keep">
                 </div>
                 <div>
-                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Default Page</label>
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Default Page</label>
                     <select name="default_page" class="glass-input">
                         <option value="dashboard" {% if user.default_page == 'dashboard' %}selected{% endif %}>Dashboard</option>
                         <option value="files" {% if user.default_page == 'files' %}selected{% endif %}>Files</option>
@@ -41,18 +41,18 @@
     </div>
 
     {% if current_user.is_admin %}
-    <!-- Server Settings -->
+    <!-- Server -->
     <div class="glass-card mb-4">
-        <h3 class="text-secondary text-xs mb-4" style="text-transform:uppercase; letter-spacing:0.06em;">Server</h3>
+        <p class="section-label">Server</p>
         <form method="POST" action="{{ url_for('settings.save_server') }}" class="space-y-4">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Port</label>
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Port</label>
                     <input type="number" name="port" class="glass-input" value="{{ config.server.port }}">
                 </div>
                 <div>
-                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Trash Retention (days)</label>
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Trash Retention (days)</label>
                     <input type="number" name="trash_days" class="glass-input" value="{{ config.storage.trash_retention_days }}">
                 </div>
             </div>
@@ -60,11 +60,11 @@
         </form>
     </div>
 
-    <!-- AI Settings -->
+    <!-- AI -->
     <div class="glass-card mb-4">
-        <div class="flex items-center justify-between mb-4">
-            <h3 class="text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">AI Provider</h3>
-            <a href="{{ url_for('ai.settings') }}" class="btn btn-ghost" style="font-size:0.7rem; padding:0.3rem 0.6rem;">Configure</a>
+        <div class="flex items-center justify-between mb-3">
+            <p class="section-label" style="margin-bottom: 0;">AI Provider</p>
+            <a href="{{ url_for('ai.settings') }}" class="btn btn-ghost" style="font-size: 11px; padding: 0.3rem 0.6rem;">Configure</a>
         </div>
         <div class="flex items-center gap-3">
             {% if config.ai.provider %}
@@ -76,22 +76,22 @@
         </div>
     </div>
 
-    <!-- AdGuard Home -->
+    <!-- AdGuard -->
     <div class="glass-card mb-4">
-        <h3 class="text-secondary text-xs mb-4" style="text-transform:uppercase; letter-spacing:0.06em;">AdGuard Home</h3>
+        <p class="section-label">AdGuard Home</p>
         <form method="POST" action="{{ url_for('settings.save_adguard') }}" class="space-y-4">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div>
-                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">URL</label>
+                <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">URL</label>
                 <input type="url" name="adguard_url" class="glass-input" value="{{ config.get('adguard', {}).get('url', 'http://localhost:3000') }}" placeholder="http://localhost:3000">
             </div>
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Username</label>
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Username</label>
                     <input type="text" name="adguard_username" class="glass-input" value="{{ config.get('adguard', {}).get('username', '') }}" placeholder="AdGuard username">
                 </div>
                 <div>
-                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Password</label>
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Password</label>
                     <input type="password" name="adguard_password" class="glass-input" value="{{ config.get('adguard', {}).get('password', '') }}" placeholder="AdGuard password">
                 </div>
             </div>
@@ -99,13 +99,11 @@
         </form>
     </div>
 
-    <!-- Cloudflare Tunnel -->
+    <!-- Remote Access -->
     <div class="glass-card mb-4">
-        <div class="flex items-center justify-between mb-2">
-            <h3 class="text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Remote Access</h3>
-            <a href="{{ url_for('settings.cloudflare_setup') }}" class="btn btn-ghost" style="font-size:0.7rem; padding:0.3rem 0.6rem;">
-                {% if tunnel_url %}Edit{% else %}Configure{% endif %}
-            </a>
+        <div class="flex items-center justify-between mb-3">
+            <p class="section-label" style="margin-bottom: 0;">Remote Access</p>
+            <a href="{{ url_for('network.network_view') }}#tunnel" class="btn btn-ghost" style="font-size: 11px; padding: 0.3rem 0.6rem;">Manage</a>
         </div>
         {% if tunnel_url %}
         <div class="flex items-center gap-3">
@@ -113,29 +111,29 @@
             <span class="text-secondary text-sm">{{ tunnel_url }}</span>
         </div>
         {% else %}
-        <p class="text-tertiary text-sm">Not configured. Set up Cloudflare Tunnel to access Home OS from anywhere.</p>
+        <p class="text-tertiary text-sm">Manage in Network &rarr; Remote Access</p>
         {% endif %}
     </div>
 
     <!-- About -->
     <div class="glass-card">
-        <h3 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">About</h3>
+        <p class="section-label">About</p>
         <div class="space-y-2 text-sm">
             <div class="flex justify-between">
                 <span class="text-tertiary">Version</span>
-                <span>0.1.0</span>
+                <span class="font-medium">0.1.0</span>
             </div>
             <div class="flex justify-between">
                 <span class="text-tertiary">Python</span>
-                <span>{{ config.server.get('python_version', '') or '' }}</span>
+                <span class="font-medium">{{ config.server.get('python_version', '') or '' }}</span>
             </div>
             <div class="flex justify-between">
                 <span class="text-tertiary">Storage Root</span>
-                <span class="text-xs">{{ config.storage.root }}</span>
+                <span class="font-medium text-xs">{{ config.storage.root }}</span>
             </div>
             <div class="flex justify-between">
                 <span class="text-tertiary">Database</span>
-                <span class="text-xs">{{ config.database.path }}</span>
+                <span class="font-medium text-xs">{{ config.database.path }}</span>
             </div>
         </div>
     </div>

@@ -60,6 +60,14 @@ SERVICES = {
         "port": 8080,
         "web_path": "",
     },
+    "flaresolverr": {
+        "name": "FlareSolverr",
+        "service": "flaresolverr",
+        "package": None,
+        "paths": ["/opt/flaresolverr/start.sh"],
+        "port": 8191,
+        "web_path": "",
+    },
 }
 
 
@@ -169,6 +177,7 @@ echo "Done!"
         )
 
         if result.returncode == 0:
+            _setup_media_folders("plex")
             return jsonify({"ok": True, "data": {"output": result.stdout[-500:]}})
         else:
             error = result.stderr[-300:] or result.stdout[-300:] or "Install failed"
@@ -459,6 +468,63 @@ systemctl daemon-reload
 systemctl enable overseerr
 systemctl start overseerr
 """,
+    "flaresolverr": """
+set -e
+apt-get install -y -qq python3 python3-pip python3-venv xvfb
+
+# Install Chromium (package name varies by distro)
+apt-get install -y -qq chromium 2>/dev/null || apt-get install -y -qq chromium-browser
+
+# Create user with a home directory (Chrome needs it for profile/cache)
+useradd -r -m -d /home/flaresolverr -s /bin/false flaresolverr 2>/dev/null || true
+mkdir -p /home/flaresolverr && chown flaresolverr:flaresolverr /home/flaresolverr
+
+# Set up venv and install FlareSolverr from PyPI
+mkdir -p /opt/flaresolverr
+python3 -m venv /opt/flaresolverr/venv
+/opt/flaresolverr/venv/bin/pip install --upgrade pip
+/opt/flaresolverr/venv/bin/pip install FlareSolverr
+
+# Install legacy-cgi shim for Python 3.13+ (bottle dependency)
+/opt/flaresolverr/venv/bin/pip install legacy-cgi 2>/dev/null || true
+
+# Create launcher script
+cat > /opt/flaresolverr/start.sh << 'LAUNCHER'
+#!/bin/bash
+cd /opt/flaresolverr
+exec /opt/flaresolverr/venv/bin/python -m flaresolverr
+LAUNCHER
+chmod +x /opt/flaresolverr/start.sh
+
+chown -R flaresolverr:flaresolverr /opt/flaresolverr
+
+cat > /etc/systemd/system/flaresolverr.service << 'UNIT'
+[Unit]
+Description=FlareSolverr - Cloudflare bypass proxy
+After=network.target
+
+[Service]
+Type=simple
+User=flaresolverr
+Group=flaresolverr
+WorkingDirectory=/opt/flaresolverr
+ExecStart=/opt/flaresolverr/start.sh
+Restart=on-failure
+Environment=LOG_LEVEL=info
+Environment=LOG_HTML=false
+Environment=CAPTCHA_SOLVER=none
+Environment=TZ=UTC
+Environment=HEADLESS=true
+Environment=PORT=8191
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable flaresolverr
+systemctl start flaresolverr
+""",
     "qbittorrent": """
 set -e
 apt-get install -y -qq qbittorrent-nox
@@ -487,6 +553,7 @@ ARR_UNINSTALL_SCRIPTS = {
     "prowlarr": "systemctl stop prowlarr 2>/dev/null; systemctl disable prowlarr 2>/dev/null; rm -f /etc/systemd/system/prowlarr.service; rm -rf /opt/Prowlarr; userdel prowlarr 2>/dev/null; systemctl daemon-reload",
     "overseerr": "systemctl stop overseerr 2>/dev/null; systemctl disable overseerr 2>/dev/null; rm -f /etc/systemd/system/overseerr.service; rm -rf /opt/overseerr; userdel overseerr 2>/dev/null; systemctl daemon-reload",
     "qbittorrent": "systemctl stop qbittorrent-nox@homeos 2>/dev/null; systemctl disable qbittorrent-nox@homeos 2>/dev/null; rm -f /etc/systemd/system/qbittorrent-nox@.service; apt-get purge -y qbittorrent-nox; systemctl daemon-reload",
+    "flaresolverr": "systemctl stop flaresolverr 2>/dev/null; systemctl disable flaresolverr 2>/dev/null; rm -f /etc/systemd/system/flaresolverr.service; rm -rf /opt/flaresolverr; userdel -r flaresolverr 2>/dev/null; systemctl daemon-reload",
 }
 
 
@@ -495,7 +562,12 @@ def _get_port(service):
     from flask import current_app
     config = current_app.config.get("_raw_config", {})
     media_config = config.get("media", {})
-    return media_config.get(f"{service}_port", SERVICES[service]["port"])
+    port = media_config.get(f"{service}_port", SERVICES[service]["port"])
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        port = SERVICES[service]["port"]
+    return port
 
 
 @media_bp.route("/api/media/<service>/status")
@@ -521,6 +593,58 @@ def arr_status(service):
     })
 
 
+def _setup_media_folders(service):
+    """Create storage folders and set permissions after install."""
+    from flask import current_app
+    from pathlib import Path
+
+    config = current_app.config["_raw_config"]
+    storage_root = config["storage"]["root"]
+    homeos_dir = Path(storage_root) / "HomeOS"
+
+    folder_map = {
+        "sonarr": ("Series", "sonarr"),
+        "radarr": ("Movies", "radarr"),
+        "prowlarr": (None, "prowlarr"),
+        "plex": ("Movies", "plex"),
+        "qbittorrent": ("Downloads", "homeos"),
+        "flaresolverr": (None, None),
+        "overseerr": (None, None),
+    }
+
+    entry = folder_map.get(service)
+    if not entry or not entry[0]:
+        return
+
+    folder_name, user = entry
+    target = homeos_dir / folder_name
+    target.mkdir(parents=True, exist_ok=True)
+
+    try:
+        subprocess.run(
+            ["sudo", "chown", "-R", f"{user}:{user}", str(target)],
+            capture_output=True, timeout=10,
+        )
+        subprocess.run(
+            ["sudo", "chmod", "775", str(target)],
+            capture_output=True, timeout=10,
+        )
+    except Exception:
+        pass
+
+    # Also create Downloads folder for torrent clients
+    if service in ("sonarr", "radarr", "qbittorrent"):
+        downloads = homeos_dir / "Downloads"
+        downloads.mkdir(parents=True, exist_ok=True)
+        try:
+            subprocess.run(
+                ["sudo", "chmod", "777", str(downloads)],
+                capture_output=True, timeout=10,
+            )
+        except Exception:
+            pass
+
+
 @media_bp.route("/api/media/<service>/install", methods=["POST"])
 @admin_required
 def arr_install(service):
@@ -539,6 +663,7 @@ def arr_install(service):
             capture_output=True, text=True, timeout=timeout,
         )
         if result.returncode == 0:
+            _setup_media_folders(service)
             return jsonify({"ok": True})
         error = result.stderr[-300:] or result.stdout[-300:] or "Install failed"
         return jsonify({"ok": False, "error": error}), 500
@@ -688,6 +813,18 @@ def _apply_port_change(service, old_port, new_port):
         except Exception:
             pass
 
+    elif service == "flaresolverr":
+        try:
+            subprocess.run(
+                ["sudo", "bash", "-c",
+                 f"sed -i 's/Environment=PORT={old_port}/Environment=PORT={new_port}/' "
+                 f"/etc/systemd/system/flaresolverr.service && "
+                 f"systemctl daemon-reload && systemctl restart flaresolverr"],
+                capture_output=True, text=True, timeout=15,
+            )
+        except Exception:
+            pass
+
     elif service == "plex":
         # Plex port is managed by Plex itself — config port just tells the proxy where to look
         pass
@@ -714,6 +851,223 @@ def arr_uninstall(service):
         return jsonify({"ok": False, "error": result.stderr[-300:] or "Uninstall failed"}), 500
     except Exception:
         return jsonify({"ok": False, "error": "Uninstall failed"}), 500
+
+
+# === Auto-Delete Watched Media ===
+
+@media_bp.route("/api/media/autodelete/config")
+@admin_required
+def autodelete_config():
+    """Get auto-delete configuration."""
+    from home_os.models.settings import Setting
+    config = {
+        "enabled": Setting.get("autodelete_enabled", "false") == "true",
+        "delay_hours": int(Setting.get("autodelete_delay_hours", "24")),
+        "threshold": int(Setting.get("autodelete_threshold", "85")),
+        "movies": Setting.get("autodelete_movies", "true") == "true",
+        "tv": Setting.get("autodelete_tv", "true") == "true",
+        "plex_token": Setting.get("autodelete_plex_token", ""),
+        "sonarr_api_key": Setting.get("autodelete_sonarr_key", ""),
+        "radarr_api_key": Setting.get("autodelete_radarr_key", ""),
+    }
+    return jsonify({"ok": True, "data": config})
+
+
+@media_bp.route("/api/media/autodelete/config", methods=["POST"])
+@admin_required
+def autodelete_save_config():
+    """Save auto-delete configuration."""
+    from home_os.models.settings import Setting
+    data = request.get_json()
+
+    fields = {
+        "autodelete_enabled": "true" if data.get("enabled") else "false",
+        "autodelete_delay_hours": str(int(data.get("delay_hours", 24))),
+        "autodelete_threshold": str(int(data.get("threshold", 85))),
+        "autodelete_movies": "true" if data.get("movies") else "false",
+        "autodelete_tv": "true" if data.get("tv") else "false",
+        "autodelete_plex_token": data.get("plex_token", ""),
+        "autodelete_sonarr_key": data.get("sonarr_api_key", ""),
+        "autodelete_radarr_key": data.get("radarr_api_key", ""),
+        # Also write keys that the cleanup service reads directly
+        "plex_token": data.get("plex_token", ""),
+        "sonarr_api_key": data.get("sonarr_api_key", ""),
+        "radarr_api_key": data.get("radarr_api_key", ""),
+    }
+
+    for key, value in fields.items():
+        Setting.set(key, value)
+
+    # Manage systemd timer based on enabled state
+    enabled = data.get("enabled", False)
+    _manage_autodelete_timer(enabled)
+
+    return jsonify({"ok": True})
+
+
+@media_bp.route("/api/media/autodelete/status")
+@admin_required
+def autodelete_status():
+    """Get current auto-delete status (pending items, recent deletions)."""
+    from home_os.models.settings import Setting
+    from home_os.services.media_cleanup import get_cleanup_status
+    try:
+        config = {
+            "enabled": Setting.get("autodelete_enabled", "false") == "true",
+            "plex_url": "http://localhost:32400",
+            "plex_token": Setting.get("autodelete_plex_token", ""),
+            "delay_hours": int(Setting.get("autodelete_delay_hours", "24")),
+            "threshold": int(Setting.get("autodelete_threshold", "85")),
+            "movies": Setting.get("autodelete_movies", "true") == "true",
+            "tv": Setting.get("autodelete_tv", "true") == "true",
+            "sonarr_url": "http://localhost:8989",
+            "sonarr_api_key": Setting.get("autodelete_sonarr_key", ""),
+            "radarr_url": "http://localhost:7878",
+            "radarr_api_key": Setting.get("autodelete_radarr_key", ""),
+            "state_file": "/opt/home-os/data/autodelete_state.json",
+        }
+        status = get_cleanup_status(config)
+        return jsonify({"ok": True, "data": status})
+    except Exception as e:
+        return jsonify({"ok": True, "data": {"pending": [], "recent_deletions": [], "error": str(e)}})
+
+
+@media_bp.route("/api/media/autodelete/run", methods=["POST"])
+@admin_required
+def autodelete_run_now():
+    """Manually trigger a cleanup cycle."""
+    from home_os.services.media_cleanup import run_cleanup_cycle
+    try:
+        result = run_cleanup_cycle()
+        return jsonify({"ok": True, "data": result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@media_bp.route("/api/media/autodelete/test", methods=["POST"])
+@admin_required
+def autodelete_test_connection():
+    """Test connectivity to Plex, Sonarr, or Radarr."""
+    import httpx
+
+    data = request.get_json()
+    service = data.get("service", "")
+    token_or_key = data.get("key", "")
+
+    if not token_or_key:
+        return jsonify({"ok": False, "error": "No key provided"}), 400
+
+    try:
+        if service == "plex":
+            port = _get_port("plex") if _service_installed("plex") else 32400
+            resp = httpx.get(
+                f"http://localhost:{port}/",
+                headers={"X-Plex-Token": token_or_key, "Accept": "application/json"},
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                name = resp.json().get("MediaContainer", {}).get("friendlyName", "Plex")
+                return jsonify({"ok": True, "data": {"message": f"Connected to {name}"}})
+            elif resp.status_code == 401:
+                return jsonify({"ok": False, "error": "Invalid token"}), 401
+            else:
+                return jsonify({"ok": False, "error": f"HTTP {resp.status_code}"}), 502
+
+        elif service == "sonarr":
+            port = _get_port("sonarr") if _service_installed("sonarr") else 8989
+            resp = httpx.get(
+                f"http://localhost:{port}/api/v3/system/status",
+                headers={"X-Api-Key": token_or_key},
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                ver = resp.json().get("version", "unknown")
+                return jsonify({"ok": True, "data": {"message": f"Sonarr v{ver}"}})
+            elif resp.status_code == 401:
+                return jsonify({"ok": False, "error": "Invalid API key"}), 401
+            else:
+                return jsonify({"ok": False, "error": f"HTTP {resp.status_code}"}), 502
+
+        elif service == "radarr":
+            port = _get_port("radarr") if _service_installed("radarr") else 7878
+            resp = httpx.get(
+                f"http://localhost:{port}/api/v3/system/status",
+                headers={"X-Api-Key": token_or_key},
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                ver = resp.json().get("version", "unknown")
+                return jsonify({"ok": True, "data": {"message": f"Radarr v{ver}"}})
+            elif resp.status_code == 401:
+                return jsonify({"ok": False, "error": "Invalid API key"}), 401
+            else:
+                return jsonify({"ok": False, "error": f"HTTP {resp.status_code}"}), 502
+
+        else:
+            return jsonify({"ok": False, "error": "Unknown service"}), 400
+
+    except httpx.ConnectError:
+        return jsonify({"ok": False, "error": f"{service.title()} not reachable"}), 502
+    except httpx.TimeoutException:
+        return jsonify({"ok": False, "error": "Connection timed out"}), 504
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+def _manage_autodelete_timer(enabled):
+    """Create/enable or stop/disable the systemd timer for auto-delete."""
+    service_unit = """[Unit]
+Description=Home OS Media Auto-Delete
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/home-os
+ExecStart=/opt/home-os/venv/bin/python -c "import sys; sys.path.insert(0, '/opt/home-os/app'); from home_os.services.media_cleanup import run_cleanup_cycle; run_cleanup_cycle()"
+User=homeos
+"""
+
+    timer_unit = """[Unit]
+Description=Home OS Media Auto-Delete Timer
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
+"""
+
+    if enabled:
+        # Write unit files and enable timer
+        script = f"""
+cat > /etc/systemd/system/home-os-autodelete.service << 'UNIT'
+{service_unit}UNIT
+
+cat > /etc/systemd/system/home-os-autodelete.timer << 'UNIT'
+{timer_unit}UNIT
+
+systemctl daemon-reload
+systemctl enable home-os-autodelete.timer
+systemctl start home-os-autodelete.timer
+"""
+    else:
+        script = """
+systemctl stop home-os-autodelete.timer 2>/dev/null
+systemctl disable home-os-autodelete.timer 2>/dev/null
+rm -f /etc/systemd/system/home-os-autodelete.service
+rm -f /etc/systemd/system/home-os-autodelete.timer
+systemctl daemon-reload
+"""
+
+    try:
+        subprocess.run(
+            ["sudo", "bash", "-c", script],
+            capture_output=True, text=True, timeout=15,
+        )
+    except Exception:
+        pass
 
 
 # --- Media service reverse proxies ---
@@ -750,7 +1104,7 @@ def service_proxy(prefix, subpath=""):
     if request.query_string:
         target += "?" + request.query_string.decode()
 
-    headers = {k: v for k, v in request.headers if k.lower() not in ("host", "cookie", "referer", "origin")}
+    headers = {k: v for k, v in request.headers if k.lower() not in ("host", "cookie", "referer", "origin", "accept-encoding")}
 
     try:
         with httpx.Client(timeout=30, follow_redirects=False) as client:

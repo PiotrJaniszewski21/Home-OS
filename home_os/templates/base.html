@@ -6,19 +6,20 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Home OS">
-    <meta name="theme-color" content="#0a84ff">
+    <meta name="theme-color" content="#f5f9fd">
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon.svg') }}">
     <title>{% block title %}Home OS{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=11">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile.css') }}?v=11">
 </head>
 <body>
     <div class="app-layout">
         {% if current_user.is_authenticated %}
-        <!-- Flash Messages -->
+        <main class="main-content">
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-        <div style="max-width: 40rem; margin: 1rem auto 0; padding: 0 1.5rem;">
+        <div style="max-width: 36rem; margin: 1rem auto 0; padding: 0 1.5rem;">
             {% for category, message in messages %}
             <div class="flash {% if category == 'error' %}flash-error{% elif category == 'success' %}flash-success{% else %}flash-info{% endif %}">
                 {{ message }}
@@ -27,13 +28,10 @@
         </div>
         {% endif %}
         {% endwith %}
-
-        <main class="main-content">
         {% else %}
-        <!-- Flash for unauth pages -->
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-        <div style="position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 100; width: 90%; max-width: 24rem;">
+        <div style="position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 100; width: 90%; max-width: 22rem;">
             {% for category, message in messages %}
             <div class="flash {% if category == 'error' %}flash-error{% elif category == 'success' %}flash-success{% else %}flash-info{% endif %}">
                 {{ message }}
@@ -50,8 +48,7 @@
         </main>
 
         {% if current_user.is_authenticated %}
-        <!-- macOS-style Dock -->
-        <nav class="dock">
+        <nav class="dock" role="navigation" aria-label="Main navigation">
             {% if current_user.has_permission('dashboard') %}
             <a href="{{ url_for('monitor.dashboard') }}" class="dock-item {% if request.endpoint == 'monitor.dashboard' %}active{% endif %}" data-tooltip="Dashboard">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
@@ -68,7 +65,7 @@
             </a>
             {% endif %}
             {% if current_user.has_permission('ai') %}
-            <a href="{{ url_for('ai.chat') }}" class="dock-item {% if request.endpoint and 'ai' in request.endpoint %}active{% endif %}" data-tooltip="AI Assistant">
+            <a href="{{ url_for('ai.chat') }}" class="dock-item {% if request.endpoint and 'ai' in request.endpoint %}active{% endif %}" data-tooltip="AI">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
             </a>
             {% endif %}
@@ -110,12 +107,169 @@
                 </button>
             </form>
         </nav>
+
+        <!-- iOS Tab Bar (PWA standalone mode only, replaces dock) -->
+        <nav class="ios-tab-bar" aria-label="Tab navigation">
+            <a href="{{ url_for('monitor.dashboard') }}" class="ios-tab-item {% if request.endpoint == 'monitor.dashboard' %}active{% endif %}">
+                <span class="ios-tab-icon"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg></span>
+                <span class="ios-tab-label">Home</span>
+            </a>
+            <a href="{{ url_for('files.browse') }}" class="ios-tab-item {% if request.endpoint and 'files' in request.endpoint %}active{% endif %}" data-quick-actions='[{"label":"New Folder","action":"newFolder"},{"label":"Recent Files","action":"recentFiles"}]'>
+                <span class="ios-tab-icon"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg></span>
+                <span class="ios-tab-label">Files</span>
+            </a>
+            {% if current_user.is_admin %}
+            <a href="{{ url_for('media.media_view') }}" class="ios-tab-item {% if request.endpoint and 'media' in request.endpoint %}active{% endif %}">
+                <span class="ios-tab-icon"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.91 11.672a.375.375 0 010 .656l-5.603 3.113a.375.375 0 01-.557-.328V8.887c0-.286.307-.466.557-.327l5.603 3.112z"/></svg></span>
+                <span class="ios-tab-label">Media</span>
+            </a>
+            {% endif %}
+            <a href="{{ url_for('ai.chat') }}" class="ios-tab-item {% if request.endpoint and 'ai' in request.endpoint %}active{% endif %}" data-quick-actions='[{"label":"New Chat","action":"newChat"}]'>
+                <span class="ios-tab-icon"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg></span>
+                <span class="ios-tab-label">AI</span>
+            </a>
+            {% if current_user.is_admin %}
+            <a href="{{ url_for('network.network_view') }}" class="ios-tab-item {% if request.endpoint and 'network' in request.endpoint %}active{% endif %}">
+                <span class="ios-tab-icon"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12 18.75h.008v.008H12v-.008z"/></svg></span>
+                <span class="ios-tab-label">Network</span>
+            </a>
+            {% endif %}
+            <a href="{{ url_for('settings.settings_view') }}" class="ios-tab-item {% if request.endpoint and 'settings' in request.endpoint %}active{% endif %}">
+                <span class="ios-tab-icon"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg></span>
+                <span class="ios-tab-label">Settings</span>
+            </a>
+        </nav>
         {% endif %}
     </div>
+<!-- Path Picker Modal (reusable) -->
+<div id="path-picker-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closePathPicker()">
+    <div class="modal-content" style="max-width: 400px; max-height: 70vh; display: flex; flex-direction: column;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.75rem;">
+            <h3 style="margin:0;">Select Folder</h3>
+            <button onclick="closePathPicker()" style="background:none; border:none; color:var(--text-tertiary); cursor:pointer; font-size:18px;">&times;</button>
+        </div>
+        <!-- Breadcrumb -->
+        <div id="pp-breadcrumb" style="display:flex; align-items:center; gap:2px; padding:6px 8px; background:rgba(0,60,140,0.03); border-radius:6px; margin-bottom:0.75rem; overflow-x:auto; font-size:12px; white-space:nowrap;"></div>
+        <!-- Folder list -->
+        <div id="pp-list" style="flex:1; overflow-y:auto; min-height:200px; border:0.5px solid rgba(0,60,140,0.08); border-radius:8px; padding:4px;"></div>
+        <!-- Current path display + actions -->
+        <div style="margin-top:0.75rem;">
+            <div id="pp-current-path" style="font-size:11px; color:var(--text-tertiary); margin-bottom:0.5rem; word-break:break-all;"></div>
+            <div style="display:flex; justify-content:flex-end; gap:0.5rem;">
+                <button onclick="closePathPicker()" class="btn btn-ghost">Cancel</button>
+                <button onclick="confirmPathPicker()" class="btn btn-primary">Select</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+#pp-list .pp-folder {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.08s;
+}
+#pp-list .pp-folder:hover { background: rgba(0, 122, 255, 0.06); }
+#pp-list .pp-folder:active { background: rgba(0, 122, 255, 0.1); }
+#pp-list .pp-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 150px;
+    color: var(--text-quaternary);
+    font-size: 12px;
+}
+</style>
+
 <script>
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/static/sw.js');
+// === Reusable Path Picker ===
+let _ppCallback = null;
+let _ppCurrentPath = "/";
+
+function openPathPicker(callback, startPath) {
+    _ppCallback = callback;
+    _ppCurrentPath = startPath || "/";
+    document.getElementById("path-picker-modal").classList.remove("hidden");
+    ppNavigate(_ppCurrentPath);
+}
+
+function closePathPicker() {
+    document.getElementById("path-picker-modal").classList.add("hidden");
+    _ppCallback = null;
+}
+
+function confirmPathPicker() {
+    if (_ppCallback) _ppCallback(_ppCurrentPath);
+    closePathPicker();
+}
+
+function ppNavigate(path) {
+    _ppCurrentPath = path;
+    document.getElementById("pp-current-path").textContent = path;
+    ppRenderBreadcrumb(path);
+
+    const list = document.getElementById("pp-list");
+    list.innerHTML = '<div class="pp-empty">Loading...</div>';
+
+    fetch("/api/files/list-dirs?path=" + encodeURIComponent(path))
+        .then(r => r.json())
+        .then(r => {
+            if (!r.ok) {
+                list.innerHTML = '<div class="pp-empty">Cannot access this folder</div>';
+                return;
+            }
+            const dirs = r.data.dirs;
+            if (dirs.length === 0) {
+                list.innerHTML = '<div class="pp-empty">No subfolders</div>';
+                return;
+            }
+            list.innerHTML = dirs.map(name => `
+                <div class="pp-folder" onclick="ppNavigate('${(path === '/' ? '/' : path + '/') + name}')">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                    <span>${name}</span>
+                </div>
+            `).join("");
+        })
+        .catch(() => {
+            list.innerHTML = '<div class="pp-empty">Error loading folders</div>';
+        });
+}
+
+function ppRenderBreadcrumb(path) {
+    const bc = document.getElementById("pp-breadcrumb");
+    const parts = path.split("/").filter(Boolean);
+    let html = '<span class="pp-bc-item" onclick="ppNavigate(\'/\')" style="cursor:pointer; color:var(--accent); padding:2px 4px; border-radius:3px;">Root</span>';
+    let cumulative = "";
+    for (const part of parts) {
+        cumulative += "/" + part;
+        const p = cumulative;
+        html += '<svg width="7" height="10" viewBox="0 0 7 10" style="flex-shrink:0; color:var(--text-quaternary);"><path d="M1 1l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        html += `<span class="pp-bc-item" onclick="ppNavigate('${p}')" style="cursor:pointer; color:var(--accent); padding:2px 4px; border-radius:3px;">${part}</span>`;
+    }
+    bc.innerHTML = html;
 }
 </script>
+
+<script>
+if ('serviceWorker' in navigator) {
+    // Nuke all caches and unregister old workers
+    caches.keys().then(function(keys) { keys.forEach(function(k) { caches.delete(k); }); });
+    navigator.serviceWorker.getRegistrations().then(function(regs) {
+        regs.forEach(function(r) { r.unregister(); });
+    });
+    // Re-register after a beat
+    setTimeout(function() {
+        navigator.serviceWorker.register('/static/sw.js');
+    }, 1000);
+}
+</script>
+<script src="{{ url_for('static', filename='js/mobile.js') }}?v=11"></script>
 </body>
 </html>

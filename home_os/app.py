@@ -48,6 +48,9 @@ def create_app(config_path=None):
         # Skip CSRF for Bearer token authenticated API requests
         if request.path.startswith("/api/") and request.headers.get("Authorization", "").startswith("Bearer "):
             return
+        # Skip CSRF for WebSocket upgrades
+        if request.path.startswith("/ws/"):
+            return
         # Skip CSRF for the login endpoint (no session yet)
         if request.path == "/api/login":
             return
@@ -115,6 +118,9 @@ def create_app(config_path=None):
     app.register_blueprint(storage_bp)
     app.register_blueprint(terminal_bp)
 
+    from home_os.modules.terminal.routes import init_sock
+    init_sock(app)
+
     @app.route("/")
     def index():
         from flask_login import current_user
@@ -142,11 +148,18 @@ def create_app(config_path=None):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=()"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        if request.path.startswith("/static/"):
+            if app.debug:
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+            else:
+                response.headers["Cache-Control"] = "public, max-age=3600, must-revalidate"
         if request.path.startswith("/qbt/") or request.path.startswith("/svc/"):
             response.headers["X-Frame-Options"] = "SAMEORIGIN"
         else:
             response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; frame-src 'self'"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; frame-src 'self'; connect-src 'self' wss: ws:"
         return response
 
     # Error pages
@@ -169,13 +182,21 @@ def create_app(config_path=None):
         db_path.parent.mkdir(parents=True, exist_ok=True)
         if not db_path.exists():
             db.create_all()
-            # Dev-only test account (only when debug=True)
-            if app.debug:
-                from home_os.models import User
-                if not User.query.filter_by(username="123").first():
-                    user = User(username="123", role="admin", home_directory="/")
-                    user.set_password("123")
-                    db.session.add(user)
-                    db.session.commit()
+        else:
+            # Create any new tables that don't exist yet
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            existing = set(inspector.get_table_names())
+            for table in db.metadata.tables.values():
+                if table.name not in existing:
+                    table.create(db.engine)
+        # Dev-only test account (only when debug=True)
+        if app.debug:
+            from home_os.models import User
+            if not User.query.filter_by(username="123").first():
+                user = User(username="123", role="admin", home_directory="/")
+                user.set_password("123")
+                db.session.add(user)
+                db.session.commit()
 
     return app

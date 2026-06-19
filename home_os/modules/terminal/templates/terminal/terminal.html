@@ -1,38 +1,53 @@
 {% extends "base.html" %}
 {% block title %}Terminal — Home OS{% endblock %}
 {% block content %}
-<div class="max-w-5xl mx-auto">
-    <div class="flex items-center justify-between mb-4">
-        <h1>Terminal</h1>
-        <span class="text-tertiary text-xs">Admin only — commands run on server</span>
-    </div>
-
+<div class="terminal-page">
     <div class="terminal-window">
         <div class="terminal-header">
             <div class="terminal-dots">
-                <span class="dot red"></span>
+                <span class="dot red" onclick="disconnectTerminal()"></span>
                 <span class="dot yellow"></span>
-                <span class="dot green"></span>
+                <span class="dot green" onclick="connectTerminal()"></span>
             </div>
-            <span class="terminal-title">homeos — bash</span>
+            <span class="terminal-title" id="terminal-title">connecting...</span>
         </div>
-        <div class="terminal-body" id="terminal-output">
-            <div class="terminal-line system">Welcome to Home OS Terminal</div>
-            <div class="terminal-line system">Type commands below. Output appears here.</div>
-        </div>
-        <div class="terminal-input-row">
-            <span class="terminal-prompt">$</span>
-            <input type="text" id="terminal-input" class="terminal-input" placeholder="Enter command..." autocomplete="off" spellcheck="false">
+        <div id="terminal-container"></div>
+        <div class="terminal-toolbar" id="terminal-toolbar">
+            <div class="toolbar-row">
+                <button type="button" class="tbtn" ontouchstart="sendKey('\x1b')" onclick="sendKey('\x1b')">Esc</button>
+                <button type="button" class="tbtn" ontouchstart="sendKey('\t')" onclick="sendKey('\t')">Tab</button>
+                <button type="button" class="tbtn toggle" id="btn-ctrl" ontouchstart="toggleCtrl()" onclick="toggleCtrl()">Ctrl</button>
+                <button type="button" class="tbtn" ontouchstart="sendKey('\x1b[A')" onclick="sendKey('\x1b[A')">&#9650;</button>
+                <button type="button" class="tbtn" ontouchstart="sendKey('\x1b[B')" onclick="sendKey('\x1b[B')">&#9660;</button>
+                <button type="button" class="tbtn" ontouchstart="sendKey('\x1b[D')" onclick="sendKey('\x1b[D')">&#9664;</button>
+                <button type="button" class="tbtn" ontouchstart="sendKey('\x1b[C')" onclick="sendKey('\x1b[C')">&#9654;</button>
+                <button type="button" class="tbtn enter" ontouchstart="sendKey('\r')" onclick="sendKey('\r')">&#9166;</button>
+            </div>
         </div>
     </div>
 </div>
 
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
+
 <style>
+.terminal-page {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
 .terminal-window {
-    background: rgba(20, 20, 30, 0.95);
-    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    background: #14141e;
     overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
 .terminal-header {
@@ -40,19 +55,14 @@
     align-items: center;
     gap: 0.75rem;
     padding: 10px 14px;
-    background: rgba(40, 40, 50, 0.9);
+    padding-top: calc(10px + env(safe-area-inset-top, 0));
+    background: rgba(40, 40, 50, 0.95);
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    flex-shrink: 0;
 }
 
-.terminal-dots {
-    display: flex;
-    gap: 6px;
-}
-.dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-}
+.terminal-dots { display: flex; gap: 6px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; cursor: pointer; }
 .dot.red { background: #ff5f57; }
 .dot.yellow { background: #febc2e; }
 .dot.green { background: #28c840; }
@@ -63,130 +73,223 @@
     font-family: 'SF Mono', Menlo, Monaco, monospace;
 }
 
-.terminal-body {
-    padding: 1rem;
-    min-height: 400px;
-    max-height: 60vh;
-    overflow-y: auto;
-    font-family: 'SF Mono', Menlo, Monaco, monospace;
-    font-size: 0.8125rem;
-    line-height: 1.6;
-}
-
-.terminal-line {
-    white-space: pre-wrap;
-    word-break: break-all;
-}
-.terminal-line.system { color: rgba(255, 255, 255, 0.3); }
-.terminal-line.command { color: #5af78e; }
-.terminal-line.stdout { color: rgba(255, 255, 255, 0.85); }
-.terminal-line.stderr { color: #ff6b6b; }
-.terminal-line.error { color: #ff9f43; }
-
-.terminal-input-row {
-    display: flex;
-    align-items: center;
-    padding: 0.75rem 1rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-    background: rgba(30, 30, 40, 0.8);
-}
-
-.terminal-prompt {
-    color: #5af78e;
-    font-family: 'SF Mono', Menlo, Monaco, monospace;
-    font-size: 0.875rem;
-    font-weight: 600;
-    margin-right: 0.5rem;
-}
-
-.terminal-input {
+#terminal-container {
     flex: 1;
-    background: none;
-    border: none;
-    outline: none;
-    color: rgba(255, 255, 255, 0.9);
-    font-family: 'SF Mono', Menlo, Monaco, monospace;
-    font-size: 0.8125rem;
-    caret-color: #5af78e;
+    padding: 2px;
+    overflow: hidden;
 }
-.terminal-input::placeholder {
-    color: rgba(255, 255, 255, 0.2);
+
+#terminal-container .xterm {
+    height: 100%;
+}
+
+/* Toolbar */
+.terminal-toolbar {
+    flex-shrink: 0;
+    background: rgba(30, 30, 40, 0.95);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 6px 8px;
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0));
+}
+
+.toolbar-row {
+    display: flex;
+    gap: 5px;
+    justify-content: center;
+}
+
+.tbtn {
+    padding: 10px 12px;
+    min-width: 38px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.85);
+    font-family: 'SF Mono', Menlo, Monaco, monospace;
+    font-size: 13px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    touch-action: manipulation;
+    text-align: center;
+}
+.tbtn:active { background: rgba(255, 255, 255, 0.2); }
+.tbtn.enter { background: rgba(90, 247, 142, 0.15); border-color: rgba(90, 247, 142, 0.3); color: #5af78e; }
+.tbtn.toggle { transition: background 0.15s; }
+.tbtn.toggle.active { background: rgba(90, 247, 142, 0.25); border-color: rgba(90, 247, 142, 0.4); color: #5af78e; }
+
+/* Desktop: hide toolbar, show normal layout */
+@media (min-width: 769px) {
+    .terminal-page {
+        position: relative;
+        padding: 0;
+        max-width: 72rem;
+        margin: 0 auto;
+        height: calc(100vh - 7rem);
+    }
+    .terminal-window {
+        border-radius: 12px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    }
+    .terminal-header {
+        padding-top: 10px;
+        border-radius: 12px 12px 0 0;
+    }
+    .terminal-toolbar { display: none; }
+}
+
+/* Mobile: full screen, smaller font, leave room for dock */
+@media (max-width: 768px) {
+    .terminal-page { bottom: 62px; }
+    .terminal-header { padding: 8px 12px; padding-top: calc(8px + env(safe-area-inset-top, 0)); }
+    .terminal-title { font-size: 0.6875rem; }
+    #terminal-container { padding: 1px; }
+    .terminal-toolbar { padding-bottom: 6px; }
 }
 </style>
 
 <script>
-const CSRF = "{{ csrf_token() }}";
-const input = document.getElementById("terminal-input");
-const output = document.getElementById("terminal-output");
-let history = [];
-let historyIndex = -1;
+let term, ws, fitAddon;
+let ctrlActive = false;
 
-input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-        e.preventDefault();
-        runCommand();
-    } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        if (historyIndex < history.length - 1) {
-            historyIndex++;
-            input.value = history[history.length - 1 - historyIndex];
-        }
-    } else if (e.key === "ArrowDown") {
-        e.preventDefault();
-        if (historyIndex > 0) {
-            historyIndex--;
-            input.value = history[history.length - 1 - historyIndex];
-        } else {
-            historyIndex = -1;
-            input.value = "";
-        }
-    }
-});
+function initTerminal() {
+    const isMobile = window.innerWidth <= 768;
 
-function addLine(text, cls) {
-    const div = document.createElement("div");
-    div.className = "terminal-line " + cls;
-    div.textContent = text;
-    output.appendChild(div);
-    output.scrollTop = output.scrollHeight;
+    term = new Terminal({
+        cursorBlink: true,
+        fontSize: isMobile ? 11 : 13,
+        fontFamily: "'SF Mono', Menlo, Monaco, 'Courier New', monospace",
+        theme: {
+            background: '#14141e',
+            foreground: '#e0e0e0',
+            cursor: '#5af78e',
+            cursorAccent: '#14141e',
+            selectionBackground: 'rgba(90, 247, 142, 0.2)',
+            black: '#21222c',
+            red: '#ff5555',
+            green: '#5af78e',
+            yellow: '#f1fa8c',
+            blue: '#bd93f9',
+            magenta: '#ff79c6',
+            cyan: '#8be9fd',
+            white: '#f8f8f2',
+            brightBlack: '#6272a4',
+            brightRed: '#ff6e6e',
+            brightGreen: '#69ff94',
+            brightYellow: '#ffffa5',
+            brightBlue: '#d6acff',
+            brightMagenta: '#ff92df',
+            brightCyan: '#a4ffff',
+            brightWhite: '#ffffff',
+        },
+        allowProposedApi: true,
+        scrollback: 2000,
+    });
+
+    fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.loadAddon(new WebLinksAddon.WebLinksAddon());
+
+    const container = document.getElementById('terminal-container');
+    term.open(container);
+
+    setTimeout(() => fitAddon.fit(), 50);
+
+    term.onData(data => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(data);
+        }
+    });
+
+    term.onResize(({rows, cols}) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send('\x01resize:' + rows + ',' + cols);
+        }
+    });
+
+    window.addEventListener('resize', () => {
+        setTimeout(() => fitAddon.fit(), 50);
+    });
+
+    connectTerminal();
 }
 
-function runCommand() {
-    const cmd = input.value.trim();
-    if (!cmd) return;
+function connectTerminal() {
+    if (ws && ws.readyState === WebSocket.OPEN) return;
 
-    history.push(cmd);
-    historyIndex = -1;
-    input.value = "";
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(protocol + '//' + location.host + '/ws/terminal');
 
-    addLine("$ " + cmd, "command");
-
-    if (cmd === "clear") {
-        output.innerHTML = "";
-        return;
-    }
-
-    fetch("/api/terminal/exec", {
-        method: "POST",
-        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
-        body: JSON.stringify({command: cmd})
-    })
-    .then(r => r.json())
-    .then(r => {
-        if (r.ok) {
-            if (r.data.stdout) addLine(r.data.stdout, "stdout");
-            if (r.data.stderr) addLine(r.data.stderr, "stderr");
-            if (r.data.returncode !== 0 && !r.data.stdout && !r.data.stderr) {
-                addLine("Exit code: " + r.data.returncode, "error");
+    ws.onopen = () => {
+        document.getElementById('terminal-title').textContent = 'homeos — bash';
+        term.focus();
+        setTimeout(() => {
+            fitAddon.fit();
+            const dims = fitAddon.proposeDimensions();
+            if (dims) {
+                ws.send('\x01resize:' + dims.rows + ',' + dims.cols);
             }
+        }, 150);
+    };
+
+    ws.onmessage = (event) => {
+        if (event.data instanceof Blob) {
+            event.data.text().then(text => term.write(text));
         } else {
-            addLine(r.error || "Error", "error");
+            term.write(event.data);
         }
-    })
-    .catch(() => addLine("Failed to reach server", "error"));
+    };
+
+    ws.onclose = () => {
+        document.getElementById('terminal-title').textContent = 'disconnected';
+        term.write('\r\n\x1b[90m[Connection closed. Tap green dot to reconnect.]\x1b[0m\r\n');
+    };
+
+    ws.onerror = () => {
+        document.getElementById('terminal-title').textContent = 'error';
+    };
 }
 
-input.focus();
-document.addEventListener("click", () => input.focus());
+function disconnectTerminal() {
+    if (ws) {
+        ws.close();
+        ws = null;
+    }
+}
+
+function sendKey(key) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    if (ctrlActive && key.length === 1 && key >= 'a' && key <= 'z') {
+        ws.send(String.fromCharCode(key.charCodeAt(0) - 96));
+    } else if (ctrlActive && key === 'c') {
+        ws.send('\x03');
+    } else {
+        ws.send(key);
+    }
+
+    if (ctrlActive && key !== '\x1b') {
+        ctrlActive = false;
+        document.getElementById('btn-ctrl').classList.remove('active');
+    }
+}
+
+function toggleCtrl() {
+    ctrlActive = !ctrlActive;
+    document.getElementById('btn-ctrl').classList.toggle('active', ctrlActive);
+}
+
+// Prevent toolbar buttons from stealing focus on mobile
+document.getElementById('terminal-toolbar').addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const btn = e.target.closest('.tbtn');
+    if (btn) {
+        btn.click();
+        btn.classList.add('active');
+        setTimeout(() => btn.classList.remove('active'), 100);
+    }
+}, {passive: false});
+
+initTerminal();
 </script>
 {% endblock %}

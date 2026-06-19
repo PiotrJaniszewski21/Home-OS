@@ -1,36 +1,24 @@
-const CACHE_NAME = 'homeos-v1';
-const SHELL_ASSETS = [
-    '/static/css/style.css',
-    '/static/icons/icon.svg',
-];
+const CACHE_VERSION = 12;
+const CACHE_NAME = 'homeos-v' + CACHE_VERSION;
 
 self.addEventListener('install', (e) => {
-    e.waitUntil(
-        caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL_ASSETS))
-    );
     self.skipWaiting();
+    e.waitUntil(
+        caches.keys().then(keys =>
+            Promise.all(keys.map(k => caches.delete(k)))
+        )
+    );
 });
 
 self.addEventListener('activate', (e) => {
     e.waitUntil(
         caches.keys().then(keys =>
-            Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-        )
+            Promise.all(keys.map(k => caches.delete(k)))
+        ).then(() => self.clients.claim())
     );
-    self.clients.claim();
 });
 
 self.addEventListener('fetch', (e) => {
-    if (e.request.method !== 'GET') return;
-
-    // Network-first for HTML, cache-first for static assets
-    if (e.request.headers.get('accept')?.includes('text/html')) {
-        e.respondWith(
-            fetch(e.request).catch(() => caches.match(e.request))
-        );
-    } else {
-        e.respondWith(
-            caches.match(e.request).then(cached => cached || fetch(e.request))
-        );
-    }
+    // Pass everything through to network, no caching
+    return;
 });

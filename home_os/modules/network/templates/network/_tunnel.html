@@ -1,0 +1,534 @@
+<!-- Remote Access: Cloudflare Tunnel setup wizard + health panel -->
+
+<!-- Configured: Health Panel -->
+<div id="tunnel-panel" class="hidden">
+    <div class="glass-card">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Remote Access</h3>
+            <div class="flex items-center gap-2">
+                <span id="tunnel-mode-badge" class="badge badge-ghost" style="font-size:0.65rem;"></span>
+                <span id="tunnel-status-badge" class="badge"></span>
+            </div>
+        </div>
+
+        <div class="space-y-3" style="margin-bottom:1.5rem;">
+            <div class="flex items-center justify-between">
+                <span class="text-secondary text-sm">Domain</span>
+                <span class="flex items-center gap-2">
+                    <span id="tunnel-domain" class="font-medium text-sm" style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+                    <a id="tunnel-open-link" href="" target="_blank" rel="noopener" class="text-accent text-xs" style="text-decoration:none;">Open &nearr;</a>
+                </span>
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-secondary text-sm">Uptime</span>
+                <span id="tunnel-uptime" class="text-sm font-medium">—</span>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <button onclick="tunnelControl('restart')" class="btn btn-ghost" style="font-size:0.75rem; padding:0.35rem 0.7rem;">Restart</button>
+                <button id="tunnel-toggle-btn" onclick="tunnelToggle()" class="btn btn-ghost" style="font-size:0.75rem; padding:0.35rem 0.7rem;">Stop</button>
+            </div>
+            <div class="flex items-center gap-2">
+                <button onclick="tunnelReconfigure()" class="btn btn-ghost" style="font-size:0.75rem; padding:0.35rem 0.7rem;">Reconfigure</button>
+                <button onclick="tunnelRemove()" class="btn btn-ghost danger" style="font-size:0.75rem; padding:0.35rem 0.7rem; color:var(--danger);">Remove</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Not Configured: Setup Wizard -->
+<div id="tunnel-wizard" class="hidden">
+    <div class="glass-card" style="max-width:32rem; margin:0 auto; padding:2rem;">
+
+        <!-- Step 1: Intro -->
+        <div id="tunnel-step-1">
+            <div style="text-align:center; margin-bottom:1.5rem;">
+                <p style="font-size:2rem; margin-bottom:0.5rem;">🌐</p>
+                <h2>Remote Access</h2>
+                <p class="text-secondary text-sm mt-1">Access your Home OS from anywhere using a Cloudflare Tunnel. Free, secure, no port forwarding needed.</p>
+            </div>
+            <div class="flex flex-col gap-3" style="padding-top:0.5rem;">
+                <button onclick="tunnelWizardGo(2)" class="btn btn-primary" style="width:100%;">Set Up Tunnel</button>
+                <button onclick="tunnelWizardGo(5)" class="btn btn-ghost" style="width:100%;">I already have a tunnel configured</button>
+            </div>
+        </div>
+
+        <!-- Step 2: Install cloudflared -->
+        <div id="tunnel-step-2" class="hidden">
+            <div style="text-align:center; margin-bottom:1.5rem;">
+                <p style="font-size:2rem; margin-bottom:0.5rem;">📦</p>
+                <h2>Install Cloudflared</h2>
+                <p class="text-secondary text-sm mt-1">We'll install the Cloudflare tunnel daemon on your server.</p>
+            </div>
+
+            <div class="space-y-3 mb-4">
+                <div class="install-step" id="install-check">
+                    <span class="install-dot"></span>
+                    <span class="text-sm">Checking for cloudflared...</span>
+                </div>
+                <div class="install-step" id="install-download">
+                    <span class="install-dot"></span>
+                    <span class="text-sm">Downloading &amp; installing</span>
+                </div>
+                <div class="install-step" id="install-ready">
+                    <span class="install-dot"></span>
+                    <span class="text-sm">Ready</span>
+                </div>
+            </div>
+
+            <p id="install-error" class="text-xs hidden" style="color:var(--danger); text-align:center; margin-bottom:1rem;"></p>
+
+            <div class="flex justify-between">
+                <button onclick="tunnelWizardGo(1)" class="btn btn-ghost">Back</button>
+                <button id="install-next-btn" onclick="tunnelWizardGo(3)" class="btn btn-primary hidden">Next</button>
+            </div>
+        </div>
+
+        <!-- Step 3: Choose mode -->
+        <div id="tunnel-step-3" class="hidden">
+            <div style="text-align:center; margin-bottom:1.5rem;">
+                <p style="font-size:2rem; margin-bottom:0.5rem;">⚡</p>
+                <h2>Choose Setup Mode</h2>
+                <p class="text-secondary text-sm mt-1">How do you want to connect?</p>
+            </div>
+
+            <div class="space-y-3 mb-4">
+                <button onclick="tunnelSelectMode('quick')" class="tunnel-mode-option">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium text-sm">Quick Tunnel</span>
+                        <span class="badge badge-ghost" style="font-size:0.6rem;">Instant</span>
+                    </div>
+                    <p class="text-tertiary text-xs mt-1">Get a random <code>*.trycloudflare.com</code> URL instantly. No account needed. URL changes on restart.</p>
+                </button>
+                <button onclick="tunnelSelectMode('token')" class="tunnel-mode-option">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium text-sm">Cloudflare Account</span>
+                        <span class="badge badge-ghost" style="font-size:0.6rem;">Permanent</span>
+                    </div>
+                    <p class="text-tertiary text-xs mt-1">Use your own domain with a permanent tunnel. Requires a free Cloudflare account.</p>
+                </button>
+            </div>
+
+            <div class="flex justify-between">
+                <button onclick="tunnelWizardGo(2)" class="btn btn-ghost">Back</button>
+            </div>
+        </div>
+
+        <!-- Step 4: Token connect -->
+        <div id="tunnel-step-4" class="hidden">
+            <div style="text-align:center; margin-bottom:1.5rem;">
+                <p style="font-size:2rem; margin-bottom:0.5rem;">🔑</p>
+                <h2>Connect Tunnel</h2>
+                <p class="text-secondary text-sm mt-1">Create a tunnel in the Cloudflare dashboard and paste the install token below.</p>
+            </div>
+
+            <div class="space-y-3 mb-4" style="font-size:0.8125rem; color:var(--text-secondary);">
+                <p>1. Open the <a href="https://one.dash.cloudflare.com/networks/tunnels" target="_blank" rel="noopener" class="text-accent">Cloudflare Zero Trust Dashboard</a></p>
+                <p>2. Go to <strong>Networks &rarr; Tunnels</strong> and create a new tunnel</p>
+                <p>3. Choose <strong>Cloudflared</strong> connector and copy the install token</p>
+            </div>
+
+            <div class="mb-4">
+                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Install Token</label>
+                <input type="text" id="tunnel-token" class="glass-input" placeholder="Paste token here..." style="font-family:monospace; font-size:0.75rem;">
+            </div>
+
+            <p id="connect-error" class="text-xs hidden" style="color:var(--danger); text-align:center; margin-bottom:1rem;"></p>
+            <p id="connect-success" class="text-xs hidden" style="color:var(--success); text-align:center; margin-bottom:1rem;"></p>
+
+            <div class="flex justify-between">
+                <button onclick="tunnelWizardGo(3)" class="btn btn-ghost">Back</button>
+                <button id="connect-btn" onclick="tunnelConnect()" class="btn btn-primary">Connect</button>
+            </div>
+        </div>
+
+        <!-- Step 5: Configure domain (token mode) -->
+        <div id="tunnel-step-5" class="hidden">
+            <div style="text-align:center; margin-bottom:1.5rem;">
+                <p style="font-size:2rem; margin-bottom:0.5rem;">🏷️</p>
+                <h2>Configure Domain</h2>
+                <p class="text-secondary text-sm mt-1">In the Cloudflare dashboard, add a Public Hostname pointing to <code style="font-size:0.75rem; background:rgba(0,60,140,0.06); padding:0.15rem 0.4rem; border-radius:4px;">https://localhost:4443</code> with <em>No TLS Verify</em> enabled.</p>
+            </div>
+
+            <div class="space-y-3 mb-4">
+                <div>
+                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Domain</label>
+                    <input type="text" id="tunnel-domain-input" class="glass-input" placeholder="home.yourdomain.com" oninput="tunnelAutoUrl()">
+                </div>
+                <div>
+                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">URL</label>
+                    <input type="text" id="tunnel-url-input" class="glass-input" placeholder="https://home.yourdomain.com">
+                </div>
+            </div>
+
+            <p id="configure-error" class="text-xs hidden" style="color:var(--danger); text-align:center; margin-bottom:1rem;"></p>
+
+            <div class="flex justify-between">
+                <button onclick="tunnelWizardGo(4)" class="btn btn-ghost">Back</button>
+                <div class="flex gap-2">
+                    <button onclick="tunnelSkipDomain()" class="btn btn-ghost">Skip for now</button>
+                    <button id="configure-btn" onclick="tunnelSaveDomain()" class="btn btn-primary">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 6: Quick tunnel progress -->
+        <div id="tunnel-step-6" class="hidden">
+            <div style="text-align:center; margin-bottom:1.5rem;">
+                <p style="font-size:2rem; margin-bottom:0.5rem;">⚡</p>
+                <h2>Starting Quick Tunnel</h2>
+                <p class="text-secondary text-sm mt-1">Creating your tunnel and generating a public URL...</p>
+            </div>
+
+            <div class="space-y-3 mb-4">
+                <div class="install-step" id="quick-starting">
+                    <span class="install-dot active"></span>
+                    <span class="text-sm">Starting tunnel service...</span>
+                </div>
+                <div class="install-step" id="quick-url">
+                    <span class="install-dot"></span>
+                    <span class="text-sm">Waiting for URL assignment...</span>
+                </div>
+                <div class="install-step" id="quick-done">
+                    <span class="install-dot"></span>
+                    <span class="text-sm">Ready</span>
+                </div>
+            </div>
+
+            <p id="quick-error" class="text-xs hidden" style="color:var(--danger); text-align:center; margin-bottom:1rem;"></p>
+            <p id="quick-url-display" class="hidden" style="text-align:center; margin-bottom:1rem; padding:0.75rem; background:rgba(0,60,140,0.04); border-radius:var(--radius-sm);">
+                <span class="text-tertiary text-xs">Your URL:</span><br>
+                <a id="quick-url-link" href="" target="_blank" class="text-accent font-medium text-sm" style="word-break:break-all;"></a>
+            </p>
+
+            <div class="flex justify-between">
+                <button onclick="tunnelWizardGo(3)" class="btn btn-ghost">Back</button>
+                <button id="quick-done-btn" onclick="loadTunnel()" class="btn btn-primary hidden">Done</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.install-step { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0; }
+.install-dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(0,60,120,0.1); flex-shrink: 0; transition: background 0.3s; }
+.install-dot.active { background: var(--accent); animation: pulse-dot 1s infinite; }
+.install-dot.done { background: var(--success); }
+.install-dot.error { background: var(--danger); }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+.tunnel-mode-option {
+    display: block; width: 100%; text-align: left; padding: 1rem; border: 1px solid rgba(0,60,120,0.08);
+    border-radius: var(--radius-sm); background: rgba(255,255,255,0.5); cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-out); font-family: inherit;
+}
+.tunnel-mode-option:hover { border-color: var(--accent); background: rgba(0,122,255,0.04); }
+</style>
+
+<script>
+let tunnelRunning = false;
+let tunnelMode = "token";
+
+function loadTunnel() {
+    fetch("/api/network/tunnel/status").then(r => r.json()).then(r => {
+        if (!r.ok) return;
+        const d = r.data;
+
+        if (d.configured) {
+            showTunnelPanel(d);
+        } else {
+            document.getElementById("tunnel-panel").classList.add("hidden");
+            document.getElementById("tunnel-wizard").classList.remove("hidden");
+            tunnelWizardGo(1);
+        }
+    }).catch(() => {
+        document.getElementById("tunnel-panel").classList.add("hidden");
+        document.getElementById("tunnel-wizard").classList.remove("hidden");
+    });
+}
+
+function showTunnelPanel(d) {
+    document.getElementById("tunnel-wizard").classList.add("hidden");
+    document.getElementById("tunnel-panel").classList.remove("hidden");
+
+    tunnelRunning = d.running;
+    tunnelMode = d.mode || "token";
+
+    const badge = document.getElementById("tunnel-status-badge");
+    badge.className = d.running ? "badge badge-success" : "badge badge-danger";
+    badge.textContent = d.running ? "Active" : "Stopped";
+
+    const modeBadge = document.getElementById("tunnel-mode-badge");
+    modeBadge.textContent = d.mode === "quick" ? "Quick Tunnel" : "Permanent";
+
+    document.getElementById("tunnel-domain").textContent = d.domain || "Not set";
+    document.getElementById("tunnel-open-link").href = d.url || "#";
+    document.getElementById("tunnel-open-link").style.display = d.url ? "" : "none";
+    document.getElementById("tunnel-uptime").textContent = d.uptime || "—";
+
+    const toggleBtn = document.getElementById("tunnel-toggle-btn");
+    toggleBtn.textContent = d.running ? "Stop" : "Start";
+}
+
+// --- Wizard Navigation ---
+
+function tunnelWizardGo(step) {
+    for (let i = 1; i <= 6; i++) {
+        const el = document.getElementById("tunnel-step-" + i);
+        if (el) el.classList.add("hidden");
+    }
+    document.getElementById("tunnel-step-" + step).classList.remove("hidden");
+
+    if (step === 2) tunnelCheckInstall();
+    if (step === 6) tunnelStartQuick();
+}
+
+function tunnelSelectMode(mode) {
+    tunnelMode = mode;
+    if (mode === "quick") {
+        tunnelWizardGo(6);
+    } else {
+        tunnelWizardGo(4);
+    }
+}
+
+function tunnelCheckInstall() {
+    const check = document.getElementById("install-check");
+    const download = document.getElementById("install-download");
+    const ready = document.getElementById("install-ready");
+    const nextBtn = document.getElementById("install-next-btn");
+    const errorEl = document.getElementById("install-error");
+
+    check.querySelector(".install-dot").className = "install-dot active";
+    download.querySelector(".install-dot").className = "install-dot";
+    ready.querySelector(".install-dot").className = "install-dot";
+    nextBtn.classList.add("hidden");
+    errorEl.classList.add("hidden");
+
+    fetch("/api/network/tunnel/status").then(r => r.json()).then(r => {
+        if (r.ok && r.data.installed) {
+            check.querySelector(".install-dot").className = "install-dot done";
+            download.querySelector(".install-dot").className = "install-dot done";
+            ready.querySelector(".install-dot").className = "install-dot done";
+            nextBtn.classList.remove("hidden");
+        } else {
+            check.querySelector(".install-dot").className = "install-dot done";
+            download.querySelector(".install-dot").className = "install-dot active";
+            tunnelDoInstall();
+        }
+    }).catch(() => {
+        check.querySelector(".install-dot").className = "install-dot done";
+        download.querySelector(".install-dot").className = "install-dot active";
+        tunnelDoInstall();
+    });
+}
+
+function tunnelDoInstall() {
+    const download = document.getElementById("install-download");
+    const ready = document.getElementById("install-ready");
+    const nextBtn = document.getElementById("install-next-btn");
+    const errorEl = document.getElementById("install-error");
+
+    fetch("/api/network/tunnel/install", {
+        method: "POST",
+        headers: {"X-CSRFToken": CSRF}
+    }).then(r => r.json()).then(r => {
+        if (r.ok) {
+            download.querySelector(".install-dot").className = "install-dot done";
+            ready.querySelector(".install-dot").className = "install-dot done";
+            nextBtn.classList.remove("hidden");
+        } else {
+            download.querySelector(".install-dot").className = "install-dot error";
+            errorEl.textContent = r.error || "Installation failed";
+            errorEl.classList.remove("hidden");
+        }
+    }).catch(() => {
+        download.querySelector(".install-dot").className = "install-dot error";
+        errorEl.textContent = "Network error — check your connection";
+        errorEl.classList.remove("hidden");
+    });
+}
+
+// --- Quick Tunnel ---
+
+function tunnelStartQuick() {
+    const starting = document.getElementById("quick-starting");
+    const urlStep = document.getElementById("quick-url");
+    const doneStep = document.getElementById("quick-done");
+    const errorEl = document.getElementById("quick-error");
+    const urlDisplay = document.getElementById("quick-url-display");
+    const doneBtn = document.getElementById("quick-done-btn");
+
+    starting.querySelector(".install-dot").className = "install-dot active";
+    urlStep.querySelector(".install-dot").className = "install-dot";
+    doneStep.querySelector(".install-dot").className = "install-dot";
+    errorEl.classList.add("hidden");
+    urlDisplay.classList.add("hidden");
+    doneBtn.classList.add("hidden");
+
+    fetch("/api/network/tunnel/quick", {
+        method: "POST",
+        headers: {"X-CSRFToken": CSRF}
+    }).then(r => r.json()).then(r => {
+        if (r.ok) {
+            starting.querySelector(".install-dot").className = "install-dot done";
+            urlStep.querySelector(".install-dot").className = "install-dot done";
+            doneStep.querySelector(".install-dot").className = "install-dot done";
+            urlDisplay.classList.remove("hidden");
+            document.getElementById("quick-url-link").textContent = r.data.url;
+            document.getElementById("quick-url-link").href = r.data.url;
+            doneBtn.classList.remove("hidden");
+        } else {
+            starting.querySelector(".install-dot").className = "install-dot error";
+            errorEl.textContent = r.error || "Failed to start quick tunnel";
+            errorEl.classList.remove("hidden");
+        }
+    }).catch(() => {
+        starting.querySelector(".install-dot").className = "install-dot error";
+        errorEl.textContent = "Network error — try again";
+        errorEl.classList.remove("hidden");
+    });
+}
+
+// --- Token Connect ---
+
+function tunnelConnect() {
+    const token = document.getElementById("tunnel-token").value.trim();
+    const errorEl = document.getElementById("connect-error");
+    const successEl = document.getElementById("connect-success");
+    const btn = document.getElementById("connect-btn");
+
+    errorEl.classList.add("hidden");
+    successEl.classList.add("hidden");
+
+    if (!token) {
+        errorEl.textContent = "Please paste your install token";
+        errorEl.classList.remove("hidden");
+        return;
+    }
+
+    if (!/^[A-Za-z0-9_\-=+/.]+$/.test(token)) {
+        errorEl.textContent = "Invalid token format";
+        errorEl.classList.remove("hidden");
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Connecting...";
+
+    fetch("/api/network/tunnel/connect", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({token})
+    }).then(r => r.json()).then(r => {
+        if (r.ok) {
+            successEl.textContent = r.data.message || "Connected!";
+            successEl.classList.remove("hidden");
+            btn.textContent = "Connected";
+            setTimeout(() => tunnelWizardGo(5), 1500);
+        } else {
+            errorEl.textContent = r.error || "Connection failed";
+            errorEl.classList.remove("hidden");
+            btn.disabled = false;
+            btn.textContent = "Connect";
+        }
+    }).catch(() => {
+        errorEl.textContent = "Network error — try again";
+        errorEl.classList.remove("hidden");
+        btn.disabled = false;
+        btn.textContent = "Connect";
+    });
+}
+
+// --- Configure domain ---
+
+function tunnelAutoUrl() {
+    const domain = document.getElementById("tunnel-domain-input").value.trim();
+    if (domain && !domain.startsWith("http")) {
+        document.getElementById("tunnel-url-input").value = "https://" + domain;
+    }
+}
+
+function tunnelSaveDomain() {
+    const domain = document.getElementById("tunnel-domain-input").value.trim();
+    const url = document.getElementById("tunnel-url-input").value.trim();
+    const errorEl = document.getElementById("configure-error");
+    const btn = document.getElementById("configure-btn");
+
+    errorEl.classList.add("hidden");
+
+    if (!domain) {
+        errorEl.textContent = "Please enter your domain";
+        errorEl.classList.remove("hidden");
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Saving...";
+
+    fetch("/api/network/tunnel/configure", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({domain, url: url || "https://" + domain, mode: "token"})
+    }).then(r => r.json()).then(r => {
+        if (r.ok) {
+            loadTunnel();
+        } else {
+            errorEl.textContent = r.error || "Failed to save";
+            errorEl.classList.remove("hidden");
+            btn.disabled = false;
+            btn.textContent = "Save";
+        }
+    }).catch(() => {
+        errorEl.textContent = "Network error";
+        errorEl.classList.remove("hidden");
+        btn.disabled = false;
+        btn.textContent = "Save";
+    });
+}
+
+function tunnelSkipDomain() {
+    fetch("/api/network/tunnel/configure", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({domain: "", url: "", mode: "token"})
+    }).then(() => loadTunnel());
+}
+
+// --- Panel Controls ---
+
+function tunnelControl(action) {
+    fetch("/api/network/tunnel/control", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify({action})
+    }).then(r => r.json()).then(r => {
+        if (r.ok) {
+            setTimeout(loadTunnel, 1000);
+        }
+    });
+}
+
+function tunnelToggle() {
+    tunnelControl(tunnelRunning ? "stop" : "start");
+}
+
+function tunnelReconfigure() {
+    document.getElementById("tunnel-panel").classList.add("hidden");
+    document.getElementById("tunnel-wizard").classList.remove("hidden");
+    tunnelWizardGo(3);
+}
+
+function tunnelRemove() {
+    if (!confirm("Remove tunnel configuration and stop the service?")) return;
+
+    fetch("/api/network/tunnel/reset", {
+        method: "POST",
+        headers: {"X-CSRFToken": CSRF}
+    }).then(r => r.json()).then(r => {
+        if (r.ok) loadTunnel();
+    });
+}
+</script>

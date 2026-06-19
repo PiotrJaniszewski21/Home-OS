@@ -1,72 +1,668 @@
 {% extends "base.html" %}
 {% block title %}{{ drive.name }} — Home OS{% endblock %}
 {% block content %}
-<div class="max-w-5xl">
-    <!-- Breadcrumbs -->
-    <div class="flex items-center gap-1 text-sm text-gray-400 mb-4">
-        <a href="{{ url_for('storage.overview') }}" class="hover:text-primary">Storage</a>
-        <span>/</span>
+<div class="finder-window">
+    <!-- Window Title Bar -->
+    <div class="finder-titlebar">
+        <div class="titlebar-left">
+            {% if filepath %}
+            {% set parts = filepath.rstrip('/').split('/') %}
+            {% set parent_parts = parts[:-1] %}
+            {% set parent = '/'.join(parent_parts) %}
+            {% if parent %}
+            <a href="{{ url_for('storage.browse_drive', name=drive.name, filepath=parent) }}" class="nav-arrow" title="Back">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+            </a>
+            {% else %}
+            <a href="{{ url_for('storage.browse_drive', name=drive.name) }}" class="nav-arrow" title="Back">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+            </a>
+            {% endif %}
+            {% else %}
+            <a href="{{ url_for('files.browse') }}" class="nav-arrow" title="Back to Files">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+            </a>
+            {% endif %}
+            <span class="nav-arrow disabled">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+            </span>
+        </div>
+
+        <div class="titlebar-center">
+            <span class="titlebar-title">
+                {% if breadcrumbs|length > 1 %}{{ breadcrumbs[-1].name }}{% else %}{{ drive.name }}{% endif %}
+            </span>
+        </div>
+
+        <div class="titlebar-right"></div>
+    </div>
+
+    <!-- Path Bar -->
+    <div class="finder-pathbar">
+        <a href="{{ url_for('files.browse') }}" class="pathbar-item">
+            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+            Files
+        </a>
+        <svg class="pathbar-chevron" width="7" height="10" viewBox="0 0 7 10"><path d="M1 1l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         {% for crumb in breadcrumbs %}
         {% if not loop.last %}
-        <a href="{{ url_for('storage.browse_drive', name=drive.name, filepath=crumb.path) }}" class="hover:text-primary">{{ crumb.name }}</a>
-        <span>/</span>
+        {% if crumb.path %}
+        <a href="{{ url_for('storage.browse_drive', name=drive.name, filepath=crumb.path) }}" class="pathbar-item">{{ crumb.name }}</a>
         {% else %}
-        <span class="text-gray-200">{{ crumb.name }}</span>
+        <a href="{{ url_for('storage.browse_drive', name=drive.name) }}" class="pathbar-item">{{ crumb.name }}</a>
+        {% endif %}
+        <svg class="pathbar-chevron" width="7" height="10" viewBox="0 0 7 10"><path d="M1 1l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        {% else %}
+        <span class="pathbar-item current">{{ crumb.name }}</span>
         {% endif %}
         {% endfor %}
     </div>
 
-    <!-- File list -->
-    <div class="bg-surface border border-border rounded-xl overflow-hidden">
-        <table class="w-full text-sm">
-            <thead class="border-b border-border">
-                <tr class="text-gray-400 text-left">
-                    <th class="px-4 py-3">Name</th>
-                    <th class="px-4 py-3 w-24">Size</th>
-                    <th class="px-4 py-3 w-28">Modified</th>
-                    <th class="px-4 py-3 w-24">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% if filepath %}
-                <tr class="border-b border-border/50 hover:bg-background/50">
-                    <td class="px-4 py-2" colspan="4">
-                        {% set parts = filepath.rstrip('/').split('/')[:-1] %}
-                        {% set parent = '/'.join(parts) %}
-                        <a href="{{ url_for('storage.browse_drive', name=drive.name, filepath=parent) }}" class="text-gray-400 hover:text-primary">..</a>
-                    </td>
-                </tr>
-                {% endif %}
-                {% for entry in entries %}
-                <tr class="border-b border-border/50 hover:bg-background/50 group">
-                    <td class="px-4 py-2">
-                        {% if entry.is_dir %}
-                        <a href="{{ url_for('storage.browse_drive', name=drive.name, filepath=entry.path) }}" class="text-primary hover:underline">{{ entry.name }}/</a>
-                        {% else %}
-                        <a href="{{ url_for('storage.browse_drive', name=drive.name, filepath=entry.path) }}" class="text-gray-200 hover:text-primary">{{ entry.name }}</a>
-                        {% endif %}
-                    </td>
-                    <td class="px-4 py-2 text-gray-400 text-xs">
-                        {% if entry.size is not none %}
-                            {% if entry.size > 1073741824 %}{{ "%.1f"|format(entry.size / 1073741824) }} GB
-                            {% elif entry.size > 1048576 %}{{ "%.1f"|format(entry.size / 1048576) }} MB
-                            {% elif entry.size > 1024 %}{{ "%.1f"|format(entry.size / 1024) }} KB
-                            {% else %}{{ entry.size }} B{% endif %}
-                        {% else %}—{% endif %}
-                    </td>
-                    <td class="px-4 py-2 text-gray-500 text-xs">{{ entry.modified[:10] }}</td>
-                    <td class="px-4 py-2 opacity-0 group-hover:opacity-100">
-                        {% if not entry.is_dir %}
-                        <a href="{{ url_for('storage.browse_drive', name=drive.name, filepath=entry.path, download='') }}" class="text-xs text-gray-400 hover:text-primary">Download</a>
-                        {% endif %}
-                    </td>
-                </tr>
+    <!-- Toolbar: Default mode -->
+    <div class="finder-actions" id="toolbar-default">
+        <button onclick="enterSelectMode()" class="tb-btn-label" id="btn-select" title="Select items">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Select
+        </button>
+        <button onclick="doPaste()" class="tb-btn-label" id="btn-paste-default" title="Paste" style="display:none;">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            Paste
+        </button>
+        <div style="flex:1;"></div>
+    </div>
+
+    <!-- Toolbar: Select mode (replaces default toolbar) -->
+    <div class="finder-actions select-toolbar" id="toolbar-select" style="display:none;">
+        <span class="select-count" id="select-count">0 selected</span>
+        <div style="flex:1;"></div>
+        <button onclick="copySelected()" class="tb-btn-label" id="btn-copy" disabled>
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/></svg>
+            Copy
+        </button>
+        <button onclick="cutSelected()" class="tb-btn-label" id="btn-cut" disabled>
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/></svg>
+            Move
+        </button>
+        <button onclick="deleteSelected()" class="tb-btn-label danger-label" id="btn-delete" disabled>
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            Delete
+        </button>
+        <div class="tb-separator"></div>
+        <button onclick="exitSelectMode()" class="tb-btn-label done-btn">Done</button>
+    </div>
+
+    <!-- Content Area -->
+    <div class="finder-content-area">
+        <div class="finder-body">
+            {% set folders = entries | selectattr('is_dir') | list %}
+            {% set files = entries | rejectattr('is_dir') | list %}
+
+            {% if folders %}
+            <div class="finder-icon-grid">
+                {% for entry in folders %}
+                <div class="finder-icon-item" data-path="{{ entry.path }}" data-name="{{ entry.name }}" data-isdir="true" data-href="{{ url_for('storage.browse_drive', name=drive.name, filepath=entry.path) }}">
+                    <div class="finder-icon-wrap">
+                        <svg viewBox="0 0 80 80" width="52" height="52">
+                            <defs><linearGradient id="folder-grad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#6EC6FF"/><stop offset="100%" stop-color="#2196F3"/></linearGradient></defs>
+                            <path d="M8 22h22l4-5h26c3 0 5 2.5 5 5v30c0 3-2 5-5 5H8c-3 0-5-2-5-5V27c0-3 2-5 5-5z" fill="url(#folder-grad)" opacity="0.9"/>
+                            <path d="M3 30h62v22c0 3-2 5-5 5H8c-3 0-5-2-5-5V30z" fill="url(#folder-grad)"/>
+                            <path d="M3 30h62v3H3z" fill="rgba(255,255,255,0.15)"/>
+                        </svg>
+                    </div>
+                    <span class="finder-icon-name">{{ entry.name }}</span>
+                </div>
                 {% endfor %}
-                {% if not entries %}
-                <tr><td colspan="4" class="px-4 py-8 text-center text-gray-500">Empty</td></tr>
-                {% endif %}
-            </tbody>
-        </table>
+            </div>
+            {% endif %}
+
+            {% if files %}
+            {% if folders %}<div class="finder-section-label">Files</div>{% endif %}
+            <!-- List view for files -->
+            <div class="finder-list">
+                <div class="finder-list-header">
+                    <span class="flist-col flist-name">Name</span>
+                    <span class="flist-col flist-size">Size</span>
+                    <span class="flist-col flist-kind">Kind</span>
+                </div>
+                {% for entry in files %}
+                {% set ext = entry.name.rsplit('.', 1)[-1]|lower if '.' in entry.name else '' %}
+                <div class="finder-list-row" data-path="{{ entry.path }}" data-name="{{ entry.name }}" data-isdir="false">
+                    <span class="flist-col flist-name">
+                        <span class="flist-file-icon">
+                            {% if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'] %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.5"/><circle cx="5.5" cy="5.5" r="1.5" fill="#60a5fa"/><path d="M1 11l4-3 2 2 4-4 4 3v4a2 2 0 01-2 2H3a2 2 0 01-2-2z" fill="#93c5fd" opacity="0.7"/></svg>
+                            {% elif ext in ['pdf'] %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.5" fill="#fee2e2" stroke="#fca5a5" stroke-width="0.5"/><text x="8" y="10.5" font-size="5" font-weight="bold" fill="#dc2626" text-anchor="middle" font-family="system-ui">PDF</text></svg>
+                            {% elif ext in ['mp4', 'mov', 'avi', 'mkv', 'webm'] %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="10" rx="2" fill="#ede9fe" stroke="#c4b5fd" stroke-width="0.5"/><polygon points="6.5,5.5 6.5,10.5 11,8" fill="#7c3aed"/></svg>
+                            {% elif ext in ['mp3', 'wav', 'flac', 'aac', 'ogg'] %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="#fce7f3" stroke="#f9a8d4" stroke-width="0.5"/><circle cx="8" cy="9" r="3" fill="none" stroke="#ec4899" stroke-width="1.2"/><path d="M11 9V4l-3 1.2" stroke="#ec4899" stroke-width="1.2" fill="none"/></svg>
+                            {% elif ext in ['zip', 'tar', 'gz', 'rar', '7z'] %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.5" fill="#f3f4f6" stroke="#d1d5db" stroke-width="0.5"/><rect x="7" y="1" width="2" height="14" fill="#e5e7eb"/><rect x="7" y="10" width="2" height="3" rx="0.5" fill="#fbbf24"/></svg>
+                            {% elif ext in ['py', 'js', 'ts', 'html', 'css', 'json', 'yaml', 'yml', 'sh', 'sql', 'xml', 'toml'] %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.5" fill="#eff6ff" stroke="#93c5fd" stroke-width="0.5"/><path d="M5 5h4M5 7.5h6M5 10h3" stroke="#3b82f6" stroke-width="0.8" stroke-linecap="round"/></svg>
+                            {% elif ext in ['txt', 'md', 'log', 'csv'] %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.5" fill="#f8fafc" stroke="#cbd5e1" stroke-width="0.5"/><path d="M5 5h6M5 7.5h6M5 10h4" stroke="#94a3b8" stroke-width="0.8" stroke-linecap="round"/></svg>
+                            {% else %}
+                            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 1h6l4 4v9a2 2 0 01-2 2H4a2 2 0 01-2-2V3a2 2 0 012-2z" fill="#f8fafc" stroke="#cbd5e1" stroke-width="0.5"/><path d="M10 1v3a1 1 0 001 1h3" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="0.5"/></svg>
+                            {% endif %}
+                        </span>
+                        <span class="flist-filename">{{ entry.name }}</span>
+                    </span>
+                    <span class="flist-col flist-size">{% if entry.size is not none %}{% if entry.size > 1073741824 %}{{ '%.1f'|format(entry.size / 1073741824) }} GB{% elif entry.size > 1048576 %}{{ '%.1f'|format(entry.size / 1048576) }} MB{% elif entry.size > 1024 %}{{ '%.1f'|format(entry.size / 1024) }} KB{% else %}{{ entry.size }} B{% endif %}{% endif %}</span>
+                    <span class="flist-col flist-kind">{% if ext %}{{ ext|upper }}{% else %}Document{% endif %}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if not entries %}
+            <div class="finder-empty">
+                <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="opacity:0.3;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                <p>This folder is empty</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="finder-statusbar">
+        <span>{{ entries|length }} item{{ 's' if entries|length != 1 else '' }}</span>
     </div>
 </div>
+
+<style>
+/* Finder Window */
+.finder-window {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(60px) saturate(1.5);
+    -webkit-backdrop-filter: blur(60px) saturate(1.5);
+    border: 0.5px solid rgba(255, 255, 255, 0.85);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 50, 120, 0.1), 0 0 1px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    max-width: 72rem;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 10rem);
+}
+
+/* Title Bar */
+.finder-titlebar {
+    display: flex;
+    align-items: center;
+    height: 38px;
+    padding: 0 12px;
+    background: rgba(245, 248, 252, 0.85);
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.08);
+    -webkit-app-region: drag;
+    flex-shrink: 0;
+}
+
+.titlebar-left {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 60px;
+}
+
+.titlebar-center {
+    flex: 1;
+    text-align: center;
+}
+
+.titlebar-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+
+.titlebar-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 60px;
+    justify-content: flex-end;
+}
+
+.nav-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: all 0.12s ease;
+}
+
+.nav-arrow:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+.nav-arrow:active { background: rgba(0, 0, 0, 0.07); }
+.nav-arrow.disabled { color: var(--text-quaternary); pointer-events: none; }
+
+/* Path Bar */
+.finder-pathbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 12px;
+    background: rgba(0, 60, 140, 0.02);
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.06);
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex-shrink: 0;
+}
+
+.finder-pathbar::-webkit-scrollbar { display: none; }
+
+.pathbar-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: all 0.12s ease;
+}
+
+.pathbar-item:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+.pathbar-item.current { color: var(--text-primary); font-weight: 600; }
+
+.pathbar-chevron { color: var(--text-quaternary); flex-shrink: 0; }
+
+/* Actions Bar */
+.finder-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 5px 12px;
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.06);
+    flex-shrink: 0;
+}
+
+.tb-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.12s ease;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.tb-btn:hover { background: rgba(0, 0, 0, 0.05); color: var(--text-primary); }
+.tb-btn:active { background: rgba(0, 0, 0, 0.08); transform: scale(0.92); }
+
+.tb-separator { width: 1px; height: 18px; background: rgba(0, 60, 140, 0.08); margin: 0 4px; }
+
+/* Content Area */
+.finder-content-area {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.finder-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    min-width: 0;
+}
+
+.finder-section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-tertiary);
+    padding: 8px 4px 6px;
+}
+
+/* Icon Grid (folders) */
+.finder-icon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 2px;
+    margin-bottom: 8px;
+}
+
+.finder-icon-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 10px 6px 8px;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: background 0.1s ease;
+    cursor: default;
+    position: relative;
+}
+
+.finder-icon-item:hover { background: rgba(0, 122, 255, 0.06); }
+.finder-icon-item:active { background: rgba(0, 122, 255, 0.1); }
+
+.finder-icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    filter: drop-shadow(0 2px 4px rgba(0, 60, 140, 0.12));
+}
+
+.finder-icon-item:hover .finder-icon-wrap {
+    filter: drop-shadow(0 3px 6px rgba(0, 60, 140, 0.18));
+}
+
+.finder-icon-name {
+    font-size: 11px;
+    color: var(--text-primary);
+    text-align: center;
+    max-width: 84px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.3;
+}
+
+/* List View (files) */
+.finder-list {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 0.5px solid rgba(0, 60, 140, 0.06);
+}
+
+.finder-list-header {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    background: rgba(0, 60, 140, 0.03);
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.06);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.finder-list-row {
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.04);
+    font-size: 13px;
+    cursor: default;
+    transition: background 0.08s ease;
+}
+
+.finder-list-row:last-child { border-bottom: none; }
+.finder-list-row:hover { background: rgba(0, 122, 255, 0.04); }
+.finder-list-row:active { background: rgba(0, 122, 255, 0.08); }
+.finder-list-row.selected { background: var(--accent); color: white; }
+.finder-list-row.selected .flist-size,
+.finder-list-row.selected .flist-kind { color: rgba(255, 255, 255, 0.7); }
+
+.flist-col { display: flex; align-items: center; }
+.flist-name { flex: 1; min-width: 0; gap: 8px; }
+.flist-size { width: 80px; font-size: 12px; color: var(--text-tertiary); }
+.flist-kind { width: 80px; font-size: 12px; color: var(--text-tertiary); }
+
+.flist-file-icon { display: flex; align-items: center; flex-shrink: 0; }
+.flist-filename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Status Bar */
+.finder-statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 14px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    background: rgba(245, 248, 252, 0.6);
+    border-top: 0.5px solid rgba(0, 60, 140, 0.06);
+    flex-shrink: 0;
+}
+
+/* Empty State */
+.finder-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 4rem 2rem;
+    color: var(--text-quaternary);
+    font-size: 13px;
+}
+
+/* Labeled toolbar buttons */
+.tb-btn-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    text-decoration: none;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.tb-btn-label:hover { background: var(--accent-light); color: var(--accent); }
+.tb-btn-label:active { transform: scale(0.95); }
+.tb-btn-label:disabled { opacity: 0.35; pointer-events: none; }
+.tb-btn-label.done-btn { color: var(--accent); font-weight: 600; }
+.tb-btn-label.done-btn:hover { background: var(--accent-light); }
+
+/* Select mode toolbar */
+.select-toolbar { background: rgba(0, 122, 255, 0.03); }
+.select-count { font-size: 12px; font-weight: 600; color: var(--accent); }
+
+/* Selected items in select mode */
+.select-mode .finder-icon-item,
+.select-mode .finder-list-row {
+    cursor: pointer;
+}
+
+.select-mode .finder-icon-item.checked {
+    background: var(--accent-medium);
+    box-shadow: 0 0 0 1.5px rgba(0, 122, 255, 0.3);
+}
+
+.select-mode .finder-icon-item.checked::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E") no-repeat center / 9px;
+}
+
+.select-mode .finder-list-row.checked {
+    background: var(--accent-light);
+}
+
+.select-mode .finder-list-row.checked::before {
+    content: '';
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E") no-repeat center / 8px;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .finder-window { min-height: calc(100vh - 8rem); border-radius: 0; margin: -1.25rem -1rem; }
+    .finder-icon-grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); }
+    .flist-kind { display: none; }
+}
+</style>
+
+<script>
+const CSRF = "{{ csrf_token() }}";
+const currentPath = "/drive/{{ drive.name }}/{{ filepath }}";
+let selectMode = false;
+let checkedItems = [];
+let clipboard = JSON.parse(sessionStorage.getItem("fileClipboard") || "null");
+
+updatePasteUI();
+
+function apiPost(url, data) {
+    return fetch(url, {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+        body: JSON.stringify(data)
+    }).then(r => r.json());
+}
+
+// === Select Mode ===
+function enterSelectMode() {
+    selectMode = true;
+    checkedItems = [];
+    document.getElementById("toolbar-default").style.display = "none";
+    document.getElementById("toolbar-select").style.display = "";
+    document.querySelector(".finder-body").classList.add("select-mode");
+    updateSelectUI();
+}
+
+function exitSelectMode() {
+    selectMode = false;
+    checkedItems = [];
+    document.getElementById("toolbar-default").style.display = "";
+    document.getElementById("toolbar-select").style.display = "none";
+    document.querySelector(".finder-body").classList.remove("select-mode");
+    document.querySelectorAll(".checked").forEach(el => el.classList.remove("checked"));
+}
+
+function toggleCheck(el) {
+    const path = el.dataset.path;
+    const idx = checkedItems.findIndex(i => i.path === path);
+    if (idx >= 0) {
+        checkedItems.splice(idx, 1);
+        el.classList.remove("checked");
+    } else {
+        checkedItems.push({
+            path: el.dataset.path,
+            name: el.dataset.name || el.querySelector(".finder-icon-name, .flist-filename").textContent.trim(),
+            isDir: el.dataset.isdir === "true"
+        });
+        el.classList.add("checked");
+    }
+    updateSelectUI();
+}
+
+function updateSelectUI() {
+    const n = checkedItems.length;
+    document.getElementById("select-count").textContent = n === 0 ? "Tap items to select" : n + " selected";
+    document.getElementById("btn-copy").disabled = n === 0;
+    document.getElementById("btn-cut").disabled = n === 0;
+    document.getElementById("btn-delete").disabled = n === 0;
+}
+
+function copySelected() {
+    if (checkedItems.length === 0) return;
+    clipboard = {path: checkedItems[0].path, mode: "copy", drive: "{{ drive.name }}"};
+    sessionStorage.setItem("fileClipboard", JSON.stringify(clipboard));
+    exitSelectMode();
+    updatePasteUI();
+}
+
+function cutSelected() {
+    if (checkedItems.length === 0) return;
+    clipboard = {path: checkedItems[0].path, mode: "cut", drive: "{{ drive.name }}"};
+    sessionStorage.setItem("fileClipboard", JSON.stringify(clipboard));
+    exitSelectMode();
+    updatePasteUI();
+}
+
+function deleteSelected() {
+    if (checkedItems.length === 0) return;
+    const names = checkedItems.map(i => i.name).join(", ");
+    if (!confirm("Delete?\n" + names)) return;
+    Promise.all(checkedItems.map(i => apiPost("/api/files/delete", {path: i.path})))
+        .then(() => location.reload());
+}
+
+function doPaste() {
+    if (!clipboard) return;
+    const endpoint = clipboard.mode === "cut" ? "/api/files/move" : "/api/files/copy";
+    apiPost(endpoint, {src: clipboard.path, dest: currentPath}).then(r => {
+        if (r.ok) {
+            if (clipboard.mode === "cut") clearClipboard();
+            location.reload();
+        } else {
+            alert(r.error || "Paste failed");
+        }
+    });
+}
+
+function clearClipboard() {
+    clipboard = null;
+    sessionStorage.removeItem("fileClipboard");
+    updatePasteUI();
+}
+
+function updatePasteUI() {
+    const pasteBtn = document.getElementById("btn-paste-default");
+    if (clipboard) {
+        pasteBtn.style.display = "";
+    } else {
+        pasteBtn.style.display = "none";
+    }
+}
+
+// Folder icon items — click navigates normally, in select mode it ticks
+document.querySelectorAll(".finder-icon-item[data-path]").forEach(item => {
+    item.addEventListener("click", (e) => {
+        if (selectMode) {
+            e.preventDefault();
+            toggleCheck(item);
+            return;
+        }
+        const href = item.dataset.href;
+        if (href) window.location.href = href;
+    });
+});
+
+// File list rows — click selects in select mode
+document.querySelectorAll(".finder-list-row").forEach(item => {
+    item.addEventListener("click", (e) => {
+        if (selectMode) {
+            e.preventDefault();
+            toggleCheck(item);
+            return;
+        }
+        document.querySelectorAll(".finder-list-row.selected").forEach(i => i.classList.remove("selected"));
+        item.classList.add("selected");
+    });
+
+    item.addEventListener("dblclick", (e) => {
+        if (selectMode) return;
+        window.location.href = "/files/drive/{{ drive.name }}/" + item.dataset.path + "?download";
+    });
+});
+</script>
 {% endblock %}

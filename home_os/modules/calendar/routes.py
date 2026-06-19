@@ -4,6 +4,7 @@ from flask import jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from home_os.extensions import db
+from home_os.models.bill_payment import BillPayment
 from home_os.models.calendar import CalendarEvent
 from home_os.modules.calendar import calendar_bp
 
@@ -23,33 +24,67 @@ def get_events():
     start = request.args.get("start")
     end = request.args.get("end")
 
-    query = CalendarEvent.query
-
-    if start:
-        query = query.filter(CalendarEvent.date >= start)
-    if end:
+    # Non-recurring events filtered by date range
+    # Include events that overlap the range (for multi-day events like holidays)
+    from sqlalchemy import or_, and_
+    query = CalendarEvent.query.filter_by(is_recurring=False)
+    if start and end:
+        query = query.filter(or_(
+            # Single-day events within range
+            and_(CalendarEvent.end_date.is_(None), CalendarEvent.date >= start, CalendarEvent.date <= end),
+            # Multi-day events that overlap the range (starts before range ends AND ends after range starts)
+            and_(CalendarEvent.end_date.isnot(None), CalendarEvent.date <= end, CalendarEvent.end_date >= start),
+        ))
+    elif start:
+        query = query.filter(or_(CalendarEvent.date >= start, CalendarEvent.end_date >= start))
+    elif end:
         query = query.filter(CalendarEvent.date <= end)
 
-    events = query.order_by(CalendarEvent.date).all()
+    result = [e.to_dict() for e in query.order_by(CalendarEvent.date).all()]
 
-    # Expand recurring events within the date range
-    result = []
-    for event in events:
-        result.append(event.to_dict())
-        if event.is_recurring and start and end:
-            result.extend(_expand_recurring(event, start, end))
+    # Recurring events: fetch all and expand instances within range
+    if start and end:
+        recurring = CalendarEvent.query.filter_by(is_recurring=True).all()
+        paid_set = _get_paid_set(start, end)
+        for event in recurring:
+            result.extend(_expand_recurring(event, start, end, paid_set))
 
     return jsonify({"ok": True, "data": result})
 
 
-def _expand_recurring(event, start_str, end_str):
-    """Generate recurring instances within a date range."""
+def _get_paid_set(start_str, end_str):
+    """Get set of (event_id, period_date) that are paid in this range."""
+    payments = BillPayment.query.filter(
+        BillPayment.period_date >= start_str,
+        BillPayment.period_date <= end_str,
+    ).all()
+    return {(p.event_id, p.period_date) for p in payments}
+
+
+def _expand_recurring(event, start_str, end_str, paid_set=None):
+    """Generate all recurring instances that fall within a date range."""
     start_date = date.fromisoformat(start_str)
     end_date = date.fromisoformat(end_str)
     instances = []
     current = event.date
 
-    for _ in range(365):  # safety limit
+    # Include the original occurrence if it falls within range
+    if start_date <= current <= end_date:
+        instance = event.to_dict()
+        if paid_set is not None:
+            instance["is_paid"] = (event.id, current) in paid_set
+        instances.append(instance)
+
+    max_iterations = (end_date - start_date).days + (start_date - event.date).days + 1
+    if event.recurrence == "weekly":
+        max_iterations = max_iterations // 7 + 2
+    elif event.recurrence == "monthly":
+        max_iterations = max_iterations // 28 + 2
+    elif event.recurrence == "yearly":
+        max_iterations = max_iterations // 365 + 2
+    max_iterations = min(max_iterations, 3650)
+
+    for _ in range(max_iterations):
         if event.recurrence == "daily":
             current = current + timedelta(days=1)
         elif event.recurrence == "weekly":
@@ -78,6 +113,8 @@ def _expand_recurring(event, start_str, end_str):
             instance = event.to_dict()
             instance["date"] = current.isoformat()
             instance["id"] = f"{event.id}_r_{current.isoformat()}"
+            if paid_set is not None:
+                instance["is_paid"] = (event.id, current) in paid_set
             instances.append(instance)
 
     return instances
@@ -179,6 +216,7 @@ def update_event(event_id):
 @login_required
 def delete_event(event_id):
     event = CalendarEvent.query.get_or_404(event_id)
+    BillPayment.query.filter_by(event_id=event_id).delete()
     db.session.delete(event)
     db.session.commit()
     return jsonify({"ok": True})
@@ -187,23 +225,84 @@ def delete_event(event_id):
 @calendar_bp.route("/api/calendar/bills")
 @login_required
 def get_bills():
-    """Get all bills, optionally filtered by paid/unpaid."""
-    paid = request.args.get("paid")
+    """Get bills, expanded for a date range if provided."""
+    start = request.args.get("start")
+    end = request.args.get("end")
     query = CalendarEvent.query.filter_by(event_type="bill")
-
-    if paid == "true":
-        query = query.filter_by(is_paid=True)
-    elif paid == "false":
-        query = query.filter_by(is_paid=False)
-
     bills = query.order_by(CalendarEvent.date).all()
+
+    if start and end:
+        paid_set = _get_paid_set(start, end)
+        result = []
+        for bill in bills:
+            if bill.is_recurring:
+                result.extend(_expand_recurring(bill, start, end, paid_set))
+            else:
+                bill_date = bill.date
+                if date.fromisoformat(start) <= bill_date <= date.fromisoformat(end):
+                    result.append(bill.to_dict())
+        return jsonify({"ok": True, "data": result})
+
     return jsonify({"ok": True, "data": [b.to_dict() for b in bills]})
 
 
-@calendar_bp.route("/api/calendar/events/<int:event_id>/toggle-paid", methods=["POST"])
+@calendar_bp.route("/api/calendar/events/<event_id>/toggle-paid", methods=["POST"])
 @login_required
 def toggle_paid(event_id):
-    event = CalendarEvent.query.get_or_404(event_id)
+    """Toggle paid status. For recurring bills, uses BillPayment table per-instance."""
+    data = request.get_json(silent=True) or {}
+
+    # Check if this is a recurring instance (ID like "5_r_2026-07-15")
+    if isinstance(event_id, str) and "_r_" in event_id:
+        parts = event_id.split("_r_", 1)
+        try:
+            real_id = int(parts[0])
+            period_date = date.fromisoformat(parts[1])
+        except (ValueError, TypeError, IndexError):
+            return jsonify({"ok": False, "error": "Invalid event ID"}), 400
+        event = CalendarEvent.query.get_or_404(real_id)
+    else:
+        try:
+            real_id = int(event_id)
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "Invalid event ID"}), 400
+        event = CalendarEvent.query.get_or_404(real_id)
+        # For recurring bills called from budget view, derive period from year/month
+        if event.is_recurring and data.get("year") and data.get("month"):
+            from calendar import monthrange
+            try:
+                y, m = int(data["year"]), int(data["month"])
+            except (ValueError, TypeError):
+                return jsonify({"ok": False, "error": "Invalid year/month"}), 400
+            if not (1 <= m <= 12):
+                return jsonify({"ok": False, "error": "Invalid month"}), 400
+            _, last_day = monthrange(y, m)
+            day = min(event.date.day, last_day)
+            period_date = date(y, m, day)
+        else:
+            period_date = event.date
+
+    # For recurring events, use per-instance tracking
+    if event.is_recurring:
+        existing = BillPayment.query.filter_by(event_id=real_id, period_date=period_date).first()
+        if existing:
+            db.session.delete(existing)
+            is_paid = False
+        else:
+            payment = BillPayment(
+                event_id=real_id,
+                period_date=period_date,
+                paid_by=current_user.id,
+            )
+            db.session.add(payment)
+            is_paid = True
+        db.session.commit()
+        result = event.to_dict()
+        result["is_paid"] = is_paid
+        result["date"] = period_date.isoformat()
+        return jsonify({"ok": True, "data": result})
+
+    # For non-recurring events, toggle the boolean directly
     event.is_paid = not event.is_paid
     db.session.commit()
     return jsonify({"ok": True, "data": event.to_dict()})

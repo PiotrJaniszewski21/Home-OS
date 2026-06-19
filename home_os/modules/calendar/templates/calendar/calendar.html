@@ -57,22 +57,34 @@
                         <option value="holiday">Holiday</option>
                     </select>
                 </div>
-                <div style="flex:1;">
+                <div style="flex:1;" id="date-field">
                     <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Date</label>
                     <input type="date" id="ev-date" class="glass-input" required>
                 </div>
             </div>
 
-            <div class="flex gap-3">
-                <div style="flex:1;">
-                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Time (optional)</label>
-                    <input type="time" id="ev-time" class="glass-input">
-                </div>
-                <div style="flex:1;">
-                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Color</label>
-                    <input type="color" id="ev-color" value="#0a84ff" style="height:38px; width:100%; border-radius:8px; border:1px solid rgba(0,60,120,0.1); cursor:pointer;">
+            <!-- Holiday date range -->
+            <div id="holiday-fields" style="display:none;">
+                <div class="flex gap-3">
+                    <div style="flex:1;">
+                        <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">From</label>
+                        <input type="date" id="ev-holiday-from" class="glass-input">
+                    </div>
+                    <div style="flex:0 0 auto; display:flex; align-items:flex-end; padding-bottom:0.5rem;">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="opacity:0.4;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+                    </div>
+                    <div style="flex:1;">
+                        <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">To</label>
+                        <input type="date" id="ev-holiday-to" class="glass-input">
+                    </div>
                 </div>
             </div>
+
+            <div id="time-field">
+                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Time (optional)</label>
+                <input type="time" id="ev-time" class="glass-input">
+            </div>
+            <input type="hidden" id="ev-color" value="#0a84ff">
 
             <!-- Bill fields -->
             <div id="bill-fields" class="space-y-4" style="display:none;">
@@ -142,12 +154,13 @@
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     text-align: center;
-    padding: 0.5rem 0;
-    font-size: 0.7rem;
+    padding: 0.6rem 0;
+    font-size: 11px;
+    font-weight: 500;
     color: var(--text-tertiary);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    border-bottom: 1px solid rgba(0, 60, 120, 0.06);
+    letter-spacing: 0.04em;
+    border-bottom: 0.5px solid var(--border-divider);
 }
 
 .cal-grid {
@@ -159,18 +172,18 @@
 .cal-day {
     min-height: 72px;
     padding: 4px;
-    border-right: 1px solid rgba(0, 60, 120, 0.04);
-    border-bottom: 1px solid rgba(0, 60, 120, 0.04);
+    border-right: 0.5px solid rgba(0, 60, 140, 0.04);
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.04);
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background var(--duration-fast) var(--ease-out);
 }
 .cal-day:nth-child(7n) { border-right: none; }
-.cal-day:hover { background: rgba(255, 255, 255, 0.4); }
-.cal-day.today { background: rgba(10, 132, 255, 0.06); }
-.cal-day.other-month { opacity: 0.35; }
+.cal-day:hover { background: var(--accent-light); }
+.cal-day.today { background: rgba(0, 122, 255, 0.04); }
+.cal-day.other-month { opacity: 0.3; }
 
 .cal-day-num {
-    font-size: 0.75rem;
+    font-size: 12px;
     font-weight: 500;
     color: var(--text-primary);
     padding: 2px 4px;
@@ -184,12 +197,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
 }
 
 .cal-event {
-    font-size: 0.6rem;
-    padding: 1px 4px;
-    margin-top: 1px;
+    font-size: 10px;
+    padding: 1px 5px;
+    margin-top: 2px;
     border-radius: 3px;
     white-space: nowrap;
     overflow: hidden;
@@ -197,14 +212,15 @@
     cursor: pointer;
     color: white;
     font-weight: 500;
+    letter-spacing: -0.01em;
 }
 
-.cal-event.type-bill { background: #f59e0b; }
+.cal-event.type-bill { background: #ef4444; }
 .cal-event.type-payment { background: #ef4444; }
 .cal-event.type-income { background: #10b981; }
 .cal-event.type-event { background: #0a84ff; }
-.cal-event.type-work { background: #8b5cf6; }
-.cal-event.type-holiday { background: #6ee7b7; }
+.cal-event.type-work { background: #0a84ff; }
+.cal-event.type-holiday { background: #06b6d4; }
 .cal-event.paid { opacity: 0.5; text-decoration: line-through; }
 
 .bill-row {
@@ -212,8 +228,8 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.5rem 0;
-    border-bottom: 1px solid rgba(0, 60, 120, 0.04);
-    font-size: 0.8125rem;
+    border-bottom: 0.5px solid rgba(0, 60, 140, 0.04);
+    font-size: 13px;
 }
 .bill-row:last-child { border-bottom: none; }
 </style>
@@ -313,32 +329,52 @@ function loadEvents() {
 function placeEvents() {
     document.querySelectorAll(".cal-event").forEach(e => e.remove());
     events.forEach(ev => {
+        // Holidays span multiple days
+        if (ev.event_type === "holiday" && ev.end_date) {
+            const from = new Date(ev.date + "T00:00:00");
+            const to = new Date(ev.end_date + "T00:00:00");
+            for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+                const dateStr = d.toISOString().split("T")[0];
+                const cell = document.querySelector(`.cal-day[data-date="${dateStr}"]`);
+                if (!cell) continue;
+                const el = document.createElement("div");
+                el.className = "cal-event type-holiday";
+                el.textContent = ev.title;
+                el.onclick = (e) => { e.stopPropagation(); openEditEvent(ev); };
+                cell.appendChild(el);
+            }
+            return;
+        }
+
         const cell = document.querySelector(`.cal-day[data-date="${ev.date}"]`);
         if (!cell) return;
 
         const el = document.createElement("div");
         el.className = `cal-event type-${ev.event_type}` + (ev.is_paid ? " paid" : "");
-        if (ev.color) el.style.background = ev.color;
-        el.textContent = ev.event_type === "bill" ? `${getCurrencySymbol(ev.currency)}${ev.amount || ''} ${ev.title}` : ev.title;
+        el.textContent = ev.event_type === "bill" || ev.event_type === "payment" ? `${getCurrencySymbol(ev.currency)}${ev.amount || ''} ${ev.title}` : ev.title;
         el.onclick = (e) => { e.stopPropagation(); openEditEvent(ev); };
         cell.appendChild(el);
     });
 }
 
 function loadBills() {
-    fetch("/api/calendar/bills?paid=false", {headers:{"X-CSRFToken": CSRF}})
+    const start = `${currentYear}-${String(currentMonth).padStart(2,'0')}-01`;
+    const lastDay = new Date(currentYear, currentMonth, 0).getDate();
+    const end = `${currentYear}-${String(currentMonth).padStart(2,'0')}-${lastDay}`;
+
+    fetch(`/api/calendar/bills?start=${start}&end=${end}`, {headers:{"X-CSRFToken": CSRF}})
         .then(r => r.json())
         .then(r => {
             const container = document.getElementById("bills-summary");
             const list = document.getElementById("bills-list");
-            if (r.ok && r.data.length > 0) {
+            const unpaid = r.ok ? r.data.filter(b => !b.is_paid) : [];
+            if (unpaid.length > 0) {
                 container.style.display = "block";
-                list.innerHTML = r.data.slice(0, 5).map(b => `
+                list.innerHTML = unpaid.slice(0, 5).map(b => `
                     <div class="bill-row">
                         <div>
                             <span style="font-weight:500;">${b.title}</span>
                             <span class="text-tertiary text-xs" style="margin-left:0.5rem;">${b.date}</span>
-                            ${b.is_recurring ? '<span class="badge badge-ghost" style="margin-left:0.25rem;">recurring</span>' : ''}
                         </div>
                         <div style="font-weight:600;">${getCurrencySymbol(b.currency)}${b.amount ? b.amount.toFixed(2) : '—'}</div>
                     </div>
@@ -360,6 +396,8 @@ function openNewEvent(dateStr) {
     document.getElementById("ev-title").value = "";
     document.getElementById("ev-type").value = "event";
     document.getElementById("ev-date").value = dateStr || new Date().toISOString().split("T")[0];
+    document.getElementById("ev-holiday-from").value = dateStr || new Date().toISOString().split("T")[0];
+    document.getElementById("ev-holiday-to").value = "";
     document.getElementById("ev-time").value = "";
     document.getElementById("ev-color").value = "#0a84ff";
     document.getElementById("ev-amount").value = "";
@@ -374,11 +412,16 @@ function openNewEvent(dateStr) {
 }
 
 function openEditEvent(ev) {
+    const isInstance = String(ev.id).includes("_r_");
+    const realId = isInstance ? ev.id.split("_r_")[0] : ev.id;
+
     document.getElementById("modal-title").textContent = "Edit Event";
-    document.getElementById("event-id").value = ev.id;
+    document.getElementById("event-id").value = realId;
     document.getElementById("ev-title").value = ev.title;
     document.getElementById("ev-type").value = ev.event_type;
     document.getElementById("ev-date").value = ev.date;
+    document.getElementById("ev-holiday-from").value = ev.date;
+    document.getElementById("ev-holiday-to").value = ev.end_date || "";
     document.getElementById("ev-time").value = ev.time || "";
     document.getElementById("ev-color").value = ev.color || "#0a84ff";
     document.getElementById("ev-amount").value = ev.amount || "";
@@ -388,7 +431,7 @@ function openEditEvent(ev) {
     document.getElementById("ev-recurrence").value = ev.recurrence || "monthly";
     document.getElementById("ev-recurrence").style.display = ev.is_recurring ? "" : "none";
     document.getElementById("ev-desc").value = ev.description || "";
-    document.getElementById("delete-btn").style.display = String(ev.id).includes("_r_") ? "none" : "";
+    document.getElementById("delete-btn").style.display = isInstance ? "none" : "";
     toggleTypeFields();
     document.getElementById("event-modal").classList.remove("hidden");
 }
@@ -399,11 +442,16 @@ function closeModal() {
 
 function toggleTypeFields() {
     const type = document.getElementById("ev-type").value;
+    const isHoliday = type === "holiday";
     const hasAmount = ["bill", "payment", "income"].includes(type);
     document.getElementById("bill-fields").style.display = hasAmount ? "" : "none";
     document.getElementById("work-fields").style.display = type === "work" ? "" : "none";
-    document.getElementById("recurring-section").style.display = (type === "bill" || type === "payment" || type === "income") ? "none" : "";
+    document.getElementById("recurring-section").style.display = (type === "bill" || type === "payment" || type === "income" || isHoliday) ? "none" : "";
     document.getElementById("bill-frequency").style.display = type === "bill" ? "" : "none";
+    document.getElementById("holiday-fields").style.display = isHoliday ? "" : "none";
+    document.getElementById("date-field").style.display = isHoliday ? "none" : "";
+    document.getElementById("time-field").style.display = isHoliday ? "none" : "";
+    document.getElementById("ev-date").required = !isHoliday;
 }
 
 function toggleRecurrence() {
@@ -423,11 +471,21 @@ document.getElementById("event-form").onsubmit = function(e) {
     const id = document.getElementById("event-id").value;
     const evType = document.getElementById("ev-type").value;
     const isBill = evType === "bill";
+    const isHoliday = evType === "holiday";
+
+    const eventDate = isHoliday
+        ? document.getElementById("ev-holiday-from").value
+        : document.getElementById("ev-date").value;
+    const endDate = isHoliday
+        ? (document.getElementById("ev-holiday-to").value || null)
+        : null;
+
     const body = {
         title: document.getElementById("ev-title").value,
         event_type: evType,
-        date: document.getElementById("ev-date").value,
-        time: document.getElementById("ev-time").value || null,
+        date: eventDate,
+        end_date: endDate,
+        time: isHoliday ? null : (document.getElementById("ev-time").value || null),
         color: document.getElementById("ev-color").value,
         amount: parseFloat(document.getElementById("ev-amount").value) || null,
         currency: document.getElementById("ev-currency").value,
@@ -435,7 +493,7 @@ document.getElementById("event-form").onsubmit = function(e) {
         is_recurring: isBill ? true : document.getElementById("ev-recurring").checked,
         recurrence: isBill ? document.getElementById("ev-bill-freq").value : (document.getElementById("ev-recurring").checked ? document.getElementById("ev-recurrence").value : null),
         description: document.getElementById("ev-desc").value || null,
-        all_day: !document.getElementById("ev-time").value,
+        all_day: isHoliday ? true : !document.getElementById("ev-time").value,
     };
 
     const url = id ? `/api/calendar/events/${id}` : "/api/calendar/events";
