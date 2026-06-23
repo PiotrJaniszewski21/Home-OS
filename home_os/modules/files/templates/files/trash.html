@@ -158,7 +158,7 @@
 }
 </style>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 const CSRF = "{{ csrf_token() }}";
 
 function restoreItem(id) {

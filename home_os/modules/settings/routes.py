@@ -56,6 +56,16 @@ def save_profile():
     return redirect(url_for("settings.settings_view"))
 
 
+@settings_bp.route("/settings/dock", methods=["POST"])
+@login_required
+def save_dock():
+    tabs = request.form.getlist("dock_tabs")
+    current_user.dock_tabs = ",".join(tabs) if tabs else None
+    db.session.commit()
+    flash("Dock updated.", "success")
+    return redirect(url_for("settings.settings_view"))
+
+
 @settings_bp.route("/settings/server", methods=["POST"])
 @admin_required
 def save_server():

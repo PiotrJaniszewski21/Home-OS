@@ -44,9 +44,13 @@
                     ('dashboard', 'Dashboard', 'System metrics overview'),
                     ('files', 'Files', 'File browser & management'),
                     ('storage', 'Storage', 'Drive info & usage'),
+                    ('media', 'Media', 'Plex, Seerr & download services'),
                     ('ai', 'AI Assistant', 'Natural language chat'),
                     ('calendar', 'Calendar', 'Events, bills, work hours'),
                     ('budget', 'Budget', 'Financial overview'),
+                    ('network', 'Network', 'Network settings & tunnel'),
+                    ('terminal', 'Terminal', 'Server command line'),
+                    ('settings', 'Settings', 'App configuration'),
                 ] %}
                 <label class="perm-item">
                     <input type="checkbox" name="permissions" value="{{ page[0] }}" {% if page[0] in user_perms %}checked{% endif %}>
@@ -57,7 +61,7 @@
                 </label>
                 {% endfor %}
             </div>
-            <p class="text-tertiary text-xs mt-3">Admin-only pages (Network, Sharing, Users, Terminal) are not listed — they require admin role.</p>
+            <p class="text-tertiary text-xs mt-3">Admins have full access regardless of these toggles.</p>
         </div>
 
         <div class="flex gap-3" style="padding-top:0.5rem;">

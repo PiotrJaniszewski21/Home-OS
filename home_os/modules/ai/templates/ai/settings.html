@@ -172,7 +172,7 @@
 .provider-settings.active { display: block; }
 </style>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 function updateVisibility() {
     document.querySelectorAll('.provider-settings').forEach(el => el.classList.remove('active'));
     const checked = document.querySelector('input[name="provider"]:checked');

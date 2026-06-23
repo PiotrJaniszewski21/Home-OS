@@ -229,14 +229,14 @@
         <div id="prowlarr-loading" class="service-loading"><p class="text-tertiary text-sm">Checking...</p></div>
     </div>
 
-    <!-- Overseerr -->
+    <!-- Seerr -->
     <div class="glass-card mb-4" id="overseerr-card">
         <div class="flex items-center gap-3 mb-2">
             <div class="service-icon" style="background:linear-gradient(135deg, #6366f1, #8b5cf6);">
                 <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </div>
             <div>
-                <h2 class="service-title">Overseerr</h2>
+                <h2 class="service-title">Seerr</h2>
                 <p class="text-secondary text-xs">Media request and discovery</p>
             </div>
             <span id="overseerr-badge" class="badge" style="margin-left:auto;"></span>
@@ -246,7 +246,7 @@
         </div>
         <div id="overseerr-settings" class="settings-popup hidden">
             <div class="settings-popup-content">
-                <h4 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Overseerr Settings</h4>
+                <h4 class="text-secondary text-xs mb-3" style="text-transform:uppercase; letter-spacing:0.06em;">Seerr Settings</h4>
                 <div class="settings-row">
                     <label class="text-secondary text-xs">Port</label>
                     <div class="flex items-center gap-2">
@@ -565,7 +565,7 @@
 .service-frame { width:100%; height:600px; border:0.5px solid var(--border-glass); border-radius:var(--radius-md); background:#fff; }
 </style>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 const CSRF = "{{ csrf_token() }}";
 const ALL_SERVICES = ["plex", "sonarr", "radarr", "prowlarr", "overseerr", "flaresolverr", "qbittorrent"];
 const LIB_ICONS = {"movie": "🎬", "show": "📺", "artist": "🎵", "photo": "📷"};
@@ -757,6 +757,7 @@ const PROXY_MAP = {
     "sonarr": "/svc/sonarr/",
     "radarr": "/svc/radarr/",
     "prowlarr": "/svc/prowlarr/",
+    "overseerr": "/svc/seerr/",
     "qbittorrent": "/qbt/"
 };
 

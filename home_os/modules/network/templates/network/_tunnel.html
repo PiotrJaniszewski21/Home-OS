@@ -227,7 +227,7 @@
 .tunnel-mode-option:hover { border-color: var(--accent); background: rgba(0,122,255,0.04); }
 </style>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 let tunnelRunning = false;
 let tunnelMode = "token";
 

@@ -27,7 +27,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 const CSRF = "{{ csrf_token() }}";
 let history = [];
 

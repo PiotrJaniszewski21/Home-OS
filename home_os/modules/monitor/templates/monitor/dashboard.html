@@ -94,7 +94,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 const ispDown = {{ isp_download }};
 const ispUp = {{ isp_upload }};
 let dashLastBytes = null, dashLastTime = null;

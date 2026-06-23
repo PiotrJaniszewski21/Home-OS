@@ -1,3 +1,4 @@
+import time
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
@@ -5,13 +6,15 @@ from pathlib import Path
 import hashlib
 import secrets
 
-from flask import abort, current_app, flash, jsonify, redirect, render_template, request, url_for
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from home_os.extensions import csrf, db
 from home_os.models import User
 from home_os.modules.auth import auth_bp
 from home_os.modules.auth.forms import CreateUserForm, LoginForm, SetupForm
+
+SESSION_FRESHNESS_SECONDS = 300  # 5 minutes
 
 
 def admin_required(f):
@@ -23,6 +26,21 @@ def admin_required(f):
             return redirect(url_for("monitor.dashboard"))
         return f(*args, **kwargs)
 
+    return decorated
+
+
+def fresh_session_required(f):
+    """Require that the user logged in within the last 5 minutes.
+    Used for high-risk routes like terminal access."""
+    @wraps(f)
+    @admin_required
+    def decorated(*args, **kwargs):
+        login_ts = session.get("login_ts", 0)
+        if time.time() - login_ts > SESSION_FRESHNESS_SECONDS:
+            session["next_after_reauth"] = request.url
+            flash("Please re-enter your password to access this feature.", "warning")
+            return redirect(url_for("auth.reauth"))
+        return f(*args, **kwargs)
     return decorated
 
 
@@ -81,6 +99,7 @@ def login():
             user.last_login = datetime.now(timezone.utc)
             db.session.commit()
             login_user(user, remember=form.remember_me.data)
+            session["login_ts"] = time.time()
             next_page = request.args.get("next")
             if next_page and not next_page.startswith("/"):
                 next_page = None
@@ -131,6 +150,30 @@ def api_login():
     login_limiter.record(client_ip)
     login_limiter.record(username)
     return jsonify({"ok": False, "error": "Invalid credentials"}), 401
+
+
+@auth_bp.route("/reauth", methods=["GET", "POST"])
+@login_required
+def reauth():
+    """Re-authentication gate for sensitive actions."""
+    from home_os.services.rate_limiter import login_limiter
+
+    client_ip = request.remote_addr
+    if login_limiter.is_limited(client_ip):
+        flash("Too many attempts. Try again later.", "error")
+        return render_template("auth/reauth.html", form=LoginForm())
+
+    form = LoginForm()
+    if form.validate_on_submit():
+        if current_user.check_password(form.password.data):
+            login_limiter.reset(client_ip)
+            session["login_ts"] = time.time()
+            next_url = session.pop("next_after_reauth", None)
+            return redirect(next_url or url_for("monitor.dashboard"))
+        login_limiter.record(client_ip)
+        flash("Incorrect password.", "error")
+
+    return render_template("auth/reauth.html", form=form)
 
 
 @auth_bp.route("/logout", methods=["POST"])

@@ -521,7 +521,7 @@
 }
 </style>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 const CSRF = "{{ csrf_token() }}";
 const currentPath = "/drive/{{ drive.name }}/{{ filepath }}";
 let selectMode = false;

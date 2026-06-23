@@ -234,7 +234,7 @@
 .bill-row:last-child { border-bottom: none; }
 </style>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 const CSRF = "{{ csrf_token() }}";
 let currentYear = {{ year }};
 let currentMonth = {{ month }};

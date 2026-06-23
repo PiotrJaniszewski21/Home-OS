@@ -45,10 +45,10 @@ SERVICES = {
         "web_path": "",
     },
     "overseerr": {
-        "name": "Overseerr",
-        "service": "overseerr",
+        "name": "Seerr",
+        "service": "seerr",
         "package": None,
-        "paths": ["/opt/overseerr/package.json"],
+        "paths": ["/opt/seerr/package.json"],
         "port": 5055,
         "web_path": "",
     },
@@ -111,13 +111,17 @@ def _plex_web_port():
 
 
 @media_bp.route("/media")
-@admin_required
+@login_required
 def media_view():
+    from flask_login import current_user
+    if not current_user.has_permission("media"):
+        from flask import abort
+        abort(403)
     return render_template("media/media.html")
 
 
 @media_bp.route("/api/media/plex/status")
-@admin_required
+@login_required
 def plex_status():
     from flask import current_app
     config = current_app.config.get("_raw_config", {})
@@ -571,7 +575,7 @@ def _get_port(service):
 
 
 @media_bp.route("/api/media/<service>/status")
-@admin_required
+@login_required
 def arr_status(service):
     """Get status of a media service."""
     if service == "plex":
@@ -1077,12 +1081,12 @@ PROXY_PREFIXES = {
     "sonarr": "sonarr",
     "radarr": "radarr",
     "prowlarr": "prowlarr",
-    "overseerr": "overseerr",
+    "seerr": "overseerr",
 }
 
 
-@media_bp.route("/svc/<prefix>/", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-@media_bp.route("/svc/<prefix>/<path:subpath>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+@media_bp.route("/svc/<prefix>/", methods=["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+@media_bp.route("/svc/<prefix>/<path:subpath>", methods=["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 @admin_required
 def service_proxy(prefix, subpath=""):
     from flask import current_app
@@ -1106,6 +1110,16 @@ def service_proxy(prefix, subpath=""):
 
     headers = {k: v for k, v in request.headers if k.lower() not in ("host", "cookie", "referer", "origin", "accept-encoding")}
 
+    # Forward service-specific cookies (don't leak Home OS session to services)
+    service_cookies = {
+        "qbittorrent": "SID",
+    }
+    if service in service_cookies:
+        cookie_name = service_cookies[service]
+        cookie_val = request.cookies.get(cookie_name)
+        if cookie_val:
+            headers["Cookie"] = f"{cookie_name}={cookie_val}"
+
     try:
         with httpx.Client(timeout=30, follow_redirects=False) as client:
             resp = client.request(
@@ -1124,7 +1138,7 @@ def service_proxy(prefix, subpath=""):
     }
 
     # Services that need path rewriting (no native UrlBase support)
-    rewrite_services = ("overseerr", "plex", "qbittorrent")
+    rewrite_services = ("plex", "qbittorrent", "overseerr")
 
     # Rewrite Location headers
     if "location" in response_headers:
@@ -1142,20 +1156,20 @@ def service_proxy(prefix, subpath=""):
     # Rewrite root-relative paths for services without UrlBase
     if service in rewrite_services:
         if "text/html" in content_type or "javascript" in content_type or "text/css" in content_type:
-            proxy_prefix = f"/svc/{prefix}".encode()
+            import re as _re
+            pp = f"/svc/{prefix}".encode()
             # Protect protocol-relative URLs
-            content = content.replace(b'="//', b'="\x00PROTO//')
-            content = content.replace(b"='//", b"='\x00PROTO//")
-            # Rewrite root-relative paths
-            content = content.replace(b'="/', b'="' + proxy_prefix + b'/')
-            content = content.replace(b"='/", b"='" + proxy_prefix + b"/")
-            # Restore protocol-relative
-            content = content.replace(b'="\x00PROTO//', b'="//')
-            content = content.replace(b"='\x00PROTO//", b"='//")
-            # Rewrite url(/) in CSS
-            content = content.replace(b"url(/", b"url(" + proxy_prefix + b"/")
+            content = content.replace(b"://", b":\x00//")
+            # Rewrite href="/...", src="/...", and quoted string paths in JS
+            content = _re.sub(rb'((?:href|src|action)\s*=\s*["\'])/(?!/)', lambda m: m.group(1) + pp + b"/", content)
+            content = _re.sub(rb'(fetch\(\s*["\'])/(?!/)', lambda m: m.group(1) + pp + b"/", content)
+            content = _re.sub(rb'("|\')/(api|_next|static|login|settings|discover|movie|tv|collection|request|issue|user|profile)/', lambda m: m.group(1) + pp + b"/" + m.group(2) + b"/", content)
+            content = content.replace(b"url(/", b"url(" + pp + b"/")
+            # Restore protocol-relative URLs
+            content = content.replace(b":\x00//", b"://")
 
     return Response(content, status=resp.status_code, headers=response_headers)
+
 
 
 # Keep legacy /qbt/ route working

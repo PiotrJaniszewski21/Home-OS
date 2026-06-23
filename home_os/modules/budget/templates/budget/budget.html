@@ -59,29 +59,29 @@
 
     <!-- Overview cards -->
     <div style="display:none; grid-template-columns:repeat(5,1fr); gap:0.75rem; margin-bottom:1.5rem;" id="overview">
-        <div class="glass-card" style="text-align:center;">
+        <div class="glass-card budget-stat-card">
             <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Household Income</p>
-            <p id="total-income" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:var(--success);"></p>
+            <p id="total-income" class="budget-stat-value" style="color:var(--success);"></p>
             <p class="text-tertiary text-xs">/month</p>
         </div>
-        <div class="glass-card" style="text-align:center;">
+        <div class="glass-card budget-stat-card">
             <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Monthly Bills</p>
-            <p id="total-bills" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:var(--danger);"></p>
+            <p id="total-bills" class="budget-stat-value" style="color:var(--danger);"></p>
             <p class="text-tertiary text-xs">/month</p>
         </div>
-        <div class="glass-card" style="text-align:center;">
+        <div class="glass-card budget-stat-card">
             <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Remaining</p>
-            <p id="total-remaining" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem;"></p>
+            <p id="total-remaining" class="budget-stat-value"></p>
             <p class="text-tertiary text-xs" id="remaining-label">this month</p>
         </div>
-        <div class="glass-card" style="text-align:center;">
+        <div class="glass-card budget-stat-card">
             <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">One-off Due</p>
-            <p id="total-payments" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:var(--warning);"></p>
+            <p id="total-payments" class="budget-stat-value" style="color:var(--warning);"></p>
             <p class="text-tertiary text-xs">outgoing</p>
         </div>
-        <div class="glass-card" style="text-align:center;">
+        <div class="glass-card budget-stat-card">
             <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">One-off Income</p>
-            <p id="total-income-events" style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:var(--success);"></p>
+            <p id="total-income-events" class="budget-stat-value" style="color:var(--success);"></p>
             <p class="text-tertiary text-xs">incoming</p>
         </div>
     </div>
@@ -164,6 +164,20 @@
 </div>
 
 <style>
+.budget-stat-card {
+    text-align: center;
+    min-width: 0;
+    padding: 1rem 0.5rem;
+}
+.budget-stat-value {
+    font-size: clamp(1rem, 2.5vw, 1.5rem);
+    font-weight: 700;
+    margin-top: 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .income-row {
     display: flex;
     align-items: center;
@@ -239,7 +253,7 @@
 .paid-badge.paid { background: rgba(40, 205, 65, 0.1); color: var(--success); }
 </style>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 const CSRF = "{{ csrf_token() }}";
 const COLORS = ['#0a84ff','#5856d6','#ff9500','#ff2d55','#af52de','#30b0c7','#ff3b30','#28cd41','#ffcc00','#8e8e93'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -421,17 +435,17 @@ function loadYear() {
         const sym = '£';
 
         document.getElementById("year-overview").innerHTML = `
-            <div class="glass-card" style="text-align:center;">
+            <div class="glass-card budget-stat-card">
                 <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Annual Income</p>
-                <p style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:var(--success);">${sym}${d.yearly_income.toLocaleString()}</p>
+                <p class="budget-stat-value" style="color:var(--success);">${sym}${d.yearly_income.toLocaleString()}</p>
             </div>
-            <div class="glass-card" style="text-align:center;">
+            <div class="glass-card budget-stat-card">
                 <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Annual Bills</p>
-                <p style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:var(--danger);">${sym}${d.yearly_bills.toLocaleString()}</p>
+                <p class="budget-stat-value" style="color:var(--danger);">${sym}${d.yearly_bills.toLocaleString()}</p>
             </div>
-            <div class="glass-card" style="text-align:center;">
+            <div class="glass-card budget-stat-card">
                 <p class="text-tertiary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Annual Net</p>
-                <p style="font-size:1.5rem; font-weight:700; margin-top:0.25rem; color:${d.yearly_net >= 0 ? 'var(--success)' : 'var(--danger)'};">${d.yearly_net >= 0 ? '+' : ''}${sym}${d.yearly_net.toLocaleString()}</p>
+                <p class="budget-stat-value" style="color:${d.yearly_net >= 0 ? 'var(--success)' : 'var(--danger)'};">${d.yearly_net >= 0 ? '+' : ''}${sym}${d.yearly_net.toLocaleString()}</p>
             </div>
         `;
 

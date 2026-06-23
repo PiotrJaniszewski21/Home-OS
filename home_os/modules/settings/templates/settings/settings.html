@@ -40,6 +40,40 @@
         </form>
     </div>
 
+    <!-- Mobile Dock -->
+    <div class="glass-card mb-4">
+        <p class="section-label">Mobile Dock</p>
+        <p class="text-tertiary text-xs mb-3">Choose which tabs appear in your mobile dock. Only pages you have access to are shown.</p>
+        <form method="POST" action="{{ url_for('settings.save_dock') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="dock-picker">
+                {% set dock_items = current_user.visible_dock_tabs %}
+                {% set all_tabs = [
+                    ('dashboard', 'Home', '⊞'),
+                    ('files', 'Files', '📁'),
+                    ('storage', 'Storage', '💾'),
+                    ('media', 'Media', '▶'),
+                    ('ai', 'AI', '💬'),
+                    ('calendar', 'Calendar', '📅'),
+                    ('budget', 'Budget', '💰'),
+                    ('network', 'Network', '📡'),
+                    ('terminal', 'Terminal', '⌨'),
+                    ('settings', 'Settings', '⚙'),
+                ] %}
+                {% for key, label, icon in all_tabs %}
+                {% if current_user.has_permission(key) %}
+                <label class="dock-pick-item">
+                    <input type="checkbox" name="dock_tabs" value="{{ key }}" {% if key in dock_items %}checked{% endif %}>
+                    <span class="dock-pick-icon">{{ icon }}</span>
+                    <span class="dock-pick-label">{{ label }}</span>
+                </label>
+                {% endif %}
+                {% endfor %}
+            </div>
+            <button type="submit" class="btn btn-primary mt-3">Save Dock</button>
+        </form>
+    </div>
+
     {% if current_user.is_admin %}
     <!-- Server -->
     <div class="glass-card mb-4">
@@ -139,4 +173,32 @@
     </div>
     {% endif %}
 </div>
+
+<style>
+.dock-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 0.5rem;
+}
+.dock-pick-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.75rem 0.5rem;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+}
+.dock-pick-item:has(input:checked) {
+    background: rgba(10, 132, 255, 0.1);
+    box-shadow: 0 0 0 2px var(--accent);
+}
+.dock-pick-item:hover { background: rgba(255, 255, 255, 0.5); }
+.dock-pick-item input[type="checkbox"] { display: none; }
+.dock-pick-icon { font-size: 1.25rem; }
+.dock-pick-label { font-size: 0.6875rem; font-weight: 500; color: var(--text-secondary); }
+</style>
 {% endblock %}

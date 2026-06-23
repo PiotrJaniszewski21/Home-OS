@@ -232,7 +232,7 @@
 .isp-bar-fill.up { background: linear-gradient(90deg, var(--accent), #60d4ff); }
 </style>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 const CSRF = "{{ csrf_token() }}";
 let lastBytes = null, lastTime = null;
 let protectionEnabled = true;

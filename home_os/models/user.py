@@ -23,7 +23,8 @@ class User(UserMixin, db.Model):
     api_token_hash = db.Column(db.String(64), nullable=True)
     monthly_income = db.Column(db.Float, nullable=True, default=0)
     default_page = db.Column(db.String(30), nullable=False, default="dashboard")
-    permissions = db.Column(db.Text, nullable=False, default="dashboard,files,storage,ai,calendar,budget")
+    permissions = db.Column(db.Text, nullable=False, default="dashboard,files,storage,media,ai,calendar,budget")
+    dock_tabs = db.Column(db.Text, nullable=True)
     created_at = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
@@ -45,13 +46,25 @@ class User(UserMixin, db.Model):
     @property
     def allowed_pages(self):
         if self.is_admin:
-            return ["dashboard", "files", "storage", "ai", "calendar", "budget", "network", "sharing", "users", "terminal"]
+            return ["dashboard", "files", "storage", "media", "ai", "calendar", "budget", "network", "sharing", "users", "terminal", "settings"]
         return [p.strip() for p in (self.permissions or "").split(",") if p.strip()]
 
     def has_permission(self, page):
         if self.is_admin:
             return True
         return page in self.allowed_pages
+
+    @property
+    def visible_dock_tabs(self):
+        """Tabs the user wants in their mobile dock (subset of allowed_pages)."""
+        if self.dock_tabs:
+            chosen = [t.strip() for t in self.dock_tabs.split(",") if t.strip()]
+            return [t for t in chosen if self.has_permission(t)]
+        return self.allowed_pages
+
+    def in_dock(self, page):
+        """Check if a page should show in this user's mobile dock."""
+        return page in self.visible_dock_tabs
 
     def __repr__(self):
         return f"<User {self.username}>"

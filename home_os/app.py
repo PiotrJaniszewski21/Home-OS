@@ -1,8 +1,9 @@
 import os
 import secrets
+import time
 from pathlib import Path
 
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, g, redirect, render_template, request, session, url_for
 
 from home_os.config import ROOT_DIR, create_flask_config, load_config
 from home_os.extensions import csrf, db, login_manager
@@ -40,6 +41,74 @@ def create_app(config_path=None):
     login_manager.init_app(app)
     csrf.init_app(app)
     app.config["WTF_CSRF_CHECK_DEFAULT"] = False
+
+    @app.before_request
+    def _tunnel_guard():
+        """Reject requests not from Cloudflare Tunnel or the local network."""
+        if app.debug:
+            return
+        if request.path == "/health":
+            return
+        if request.headers.get("CF-Connecting-IP"):
+            return
+        # Allow local/private network access
+        import ipaddress
+        try:
+            client = ipaddress.ip_address(request.remote_addr)
+            if client.is_private or client.is_loopback:
+                return
+        except ValueError:
+            pass
+        from flask import abort
+        abort(403)
+
+    @app.before_request
+    def _enforce_permissions():
+        """Block access to modules the user doesn't have permission for."""
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return
+        path = request.path
+        path_to_perm = {
+            "/dashboard": "dashboard",
+            "/api/monitor": "dashboard",
+            "/files": "files",
+            "/api/files": "files",
+            "/trash": "files",
+            "/storage": "storage",
+            "/media": "media",
+            "/api/media": "media",
+            "/svc/": "media",
+            "/qbt": "media",
+            "/ai": "ai",
+            "/api/ai": "ai",
+            "/calendar": "calendar",
+            "/api/calendar": "calendar",
+            "/budget": "budget",
+            "/api/budget": "budget",
+            "/network": "network",
+            "/api/network": "network",
+            "/terminal": "terminal",
+            "/api/terminal": "terminal",
+            "/ws/terminal": "terminal",
+            "/settings": "settings",
+        }
+        for prefix, perm in path_to_perm.items():
+            if path.startswith(prefix):
+                if not current_user.has_permission(perm):
+                    from flask import abort
+                    abort(403)
+                break
+
+    @app.before_request
+    def _generate_csp_nonce():
+        g.csp_nonce = secrets.token_urlsafe(16)
+
+    @app.before_request
+    def _stamp_login_time():
+        """Record when the session was created (for freshness checks)."""
+        if session.get("_user_id") and "login_ts" not in session:
+            session["login_ts"] = time.time()
 
     @app.before_request
     def _csrf_check():
@@ -139,7 +208,7 @@ def create_app(config_path=None):
 
     @app.route("/health")
     def health():
-        return {"status": "healthy", "version": "0.1.0"}
+        return {"status": "healthy", "version": "0.3.1"}
 
     # Security headers
     @app.after_request
@@ -159,7 +228,16 @@ def create_app(config_path=None):
             response.headers["X-Frame-Options"] = "SAMEORIGIN"
         else:
             response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; frame-src 'self'; connect-src 'self' wss: ws:"
+        nonce = getattr(g, "csp_nonce", "")
+        response.headers["Content-Security-Policy"] = (
+            f"default-src 'self'; "
+            f"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            f"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            f"img-src 'self' data:; "
+            f"font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; "
+            f"frame-src 'self'; "
+            f"connect-src 'self' wss: ws:"
+        )
         return response
 
     # Error pages

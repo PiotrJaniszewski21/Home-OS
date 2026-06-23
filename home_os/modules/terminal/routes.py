@@ -9,11 +9,11 @@ import subprocess
 import termios
 import threading
 
-from flask import jsonify, render_template, request
+from flask import jsonify, render_template, request, session
 from flask_login import current_user, login_required
 from flask_sock import Sock
 
-from home_os.modules.auth.routes import admin_required
+from home_os.modules.auth.routes import admin_required, fresh_session_required
 from home_os.modules.terminal import terminal_bp
 
 logger = logging.getLogger("home_os.terminal")
@@ -32,13 +32,13 @@ BLOCKED_PATTERNS = [
 
 
 @terminal_bp.route("/terminal")
-@admin_required
+@fresh_session_required
 def terminal_view():
     return render_template("terminal/terminal.html")
 
 
 @terminal_bp.route("/api/terminal/exec", methods=["POST"])
-@admin_required
+@fresh_session_required
 def execute():
     data = request.get_json()
     command = data.get("command", "").strip()
@@ -83,9 +83,15 @@ def init_sock(app):
 
 @sock.route("/ws/terminal")
 def terminal_ws(ws):
+    import time as _time
+    from home_os.modules.auth.routes import SESSION_FRESHNESS_SECONDS
     from flask_login import current_user as cu
     if not cu.is_authenticated or not cu.is_admin:
         ws.close(1008, "Unauthorized")
+        return
+    login_ts = session.get("login_ts", 0)
+    if _time.time() - login_ts > SESSION_FRESHNESS_SECONDS:
+        ws.close(1008, "Session expired — re-authenticate")
         return
 
     logger.info(f"PTY session opened by {cu.username}")

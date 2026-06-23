@@ -1120,7 +1120,7 @@
 }
 </style>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 const CSRF = "{{ csrf_token() }}";
 const currentPath = "{{ path }}";
 const systemMode = {{ 'true' if system_mode else 'false' }};
