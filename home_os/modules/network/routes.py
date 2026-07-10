@@ -78,6 +78,32 @@ def network_status():
     })
 
 
+@network_bp.route("/api/network/connection-info")
+@login_required
+def connection_info():
+    port = current_app.config.get("PORT", 4443)
+    hostname = socket.gethostname()
+    hosts = []
+
+    if _is_safe_hostname(hostname):
+        hosts.append(f"{hostname}.local" if "." not in hostname else hostname)
+
+    hosts.extend(_local_ipv4_addresses())
+
+    local_urls = []
+    for host in _dedupe(hosts):
+        local_urls.append(f"https://{host}:{port}")
+
+    return jsonify({
+        "ok": True,
+        "data": {
+            "hostname": hostname,
+            "port": port,
+            "local_urls": _dedupe(local_urls),
+        },
+    })
+
+
 @network_bp.route("/api/network/speed")
 @admin_required
 def network_speed():
@@ -127,6 +153,41 @@ def _get_arp_table():
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
     return devices
+
+
+def _local_ipv4_addresses():
+    addresses = []
+    for addr_list in psutil.net_if_addrs().values():
+        for addr in addr_list:
+            if addr.family == socket.AF_INET and _is_local_ipv4(addr.address):
+                addresses.append(addr.address)
+    return _dedupe(addresses)
+
+
+def _is_local_ipv4(address):
+    import ipaddress
+
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    return (
+        ip.version == 4
+        and ip.is_private
+        and not ip.is_loopback
+        and not ip.is_link_local
+    )
+
+
+def _dedupe(items):
+    return list(dict.fromkeys(item for item in items if item))
+
+
+def _is_safe_hostname(hostname):
+    if not hostname:
+        return False
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-.")
+    return all(char in allowed for char in hostname)
 
 
 @network_bp.route("/api/network/settings")

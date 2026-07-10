@@ -1,0 +1,111 @@
+name: HomeOS
+options:
+  bundleIdPrefix: uk.co.petershomenet
+  deploymentTarget:
+    macOS: "14.0"
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    MACOSX_DEPLOYMENT_TARGET: 14.0
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: 7S5APW4X6P
+    HOMEOS_APP_GROUP: group.uk.co.petershomenet.homeos
+    HOMEOS_KEYCHAIN_ACCESS_GROUP: $(DEVELOPMENT_TEAM).uk.co.petershomenet.homeos
+targets:
+  HomeOS:
+    type: application
+    platform: macOS
+    attributes:
+      SystemCapabilities:
+        com.apple.ApplicationGroups.Mac:
+          enabled: 1
+    sources:
+      - path: Sources/HomeOS
+    info:
+      path: Resources/HomeOS-Info.plist
+      properties:
+        LSMinimumSystemVersion: "14.0"
+        LSUIElement: true
+        NSPrincipalClass: NSApplication
+        HomeOSKeychainAccessGroup: $(HOMEOS_KEYCHAIN_ACCESS_GROUP)
+    entitlements:
+      path: Resources/HomeOS.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.files.bookmarks.app-scope: true
+        com.apple.security.application-groups:
+          - $(HOMEOS_APP_GROUP)
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)uk.co.petershomenet.homeos
+    dependencies:
+      - target: HomeOSFileProvider
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: uk.co.petershomenet.homeos
+        PRODUCT_NAME: HomeOS
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 7S5APW4X6P
+  HomeOSFileProvider:
+    type: app-extension
+    platform: macOS
+    attributes:
+      SystemCapabilities:
+        com.apple.ApplicationGroups.Mac:
+          enabled: 1
+    sources:
+      - path: Sources/HomeOSFileProvider
+      - path: Sources/HomeOS/Models/APIModels.swift
+      - path: Sources/HomeOS/Services/APIClient.swift
+      - path: Sources/HomeOS/Services/ConnectionEndpointResolver.swift
+      - path: Sources/HomeOS/Services/HomeOSSharedSettings.swift
+      - path: Sources/HomeOS/Services/LocalCertificateTrust.swift
+      - path: Sources/HomeOS/Services/UploadProgressSession.swift
+      - path: Sources/HomeOS/Support/Data+Multipart.swift
+    info:
+      path: Resources/HomeOSFileProvider-Info.plist
+      properties:
+        LSMinimumSystemVersion: "14.0"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.fileprovider-nonui
+          NSExtensionPrincipalClass: HomeOSFileProviderExtension
+          NSExtensionFileProviderDocumentGroup: $(HOMEOS_APP_GROUP)
+          NSExtensionFileProviderSupportsEnumeration: true
+          NSExtensionFileProviderAllowsContextualMenuDownloadEntry: true
+          NSExtensionFileProviderAllowsUserControlledEviction: true
+          NSExtensionFileProviderActions:
+            - NSExtensionFileProviderActionIdentifier: uk.co.petershomenet.homeos.keep-on-disk
+              NSExtensionFileProviderActionName: Keep on Disk
+              NSExtensionFileProviderActionActivationRule: SUBQUERY(fileproviderItems, $item, $item.itemIdentifier BEGINSWITH "/").@count == 1
+            - NSExtensionFileProviderActionIdentifier: uk.co.petershomenet.homeos.stop-keeping-on-disk
+              NSExtensionFileProviderActionName: Stop Keeping on Disk
+              NSExtensionFileProviderActionActivationRule: SUBQUERY(fileproviderItems, $item, $item.itemIdentifier BEGINSWITH "/").@count == 1
+        HomeOSKeychainAccessGroup: $(HOMEOS_KEYCHAIN_ACCESS_GROUP)
+    entitlements:
+      path: Resources/HomeOSFileProvider.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.application-groups:
+          - $(HOMEOS_APP_GROUP)
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)uk.co.petershomenet.homeos
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: uk.co.petershomenet.homeos.fileprovider
+        PRODUCT_NAME: HomeOSFileProvider
+        APPLICATION_EXTENSION_API_ONLY: YES
+        ENABLE_DEBUG_DYLIB: NO
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 7S5APW4X6P
+        SKIP_INSTALL: YES
+schemes:
+  HomeOS:
+    build:
+      targets:
+        HomeOS: all
+        HomeOSFileProvider: all
+    run:
+      config: Debug

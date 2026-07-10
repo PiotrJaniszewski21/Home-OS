@@ -240,17 +240,36 @@ def upload():
     if "file" not in request.files:
         return jsonify({"ok": False, "error": "No file provided"}), 400
 
+    uploaded = []
     for f in request.files.getlist("file"):
         if f.filename:
             try:
-                svc.save_upload(dest, f)
+                uploaded.append(svc.save_upload(dest, f))
             except (PermissionError, NotADirectoryError) as e:
                 return jsonify({"ok": False, "error": str(e)}), 400
+
+    if _wants_json_response():
+        return jsonify({
+            "ok": True,
+            "data": {
+                "uploaded": uploaded,
+                "path": dest,
+            },
+        })
 
     filepath = dest.strip("/")
     if filepath:
         return redirect(url_for("files.browse", filepath=filepath))
     return redirect(url_for("files.browse"))
+
+
+def _wants_json_response():
+    accept = request.headers.get("Accept", "")
+    return (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or "application/json" in accept
+        or request.args.get("format") == "json"
+    )
 
 
 @files_bp.route("/api/files/mkdir", methods=["POST"])

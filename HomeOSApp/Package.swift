@@ -9,5 +9,10 @@ let package = Package(
             name: "HomeOS",
             path: "Sources/HomeOS"
         ),
+        .testTarget(
+            name: "HomeOSTests",
+            dependencies: ["HomeOS"],
+            path: "Tests/HomeOSTests"
+        ),
     ]
 )
