@@ -9,6 +9,42 @@ from home_os.config import ROOT_DIR, create_flask_config, load_config
 from home_os.extensions import csrf, db, login_manager
 
 
+def _ensure_user_columns():
+    """Add newer user columns when running against an older SQLite database."""
+    from sqlalchemy import inspect, text
+    from sqlalchemy.sql.compiler import IdentifierPreparer
+
+    inspector = inspect(db.engine)
+    if "users" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("users")}
+    preparer = IdentifierPreparer(db.engine.dialect)
+    table_name = preparer.quote("users")
+    user_columns = db.metadata.tables["users"].columns
+    column_defaults = {
+        "role": "'user'",
+        "home_directory": "''",
+        "is_active": "1",
+        "monthly_income": "0",
+        "default_page": "'dashboard'",
+        "permissions": "'dashboard,files,storage,media,ai,calendar,budget'",
+        "created_at": "'1970-01-01 00:00:00'",
+    }
+
+    for column in user_columns:
+        if column.name in existing_columns:
+            continue
+        column_name = preparer.quote(column.name)
+        column_type = column.type.compile(dialect=db.engine.dialect)
+        ddl = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
+        default = column_defaults.get(column.name)
+        if not column.nullable and default is not None:
+            ddl += f" NOT NULL DEFAULT {default}"
+        db.session.execute(text(ddl))
+    db.session.commit()
+
+
 def create_app(config_path=None):
     app = Flask(
         __name__,
@@ -147,13 +183,22 @@ def create_app(config_path=None):
     @login_manager.request_loader
     def load_user_from_token(req):
         import hashlib
-        from home_os.models import User
+
+        from home_os.models import APIToken, User
 
         auth = req.headers.get("Authorization", "")
         if auth.startswith("Bearer "):
             token = auth[7:]
             if token:
                 token_hash = hashlib.sha256(token.encode()).hexdigest()
+                api_token = (
+                    APIToken.query
+                    .join(User)
+                    .filter(APIToken.token_hash == token_hash, User.is_active.is_(True))
+                    .first()
+                )
+                if api_token:
+                    return api_token.user
                 return User.query.filter_by(api_token_hash=token_hash, is_active=True).first()
         return None
 
@@ -268,9 +313,18 @@ def create_app(config_path=None):
             for table in db.metadata.tables.values():
                 if table.name not in existing:
                     table.create(db.engine)
+        _ensure_user_columns()
+        from home_os.models import APIToken, User
+        for user in User.query.filter(User.api_token_hash.isnot(None)).all():
+            if not APIToken.query.filter_by(token_hash=user.api_token_hash).first():
+                db.session.add(APIToken(
+                    user=user,
+                    token_hash=user.api_token_hash,
+                    name="legacy-native-app",
+                ))
+        db.session.commit()
         # Dev-only test account (only when debug=True)
         if app.debug:
-            from home_os.models import User
             if not User.query.filter_by(username="123").first():
                 user = User(username="123", role="admin", home_directory="/")
                 user.set_password("123")

@@ -22,6 +22,8 @@
 	<string>$(HOMEOS_KEYCHAIN_ACCESS_GROUP)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Home OS connects directly to your home server on your local network for faster file transfers.</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionFileProviderActions</key>

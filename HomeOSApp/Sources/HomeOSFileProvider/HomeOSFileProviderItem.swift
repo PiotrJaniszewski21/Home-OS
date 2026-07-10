@@ -14,6 +14,9 @@ final class HomeOSFileProviderItem: NSObject, NSFileProviderItem {
     let capabilities: NSFileProviderItemCapabilities
     let contentType: UTType
     let contentPolicy: NSFileProviderContentPolicy
+    let isUploaded: Bool
+    let isUploading: Bool
+    let uploadingError: Error?
     let userInfo: [AnyHashable: Any]?
 
     init(
@@ -26,7 +29,10 @@ final class HomeOSFileProviderItem: NSObject, NSFileProviderItem {
         isDirectory: Bool,
         childItemCount: NSNumber? = nil,
         capabilities: NSFileProviderItemCapabilities? = nil,
-        isKeptDownloaded: Bool = false
+        isKeptDownloaded: Bool = false,
+        isUploaded: Bool = true,
+        isUploading: Bool = false,
+        uploadingError: Error? = nil
     ) {
         self.itemIdentifier = itemIdentifier
         self.parentItemIdentifier = parentItemIdentifier
@@ -43,6 +49,9 @@ final class HomeOSFileProviderItem: NSObject, NSFileProviderItem {
         self.contentPolicy = isKeptDownloaded
             ? .downloadEagerlyAndKeepDownloaded
             : .downloadLazily
+        self.isUploaded = isUploaded
+        self.isUploading = isUploading
+        self.uploadingError = uploadingError
         var resolvedCapabilities = capabilities ?? (isDirectory
             ? [.allowsReading, .allowsContentEnumerating, .allowsAddingSubItems, .allowsRenaming, .allowsReparenting, .allowsDeleting, .allowsTrashing, .allowsEvicting]
             : [.allowsReading, .allowsWriting, .allowsRenaming, .allowsReparenting, .allowsDeleting, .allowsTrashing, .allowsEvicting])

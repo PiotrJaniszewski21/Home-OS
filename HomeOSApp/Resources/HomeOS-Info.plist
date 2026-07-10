@@ -24,6 +24,8 @@
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Home OS connects directly to your home server on your local network for faster file transfers.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

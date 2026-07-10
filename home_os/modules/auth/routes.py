@@ -10,7 +10,7 @@ from flask import abort, current_app, flash, jsonify, redirect, render_template,
 from flask_login import current_user, login_required, login_user, logout_user
 
 from home_os.extensions import csrf, db
-from home_os.models import User
+from home_os.models import APIToken, User
 from home_os.modules.auth import auth_bp
 from home_os.modules.auth.forms import CreateUserForm, LoginForm, SetupForm
 
@@ -137,7 +137,14 @@ def api_login():
         login_limiter.reset(username)
         user.last_login = datetime.now(timezone.utc)
         token = secrets.token_urlsafe(32)
-        user.api_token_hash = hashlib.sha256(token.encode()).hexdigest()
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        user.api_token_hash = token_hash
+        db.session.add(APIToken(
+            user=user,
+            token_hash=token_hash,
+            name="native-app",
+            user_agent=(request.headers.get("User-Agent") or "")[:255],
+        ))
         db.session.commit()
         return jsonify({
             "ok": True,

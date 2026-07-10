@@ -37,7 +37,7 @@ final class HomeOSFileProviderExtension: NSObject, NSFileProviderReplicatedExten
         request: NSFileProviderRequest,
         completionHandler: @escaping (URL?, NSFileProviderItem?, Error?) -> Void
     ) -> Progress {
-        progressTask { [backend, cacheEvictionCoordinator, domain] in
+        progressTask(fileOperationKind: .downloading) { [backend, cacheEvictionCoordinator, domain] in
             let (url, item) = try await backend.fetchContents(for: itemIdentifier)
             completionHandler(url, item, nil)
             cacheEvictionCoordinator.scheduleEviction(of: itemIdentifier, in: domain)
@@ -54,7 +54,7 @@ final class HomeOSFileProviderExtension: NSObject, NSFileProviderReplicatedExten
         request: NSFileProviderRequest,
         completionHandler: @escaping (NSFileProviderItem?, NSFileProviderItemFields, Bool, Error?) -> Void
     ) -> Progress {
-        progressTask { [backend] in
+        progressTask(fileOperationKind: .uploading) { [backend] in
             let item = try await backend.createItem(from: itemTemplate, contents: url)
             completionHandler(item, [], false, nil)
         } onError: { error in
@@ -71,7 +71,7 @@ final class HomeOSFileProviderExtension: NSObject, NSFileProviderReplicatedExten
         request: NSFileProviderRequest,
         completionHandler: @escaping (NSFileProviderItem?, NSFileProviderItemFields, Bool, Error?) -> Void
     ) -> Progress {
-        progressTask { [backend] in
+        progressTask(fileOperationKind: newContents == nil ? .copying : .uploading) { [backend] in
             let item = try await backend.modifyItem(item, contents: newContents)
             completionHandler(item, [], false, nil)
         } onError: { error in
@@ -147,13 +147,23 @@ final class HomeOSFileProviderExtension: NSObject, NSFileProviderReplicatedExten
     }
 
     private func progressTask(
+        fileOperationKind: Progress.FileOperationKind? = nil,
         _ operation: @escaping () async throws -> Void,
         onError: @escaping (Error) -> Void
     ) -> Progress {
         let progress = Progress(totalUnitCount: 1)
+        if let fileOperationKind {
+            progress.kind = .file
+            progress.fileOperationKind = fileOperationKind
+            progress.setUserInfoObject(1, forKey: .fileTotalCountKey)
+            progress.setUserInfoObject(0, forKey: .fileCompletedCountKey)
+        }
         Task {
             do {
                 try await operation()
+                if fileOperationKind != nil {
+                    progress.setUserInfoObject(1, forKey: .fileCompletedCountKey)
+                }
                 progress.completedUnitCount = 1
             } catch {
                 onError(error)

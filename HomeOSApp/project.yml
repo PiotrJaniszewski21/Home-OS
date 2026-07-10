@@ -27,6 +27,7 @@ targets:
         LSMinimumSystemVersion: "14.0"
         LSUIElement: true
         NSPrincipalClass: NSApplication
+        NSLocalNetworkUsageDescription: Home OS connects directly to your home server on your local network for faster file transfers.
         HomeOSKeychainAccessGroup: $(HOMEOS_KEYCHAIN_ACCESS_GROUP)
     entitlements:
       path: Resources/HomeOS.entitlements
@@ -83,6 +84,7 @@ targets:
               NSExtensionFileProviderActionName: Stop Keeping on Disk
               NSExtensionFileProviderActionActivationRule: SUBQUERY(fileproviderItems, $item, $item.itemIdentifier BEGINSWITH "/").@count == 1
         HomeOSKeychainAccessGroup: $(HOMEOS_KEYCHAIN_ACCESS_GROUP)
+        NSLocalNetworkUsageDescription: Home OS connects directly to your home server on your local network for faster file transfers.
     entitlements:
       path: Resources/HomeOSFileProvider.entitlements
       properties:
