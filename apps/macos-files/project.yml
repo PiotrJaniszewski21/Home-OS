@@ -1,0 +1,217 @@
+name: HomeOS
+options:
+  bundleIdPrefix: uk.co.petershomenet
+  deploymentTarget:
+    macOS: "14.0"
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    MACOSX_DEPLOYMENT_TARGET: 14.0
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: 7S5APW4X6P
+    HOMEOS_KEYCHAIN_ACCESS_GROUP: $(DEVELOPMENT_TEAM).uk.co.petershomenet.homeos
+targets:
+  HomeOS:
+    type: application
+    platform: macOS
+    productName: HomeOS
+    sources:
+      - path: Sources/HomeOS
+        excludes:
+          - Models/MusicModels.swift
+          - Services/MusicAPIClient.swift
+          - Services/MusicLibraryStore.swift
+          - Services/MusicPlayerManager.swift
+          - Services/MusicRadioStore.swift
+          - Views/Music
+      - path: Resources/Assets.xcassets
+        buildPhase: resources
+    info:
+      path: Resources/HomeOS-Info.plist
+      properties:
+        CFBundleVersion: "2"
+        LSMinimumSystemVersion: "14.0"
+        LSUIElement: true
+        NSPrincipalClass: NSApplication
+        NSLocalNetworkUsageDescription: Home OS connects directly to your home server on your local network for faster file transfers.
+        HomeOSKeychainAccessGroup: $(HOMEOS_KEYCHAIN_ACCESS_GROUP)
+        HomeOSLocalCertificateSHA256: 2D9AB481E4FB226594AE44219B6B94408CA0C764ECA8886751D49830A88613C0
+    entitlements:
+      path: Resources/HomeOS.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.files.bookmarks.app-scope: true
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)uk.co.petershomenet.homeos
+    dependencies:
+      - target: HomeOSFileProvider
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: uk.co.petershomenet.homeos
+        PRODUCT_MODULE_NAME: HomeOS
+        PRODUCT_NAME: HomeOS
+        CURRENT_PROJECT_VERSION: 2
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 7S5APW4X6P
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+  HomeOSMusic:
+    type: application
+    platform: macOS
+    productName: HomeOS-Music
+    sources:
+      - path: Sources/HomeOSMusic
+      - path: Sources/HomeOS/Models/APIModels.swift
+      - path: Sources/HomeOS/Models/MusicModels.swift
+      - path: Sources/HomeOS/Services/APIClient.swift
+      - path: Sources/HomeOS/Services/ConnectionEndpointResolver.swift
+      - path: Sources/HomeOS/Services/HomeOSSharedSettings.swift
+      - path: Sources/HomeOS/Services/LocalCertificateTrust.swift
+      - path: Sources/HomeOS/Services/MultipartFormFile.swift
+      - path: Sources/HomeOS/Services/MusicAPIClient.swift
+      - path: Sources/HomeOS/Services/MusicLibraryStore.swift
+      - path: Sources/HomeOS/Services/MusicPlayerManager.swift
+      - path: Sources/HomeOS/Services/MusicRadioStore.swift
+      - path: Sources/HomeOS/Services/UploadProgressSession.swift
+      - path: Sources/HomeOS/Views/Music
+      - path: Resources/Assets.xcassets
+        buildPhase: resources
+    info:
+      path: Resources/HomeOSMusic-Info.plist
+      properties:
+        CFBundleDisplayName: HomeOS-Music
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "14.0"
+        LSUIElement: false
+        NSPrincipalClass: NSApplication
+        NSLocalNetworkUsageDescription: HomeOS-Music connects directly to your home server on your local network for faster streaming.
+        HomeOSKeychainAccessGroup: $(HOMEOS_KEYCHAIN_ACCESS_GROUP)
+        HomeOSLocalCertificateSHA256: 2D9AB481E4FB226594AE44219B6B94408CA0C764ECA8886751D49830A88613C0
+    entitlements:
+      path: Resources/HomeOSMusic.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)uk.co.petershomenet.homeos
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: uk.co.petershomenet.homeos.music
+        PRODUCT_MODULE_NAME: HomeOSMusic
+        PRODUCT_NAME: HomeOS-Music
+        CURRENT_PROJECT_VERSION: 1
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 7S5APW4X6P
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+  HomeOSFileProvider:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Sources/HomeOSFileProvider
+      - path: Resources/Assets.xcassets
+        buildPhase: resources
+      - path: Sources/HomeOS/Models/APIModels.swift
+      - path: Sources/HomeOS/Models/FileTransferActivity.swift
+      - path: Sources/HomeOS/Services/APIClient.swift
+      - path: Sources/HomeOS/Services/ConnectionEndpointResolver.swift
+      - path: Sources/HomeOS/Services/HomeOSSharedSettings.swift
+      - path: Sources/HomeOS/Services/HomeOSFileProviderStateStore.swift
+      - path: Sources/HomeOS/Services/HomeOSTransferProgressBridge.swift
+      - path: Sources/HomeOS/Services/LocalCertificateTrust.swift
+      - path: Sources/HomeOS/Services/MultipartFormFile.swift
+      - path: Sources/HomeOS/Services/UploadProgressSession.swift
+    info:
+      path: Resources/HomeOSFileProvider-Info.plist
+      properties:
+        CFBundleVersion: "2"
+        LSMinimumSystemVersion: "14.0"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.fileprovider-nonui
+          NSExtensionPrincipalClass: HomeOSFileProviderExtension
+          NSExtensionFileProviderSupportsEnumeration: true
+          NSExtensionFileProviderAllowsContextualMenuDownloadEntry: true
+          NSExtensionFileProviderAllowsUserControlledEviction: true
+          NSExtensionFileProviderActions:
+            - NSExtensionFileProviderActionIdentifier: uk.co.petershomenet.homeos.keep-on-disk
+              NSExtensionFileProviderActionName: Keep on Disk
+              NSExtensionFileProviderActionActivationRule: SUBQUERY(fileproviderItems, $item, $item.itemIdentifier BEGINSWITH "/" AND $item.userInfo.homeosKeptOnDisk != YES).@count == 1
+            - NSExtensionFileProviderActionIdentifier: uk.co.petershomenet.homeos.stop-keeping-on-disk
+              NSExtensionFileProviderActionName: Stop Keeping on Disk
+              NSExtensionFileProviderActionActivationRule: SUBQUERY(fileproviderItems, $item, $item.itemIdentifier BEGINSWITH "/" AND $item.userInfo.homeosKeptOnDisk == YES).@count == 1
+        HomeOSKeychainAccessGroup: $(HOMEOS_KEYCHAIN_ACCESS_GROUP)
+        HomeOSLocalCertificateSHA256: 2D9AB481E4FB226594AE44219B6B94408CA0C764ECA8886751D49830A88613C0
+        NSLocalNetworkUsageDescription: Home OS connects directly to your home server on your local network for faster file transfers.
+    entitlements:
+      path: Resources/HomeOSFileProvider.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)uk.co.petershomenet.homeos
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: uk.co.petershomenet.homeos.fileprovider.v2
+        PRODUCT_NAME: HomeOSFileProvider
+        CURRENT_PROJECT_VERSION: 2
+        APPLICATION_EXTENSION_API_ONLY: YES
+        ENABLE_DEBUG_DYLIB: NO
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 7S5APW4X6P
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES
+  HomeOSTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/HomeOSTests
+    dependencies:
+      - target: HomeOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: uk.co.petershomenet.homeos.tests
+        BUNDLE_LOADER: $(TEST_HOST)
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 7S5APW4X6P
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/HomeOS.app/Contents/MacOS/HomeOS
+  HomeOSMusicTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/HomeOSMusicTests
+    dependencies:
+      - target: HomeOSMusic
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: uk.co.petershomenet.homeos.music.tests
+        BUNDLE_LOADER: $(TEST_HOST)
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/HomeOS-Music.app/Contents/MacOS/HomeOS-Music
+schemes:
+  HomeOS:
+    build:
+      targets:
+        HomeOS: all
+        HomeOSFileProvider: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - HomeOSTests
+  HomeOS-Music:
+    build:
+      targets:
+        HomeOSMusic: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - HomeOSMusicTests

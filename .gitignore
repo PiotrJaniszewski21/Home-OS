@@ -3,11 +3,14 @@ __pycache__/
 *.py[cod]
 venv/
 *.egg-info/
+.pytest_cache/
+.ruff_cache/
 
 # Data (never commit user data)
 data/
-/storage/
+storage/
 instance/
+test.db
 
 # Secrets (never commit)
 config.yaml
@@ -15,12 +18,12 @@ config.yaml
 *.pem
 
 # Swift / Xcode
-HomeOSApp/.build/
-HomeOSApp/.swiftpm/
-HomeOSApp/HomeOS/
+.build/
+.swiftpm/
 *.xcodeproj
 *.xcworkspace
 DerivedData/
+dist/
 
 # OS
 .DS_Store
@@ -31,9 +34,9 @@ Thumbs.db
 .idea/
 
 # Local docs (not published)
-claude-md/
-Design/
-Home-OS
+docs/internal/
+docs/design/
+archive/
 
 # AI tooling (never commit)
 .claude/

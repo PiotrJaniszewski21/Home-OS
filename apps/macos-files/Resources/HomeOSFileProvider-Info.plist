@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>XPC!</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>HomeOSKeychainAccessGroup</key>
+	<string>$(HOMEOS_KEYCHAIN_ACCESS_GROUP)</string>
+	<key>HomeOSLocalCertificateSHA256</key>
+	<string>2D9AB481E4FB226594AE44219B6B94408CA0C764ECA8886751D49830A88613C0</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionFileProviderActions</key>
+		<array>
+			<dict>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>SUBQUERY(fileproviderItems, $item, $item.itemIdentifier BEGINSWITH "/" AND $item.userInfo.homeosKeptOnDisk != YES).@count == 1</string>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>uk.co.petershomenet.homeos.keep-on-disk</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>Keep on Disk</string>
+			</dict>
+			<dict>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>SUBQUERY(fileproviderItems, $item, $item.itemIdentifier BEGINSWITH "/" AND $item.userInfo.homeosKeptOnDisk == YES).@count == 1</string>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>uk.co.petershomenet.homeos.stop-keeping-on-disk</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>Stop Keeping on Disk</string>
+			</dict>
+		</array>
+		<key>NSExtensionFileProviderAllowsContextualMenuDownloadEntry</key>
+		<true/>
+		<key>NSExtensionFileProviderAllowsUserControlledEviction</key>
+		<true/>
+		<key>NSExtensionFileProviderSupportsEnumeration</key>
+		<true/>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.fileprovider-nonui</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>HomeOSFileProviderExtension</string>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Home OS connects directly to your home server on your local network for faster file transfers.</string>
+</dict>
+</plist>

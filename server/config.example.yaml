@@ -1,0 +1,27 @@
+server:
+  host: 0.0.0.0
+  port: 443
+  debug: false
+  secret_key: change-me-in-production
+
+database:
+  path: data/home_os.db
+
+storage:
+  root: storage
+  trash_path: data/trash
+  trash_retention_days: 30
+
+media:
+  plex_port: 32400
+  jellyfin_port: 8096
+  sonarr_port: 8989
+  radarr_port: 7878
+  prowlarr_port: 9696
+  overseerr_port: 5055
+  qbittorrent_port: 8080
+
+adguard:
+  url: http://localhost:3000
+  username: ""
+  password: ""

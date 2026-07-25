@@ -1,0 +1,472 @@
+#!/usr/bin/env python3
+import json
+import os
+import platform
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import urllib.request
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+JELLYFIN_INSTALLER = "https://repo.jellyfin.org/install-debuntu.sh"
+JELLYFIN_NETWORK_CONFIG = Path("/etc/jellyfin/network.xml")
+JELLYFIN_WEB_CONFIG = Path("/usr/share/jellyfin/web/config.json")
+MEDIA_ROOT = Path("/opt/home-os/storage/HomeOS")
+MEDIA_GROUP = "homeos-media"
+HOME_OS_CONFIG = Path("/opt/home-os/config/config.yaml")
+QBITTORRENT_MEDIA_DROP_IN = Path(
+    "/etc/systemd/system/qbittorrent-nox@homeos.service.d/homeos-media.conf"
+)
+ARR_UPDATES = {
+    "sonarr": {
+        "url": "https://services.sonarr.tv/v1/download/main/latest?version=4&os=linux&arch={architecture}",
+        "directory": Path("/opt/Sonarr"),
+        "archive_directory": "Sonarr",
+        "user": "sonarr",
+        "service": "sonarr",
+    },
+    "radarr": {
+        "url": "https://radarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch={architecture}",
+        "directory": Path("/opt/Radarr"),
+        "archive_directory": "Radarr",
+        "user": "radarr",
+        "service": "radarr",
+    },
+    "prowlarr": {
+        "url": "https://prowlarr.servarr.com/v1/update/master/updatefile?os=linux&runtime=netcore&arch={architecture}",
+        "directory": Path("/opt/Prowlarr"),
+        "archive_directory": "Prowlarr",
+        "user": "prowlarr",
+        "service": "prowlarr",
+    },
+}
+
+
+def run(command, **kwargs):
+    subprocess.run(command, check=True, **kwargs)
+
+
+def download(url, destination):
+    request = urllib.request.Request(url, headers={"User-Agent": "Home-OS-Updater/1.0"})
+    with urllib.request.urlopen(request, timeout=120) as response:
+        with destination.open("wb") as output:
+            shutil.copyfileobj(response, output)
+
+
+def arr_architecture():
+    architecture = platform.machine().lower()
+    if architecture in {"x86_64", "amd64"}:
+        return "x64"
+    if architecture in {"aarch64", "arm64"}:
+        return "arm64"
+    raise RuntimeError(f"unsupported processor architecture: {architecture}")
+
+
+def extract_archive(archive, destination):
+    destination = destination.resolve()
+    with tarfile.open(archive, "r:gz") as package:
+        for member in package.getmembers():
+            target = (destination / member.name).resolve()
+            if not target.is_relative_to(destination):
+                raise RuntimeError("archive contains an unsafe path")
+            if member.issym() or member.islnk():
+                raise RuntimeError("archive contains an unsupported link")
+        if sys.version_info >= (3, 12):
+            package.extractall(destination, filter="data")
+        else:
+            package.extractall(destination)
+
+
+def service_is_active(service):
+    return subprocess.run(
+        ["systemctl", "is-active", "--quiet", service],
+        check=False,
+    ).returncode == 0
+
+
+def replace_application(directory, replacement, service, user, preserved_names):
+    staging_root = Path(tempfile.mkdtemp(prefix=f".{directory.name}-update-", dir=directory.parent))
+    staging = staging_root / directory.name
+    backup_root = None
+    backup = None
+    stopped = False
+    try:
+        shutil.copytree(replacement, staging)
+        backup_root = Path(tempfile.mkdtemp(
+            prefix=f".{directory.name}-backup-",
+            dir=directory.parent,
+        ))
+        backup = backup_root / directory.name
+        run(["systemctl", "stop", service])
+        stopped = True
+        directory.replace(backup)
+        staging.replace(directory)
+        for name in preserved_names:
+            preserved = backup / name
+            if preserved.exists():
+                destination = directory / name
+                if destination.exists():
+                    if destination.is_dir():
+                        shutil.rmtree(destination)
+                    else:
+                        destination.unlink()
+                preserved.replace(destination)
+        run(["chown", "-R", f"{user}:{user}", str(directory)])
+        run(["systemctl", "start", service])
+        if not service_is_active(service):
+            raise RuntimeError(f"{service} did not start after updating")
+        shutil.rmtree(backup_root)
+    except Exception:
+        if stopped:
+            subprocess.run(["systemctl", "stop", service], check=False)
+        if backup is not None and backup.exists():
+            for name in preserved_names:
+                preserved = directory / name
+                backup_destination = backup / name
+                if preserved.exists() and not backup_destination.exists():
+                    preserved.replace(backup_destination)
+            if directory.exists():
+                shutil.rmtree(directory)
+            backup.replace(directory)
+            subprocess.run(["chown", "-R", f"{user}:{user}", str(directory)], check=False)
+            subprocess.run(["systemctl", "start", service], check=False)
+        raise
+    finally:
+        if staging_root.exists():
+            shutil.rmtree(staging_root)
+        if backup_root is not None and backup_root.exists():
+            shutil.rmtree(backup_root)
+
+
+def update_plex():
+    architecture = subprocess.run(
+        ["dpkg", "--print-architecture"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    request = urllib.request.Request(
+        "https://plex.tv/api/downloads/5.json",
+        headers={"User-Agent": "Home-OS-Updater/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        releases = json.load(response)["computer"]["Linux"]["releases"]
+    release = next(
+        (
+            item for item in releases
+            if "debian" in item.get("url", "").lower()
+            and architecture in item.get("url", "").lower()
+        ),
+        None,
+    )
+    if not release:
+        raise RuntimeError(f"no Plex package is available for {architecture}")
+    with tempfile.TemporaryDirectory(prefix="homeos-plex-update-") as temp_directory:
+        package = Path(temp_directory) / "plex.deb"
+        download(release["url"], package)
+        result = subprocess.run(["dpkg", "-i", str(package)], check=False)
+        if result.returncode != 0:
+            run(["apt-get", "install", "-f", "-y", "-qq"])
+    run(["systemctl", "restart", "plexmediaserver"])
+
+
+def update_jellyfin():
+    os.environ["DEBIAN_FRONTEND"] = "noninteractive"
+    run(["apt-get", "update", "-qq"])
+    run([
+        "apt-get", "install", "-y", "-qq", "--only-upgrade",
+        "jellyfin", "jellyfin-server", "jellyfin-web",
+    ])
+    configure_jellyfin_access()
+    run(["systemctl", "restart", "jellyfin"])
+
+
+def update_arr(service):
+    settings = ARR_UPDATES[service]
+    with tempfile.TemporaryDirectory(prefix=f"homeos-{service}-update-") as temp_directory:
+        temp_path = Path(temp_directory)
+        archive = temp_path / f"{service}.tar.gz"
+        extracted = temp_path / "extracted"
+        extracted.mkdir()
+        download(
+            settings["url"].format(architecture=arr_architecture()),
+            archive,
+        )
+        extract_archive(archive, extracted)
+        replacement = extracted / settings["archive_directory"]
+        if not (replacement / settings["archive_directory"]).is_file():
+            raise RuntimeError(f"downloaded {service} package is invalid")
+        replace_application(
+            settings["directory"],
+            replacement,
+            settings["service"],
+            settings["user"],
+            ("data",),
+        )
+
+
+def update_seerr():
+    request = urllib.request.Request(
+        "https://api.github.com/repos/seerr-team/seerr/releases/latest",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "Home-OS-Updater/1.0",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        release = json.load(response)
+    installed_package = Path("/opt/seerr/package.json")
+    if installed_package.is_file():
+        installed_version = str(json.loads(installed_package.read_text()).get("version", ""))
+        latest_version = str(release.get("tag_name", "")).removeprefix("v")
+        if installed_version and installed_version == latest_version:
+            return
+    with tempfile.TemporaryDirectory(prefix="homeos-seerr-update-") as temp_directory:
+        temp_path = Path(temp_directory)
+        archive = temp_path / "seerr.tar.gz"
+        extracted = temp_path / "extracted"
+        extracted.mkdir()
+        download(release["tarball_url"], archive)
+        extract_archive(archive, extracted)
+        candidates = [path for path in extracted.iterdir() if path.is_dir()]
+        if len(candidates) != 1 or not (candidates[0] / "package.json").is_file():
+            raise RuntimeError("downloaded Seerr package is invalid")
+        replacement = candidates[0]
+        build_home = temp_path / "build-home"
+        build_home.mkdir()
+        environment = {
+            **os.environ,
+            "CI": "true",
+            "NODE_ENV": "production",
+            "HOME": str(build_home),
+            "XDG_CACHE_HOME": str(build_home / "cache"),
+            "CYPRESS_INSTALL_BINARY": "0",
+            "NEXT_TELEMETRY_DISABLED": "1",
+        }
+        pnpm = shutil.which("pnpm")
+        if not pnpm:
+            corepack = shutil.which("corepack")
+            if not corepack:
+                raise RuntimeError("pnpm and corepack are unavailable")
+            run([corepack, "enable"])
+            pnpm = shutil.which("pnpm")
+        if not pnpm:
+            raise RuntimeError("pnpm is unavailable after enabling corepack")
+        run([pnpm, "install", "--frozen-lockfile"], cwd=replacement, env=environment)
+        run([pnpm, "build"], cwd=replacement, env=environment)
+        if not (replacement / "dist" / "index.js").is_file():
+            raise RuntimeError("Seerr build did not produce a server bundle")
+        replace_application(
+            Path("/opt/seerr"),
+            replacement,
+            "seerr",
+            "overseerr",
+            ("config", ".env", ".env.local"),
+        )
+
+
+def update_qbittorrent():
+    os.environ["DEBIAN_FRONTEND"] = "noninteractive"
+    run(["apt-get", "update", "-qq"])
+    run(["apt-get", "install", "-y", "-qq", "--only-upgrade", "qbittorrent-nox"])
+    configure_qbittorrent_media_access()
+    run(["systemctl", "restart", "qbittorrent-nox@homeos.service"])
+
+
+def update_flaresolverr():
+    pip = "/opt/flaresolverr/venv/bin/pip"
+    run([pip, "install", "--upgrade", "pip", "FlareSolverr", "legacy-cgi"])
+    run(["chown", "-R", "flaresolverr:flaresolverr", "/opt/flaresolverr"])
+    run(["systemctl", "restart", "flaresolverr"])
+
+
+def install_jellyfin():
+    os.environ["DEBIAN_FRONTEND"] = "noninteractive"
+    run(["apt-get", "install", "-y", "-qq", "curl", "ca-certificates"])
+    with tempfile.NamedTemporaryFile(prefix="install-jellyfin-", suffix=".sh", delete=False) as installer:
+        installer_path = Path(installer.name)
+    try:
+        urllib.request.urlretrieve(JELLYFIN_INSTALLER, installer_path)
+        run(["bash", str(installer_path)])
+    finally:
+        installer_path.unlink(missing_ok=True)
+    run(["systemctl", "enable", "jellyfin"])
+    run(["systemctl", "start", "jellyfin"])
+    configure_jellyfin_access()
+    run(["systemctl", "restart", "jellyfin"])
+
+
+def configure_jellyfin_access():
+    run(["groupadd", "--force", MEDIA_GROUP])
+    run(["usermod", "-aG", MEDIA_GROUP, "homeos"])
+    run(["usermod", "-aG", MEDIA_GROUP, "jellyfin"])
+    MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
+    run(["chown", f"root:{MEDIA_GROUP}", str(MEDIA_ROOT.parent)])
+    run(["chmod", "2750", str(MEDIA_ROOT.parent)])
+    run(["chown", f"root:{MEDIA_GROUP}", str(MEDIA_ROOT)])
+    run(["chmod", "2770", str(MEDIA_ROOT)])
+    for folder_name in ("Movies", "Series"):
+        media_path = MEDIA_ROOT / folder_name
+        media_path.mkdir(parents=True, exist_ok=True)
+        run(["chgrp", "-R", MEDIA_GROUP, str(media_path)])
+        run(["chmod", "-R", "g+rwX,o-rwx", str(media_path)])
+        run(["find", str(media_path), "-type", "d", "-exec", "chmod", "g+s", "{}", "+"])
+    configure_jellyfin_base_url()
+    configure_jellyfin_request_link()
+
+
+def configure_jellyfin_request_link():
+    if not JELLYFIN_WEB_CONFIG.exists():
+        return
+    config = json.loads(JELLYFIN_WEB_CONFIG.read_text(encoding="utf-8"))
+    links = config.get("menuLinks")
+    if not isinstance(links, list):
+        links = []
+    links = [
+        link for link in links
+        if not (
+            isinstance(link, dict)
+            and (
+                link.get("name") == "Request Media"
+                or str(link.get("url", "")).rstrip("/") == "/svc/seerr"
+            )
+        )
+    ]
+    links.append({"name": "Request Media", "icon": "add_circle", "url": "/svc/seerr/"})
+    config["menuLinks"] = links
+
+    temporary_path = JELLYFIN_WEB_CONFIG.with_suffix(".json.tmp")
+    temporary_path.write_text(json.dumps(config, indent=4) + "\n", encoding="utf-8")
+    shutil.copymode(JELLYFIN_WEB_CONFIG, temporary_path)
+    shutil.chown(
+        temporary_path,
+        user=JELLYFIN_WEB_CONFIG.stat().st_uid,
+        group=JELLYFIN_WEB_CONFIG.stat().st_gid,
+    )
+    temporary_path.replace(JELLYFIN_WEB_CONFIG)
+
+
+def configure_qbittorrent_media_access():
+    QBITTORRENT_MEDIA_DROP_IN.parent.mkdir(parents=True, exist_ok=True)
+    QBITTORRENT_MEDIA_DROP_IN.write_text(
+        "[Service]\n"
+        f"SupplementaryGroups={MEDIA_GROUP}\n"
+        "UMask=0007\n",
+        encoding="utf-8",
+    )
+    QBITTORRENT_MEDIA_DROP_IN.chmod(0o644)
+    run(["systemctl", "daemon-reload"])
+    if subprocess.run(
+        ["systemctl", "is-active", "--quiet", "qbittorrent-nox@homeos.service"],
+        check=False,
+    ).returncode == 0:
+        run(["systemctl", "restart", "qbittorrent-nox@homeos.service"])
+
+
+def jellyfin_network_tree():
+    if JELLYFIN_NETWORK_CONFIG.exists():
+        return ET.parse(JELLYFIN_NETWORK_CONFIG)
+    return ET.ElementTree(ET.Element("NetworkConfiguration"))
+
+
+def write_jellyfin_network_tree(tree):
+    temporary_path = JELLYFIN_NETWORK_CONFIG.with_suffix(".xml.tmp")
+    tree.write(temporary_path, encoding="utf-8", xml_declaration=True)
+    if JELLYFIN_NETWORK_CONFIG.exists():
+        shutil.copymode(JELLYFIN_NETWORK_CONFIG, temporary_path)
+    else:
+        temporary_path.chmod(0o664)
+    shutil.chown(temporary_path, user="jellyfin", group="adm")
+    temporary_path.replace(JELLYFIN_NETWORK_CONFIG)
+
+
+def configure_jellyfin_base_url():
+    tree = jellyfin_network_tree()
+    root = tree.getroot()
+    base_url_element = root.find("BaseUrl")
+    if base_url_element is None:
+        base_url_element = ET.SubElement(root, "BaseUrl")
+    base_url_element.text = "/svc/jellyfin"
+    write_jellyfin_network_tree(tree)
+
+
+def uninstall_jellyfin():
+    subprocess.run(["systemctl", "stop", "jellyfin"], check=False)
+    subprocess.run(["systemctl", "disable", "jellyfin"], check=False)
+    run(["apt-get", "purge", "-y", "jellyfin", "jellyfin-server", "jellyfin-web"])
+    run(["apt-get", "autoremove", "-y"])
+    run(["systemctl", "daemon-reload"])
+
+
+def configured_jellyfin_port():
+    match = re.search(r"^\s*jellyfin_port:\s*([0-9]+)\s*$", HOME_OS_CONFIG.read_text(), re.MULTILINE)
+    if not match:
+        return 8096
+    return int(match.group(1))
+
+
+def set_jellyfin_port():
+    port = configured_jellyfin_port()
+    if not 1 <= port <= 65535:
+        raise ValueError("port must be between 1 and 65535")
+    tree = jellyfin_network_tree()
+    root = tree.getroot()
+    port_element = root.find("InternalHttpPort")
+    if port_element is None:
+        port_element = ET.SubElement(root, "InternalHttpPort")
+    port_element.text = str(port)
+    write_jellyfin_network_tree(tree)
+    run(["systemctl", "restart", "jellyfin"])
+
+
+def main():
+    if os.geteuid() != 0:
+        raise PermissionError("this helper must run as root")
+    if len(sys.argv) != 2:
+        raise ValueError("an action is required")
+
+    action = sys.argv[1]
+    if action == "install-jellyfin":
+        install_jellyfin()
+    elif action == "configure-jellyfin-access":
+        configure_jellyfin_access()
+    elif action == "start-jellyfin":
+        run(["systemctl", "start", "jellyfin"])
+    elif action == "stop-jellyfin":
+        run(["systemctl", "stop", "jellyfin"])
+    elif action == "uninstall-jellyfin":
+        uninstall_jellyfin()
+    elif action == "set-jellyfin-port":
+        set_jellyfin_port()
+    elif action == "configure-jellyfin-base-url":
+        configure_jellyfin_base_url()
+        run(["systemctl", "restart", "jellyfin"])
+    elif action == "configure-jellyfin-request-link":
+        configure_jellyfin_request_link()
+    elif action == "update-plex":
+        update_plex()
+    elif action == "update-jellyfin":
+        update_jellyfin()
+    elif action in {"update-sonarr", "update-radarr", "update-prowlarr"}:
+        update_arr(action.removeprefix("update-"))
+    elif action in {"update-seerr", "update-overseerr"}:
+        update_seerr()
+    elif action == "update-qbittorrent":
+        update_qbittorrent()
+    elif action == "update-flaresolverr":
+        update_flaresolverr()
+    else:
+        raise ValueError("unsupported action or arguments")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        print(f"home-os-media-helper: {error}", file=sys.stderr)
+        raise SystemExit(1)

@@ -6,14 +6,14 @@ Build the SwiftUI Mac app into a reliable native companion for Home OS, with a c
 
 ## Current Structure
 
-- `HomeOSApp/Sources/HomeOS/App` — app entry point and scene definitions.
-- `HomeOSApp/Sources/HomeOS/Models` — API DTOs, app state, and selection models.
-- `HomeOSApp/Sources/HomeOS/Services` — hosted API client, connection/session logic, transfers, and Desktop drop-folder offload.
-- `HomeOSApp/Sources/HomeOS/Views` — dashboard, files, AI chat, menu bar, settings, and main window views.
-- `HomeOSApp/Sources/HomeOS/Support` — formatters, logging, window helpers, and small extensions.
-- `HomeOSApp/Tests/HomeOSTests` — Swift unit tests for API decoding and client behavior.
-- `script/build_and_run.sh` — app bundle build/run/verify/log entry point.
-- `script/test_hosted_api.py` — hosted API contract test for the Flask server.
+- `apps/macos-files/Sources/HomeOS/App` — app entry point and scene definitions.
+- `apps/macos-files/Sources/HomeOS/Models` — API DTOs and app state.
+- `apps/macos-files/Sources/HomeOS/Services` — API, session, and transfer logic.
+- `apps/macos-files/Sources/HomeOS/Views` — dashboard, menu bar, and settings views.
+- `apps/macos-files/Sources/HomeOS/Support` — logging, formatting, and window helpers.
+- `apps/macos-files/Tests/HomeOSTests` — Swift unit tests.
+- `apps/macos-files/scripts/build_and_run.sh` — macOS build/run/verify helper.
+- `server/scripts/test_hosted_api.py` — hosted API contract test.
 
 ## Phases
 
@@ -61,8 +61,8 @@ Status: in progress. Download state, efficient temp-file downloads, upload progr
 ### Phase 6 — Runtime Diagnostics
 
 - Keep structured `Logger` telemetry for connection and transfer milestones.
-- Use `./script/build_and_run.sh --logs` for process logs.
-- Use `./script/build_and_run.sh --telemetry` for subsystem/category-focused logs.
+- Use `./apps/macos-files/scripts/build_and_run.sh --logs` for process logs.
+- Use `./apps/macos-files/scripts/build_and_run.sh --telemetry` for subsystem/category-focused logs.
 - Do not log tokens, passwords, raw file names, or message contents.
 
 ### Phase 7 — Finder/File Provider
@@ -85,24 +85,24 @@ Status: in progress. Download state, efficient temp-file downloads, upload progr
 Run from the repository root:
 
 ```bash
-swift test --package-path HomeOSApp
+swift test --package-path apps/macos-files
 ```
 
 ```bash
-./script/build_and_run.sh --verify
+./apps/macos-files/scripts/build_and_run.sh --verify
 ```
 
 ```bash
 HOMEOS_TEST_URL="https://example.com" \
 HOMEOS_TEST_USERNAME="<username>" \
 HOMEOS_TEST_PASSWORD="<password>" \
-./script/test_hosted_api.py
+./server/scripts/test_hosted_api.py
 ```
 
 ```bash
-./script/build_and_run.sh --logs
+./apps/macos-files/scripts/build_and_run.sh --logs
 ```
 
 ```bash
-./script/build_and_run.sh --telemetry
+./apps/macos-files/scripts/build_and_run.sh --telemetry
 ```

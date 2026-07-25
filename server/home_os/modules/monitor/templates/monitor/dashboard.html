@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-5xl dashboard-page">
+    <div class="dashboard-hero flex items-center justify-between mb-6">
+        <div>
+            <p class="dashboard-kicker">Home OS Server</p>
+            <h1>Dashboard</h1>
+            <p class="dashboard-subtitle">{{ metrics.hostname }} · {{ metrics.platform }}</p>
+        </div>
+        <div class="dashboard-online"><span></span>Online</div>
+    </div>
+
+    <div class="grid grid-cols-4 gap-4 mb-4">
+        <div class="metric-card dashboard-metric cpu" data-symbol="CPU">
+            <p class="metric-label">CPU</p>
+            <p class="metric-value" id="cpu-val">{{ metrics.cpu_percent }}<span class="metric-unit">%</span></p>
+            <div class="progress-bar mt-2">
+                <div id="cpu-bar" class="progress-fill blue" style="width: {{ metrics.cpu_percent }}%"></div>
+            </div>
+            <p class="metric-sub">{{ metrics.cpu_count }} cores</p>
+        </div>
+
+        <div class="metric-card dashboard-metric memory" data-symbol="RAM">
+            <p class="metric-label">Memory</p>
+            <p class="metric-value" id="mem-val">{{ metrics.memory.used_gb }}<span class="metric-unit"> / {{ metrics.memory.total_gb }} GB</span></p>
+            <div class="progress-bar mt-2">
+                <div id="mem-bar" class="progress-fill green" style="width: {{ metrics.memory.percent }}%"></div>
+            </div>
+            <p class="metric-sub">{{ metrics.memory.percent }}% used</p>
+        </div>
+
+        <div class="metric-card dashboard-metric disk" data-symbol="SSD">
+            <p class="metric-label">Disk</p>
+            <p class="metric-value">{{ metrics.disk.used_gb }}<span class="metric-unit"> / {{ metrics.disk.total_gb }} GB</span></p>
+            <div class="progress-bar mt-2">
+                <div class="progress-fill {% if metrics.disk.percent > 90 %}red{% elif metrics.disk.percent > 70 %}yellow{% else %}blue{% endif %}" style="width: {{ metrics.disk.percent }}%"></div>
+            </div>
+            <p class="metric-sub">{{ metrics.disk.percent }}% used</p>
+        </div>
+
+        <div class="metric-card dashboard-metric uptime" data-symbol="UP">
+            <p class="metric-label">Uptime</p>
+            <p class="metric-value">{{ metrics.uptime }}</p>
+            <p class="metric-sub" style="margin-top: 10px;">{{ metrics.platform }}</p>
+        </div>
+    </div>
+
+    <div class="glass-card mb-4 dashboard-network">
+        <p class="section-label">Network</p>
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <div class="flex justify-between items-center">
+                    <span class="text-tertiary text-xs">Download</span>
+                    <span id="dash-speed-down" style="font-size: 20px; font-weight: 700; color: var(--success); letter-spacing: -0.02em;">—</span>
+                </div>
+                {% if isp_download > 0 %}
+                <div class="progress-bar mt-2"><div class="progress-fill green" id="dash-down-bar" style="width:0%"></div></div>
+                <p class="text-tertiary text-xs mt-1"><span id="dash-down-pct">0</span>% of {{ isp_download }} Mbps</p>
+                {% endif %}
+            </div>
+            <div>
+                <div class="flex justify-between items-center">
+                    <span class="text-tertiary text-xs">Upload</span>
+                    <span id="dash-speed-up" style="font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: -0.02em;">—</span>
+                </div>
+                {% if isp_upload > 0 %}
+                <div class="progress-bar mt-2"><div class="progress-fill blue" id="dash-up-bar" style="width:0%"></div></div>
+                <p class="text-tertiary text-xs mt-1"><span id="dash-up-pct">0</span>% of {{ isp_upload }} Mbps</p>
+                {% endif %}
+            </div>
+        </div>
+        <div class="flex justify-between mt-4 text-xs text-tertiary" style="border-top: 0.5px solid var(--border-divider); padding-top: 0.75rem;">
+            <span>Total sent: {{ metrics.network.sent_gb }} GB</span>
+            <span>Total received: {{ metrics.network.recv_gb }} GB</span>
+        </div>
+    </div>
+
+    <div class="glass-card dashboard-system" style="margin-bottom: 1rem;">
+        <p class="section-label">System</p>
+        <div class="space-y-2 text-sm">
+            <div class="flex justify-between">
+                <span class="text-tertiary">Hostname</span>
+                <span class="font-medium">{{ metrics.hostname }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-tertiary">Platform</span>
+                <span class="font-medium">{{ metrics.platform }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-tertiary">Python</span>
+                <span class="font-medium">{{ metrics.python_version }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.dashboard-page { margin:0 auto; }
+.dashboard-hero { position:relative; min-height:170px; padding:2rem 2.2rem; overflow:hidden; border-radius:28px; background:linear-gradient(145deg, #25c9f5, #1677e8 82%); box-shadow:0 24px 48px rgba(22,119,232,0.2); color:#fff; }
+.dashboard-hero::after { content:""; position:absolute; width:240px; height:240px; right:-60px; bottom:-170px; border:1px solid rgba(255,255,255,0.2); border-radius:50%; box-shadow:0 0 0 34px rgba(255,255,255,0.06), 0 0 0 72px rgba(255,255,255,0.035); }
+.dashboard-hero > * { position:relative; z-index:1; }
+.dashboard-hero h1 { color:#fff !important; font-size:36px !important; }
+.dashboard-kicker { margin-bottom:0.3rem; color:rgba(255,255,255,0.7); font-size:11px; font-weight:700; letter-spacing:0.09em; text-transform:uppercase; }
+.dashboard-subtitle { margin-top:0.45rem; color:rgba(255,255,255,0.74); font-size:13px; }
+.dashboard-online { display:flex; align-items:center; gap:7px; padding:7px 12px; border:1px solid rgba(255,255,255,0.25); border-radius:999px; background:rgba(255,255,255,0.15); backdrop-filter:blur(10px); font-size:12px; font-weight:650; }
+.dashboard-online span { width:7px; height:7px; border-radius:50%; background:#72f6a4; box-shadow:0 0 0 4px rgba(114,246,164,0.14); }
+.dashboard-metric { position:relative; min-height:172px; overflow:hidden; padding:1.35rem !important; }
+.dashboard-metric::after { content:attr(data-symbol); position:absolute; top:15px; right:15px; padding:5px 7px; border-radius:8px; background:rgba(var(--metric-rgb),0.09); color:rgb(var(--metric-rgb)); font-size:9px; font-weight:750; letter-spacing:0.06em; }
+.dashboard-metric.cpu { --metric-rgb:22,119,232; }
+.dashboard-metric.memory { --metric-rgb:21,155,98; }
+.dashboard-metric.disk { --metric-rgb:154,63,224; }
+.dashboard-metric.uptime { --metric-rgb:242,107,34; }
+.dashboard-metric .metric-value { margin-top:1.15rem; }
+.dashboard-metric .progress-fill { background:rgb(var(--metric-rgb)) !important; }
+.dashboard-network { position:relative; overflow:hidden; padding-top:1.5rem; }
+.dashboard-network::before, .dashboard-system::before { content:""; position:absolute; inset:0 auto 0 0; width:4px; background:var(--page-gradient); }
+.dashboard-system { position:relative; overflow:hidden; }
+@media (max-width: 760px) {
+    .dashboard-hero { min-height:150px; padding:1.5rem; }
+    .dashboard-hero h1 { font-size:30px !important; }
+    .dashboard-metric { min-height:150px; }
+}
+</style>
+
+<script nonce="{{ g.csp_nonce }}">
+const ispDown = {{ isp_download }};
+const ispUp = {{ isp_upload }};
+let dashLastBytes = null, dashLastTime = null;
+
+setInterval(() => {
+    fetch("/api/monitor/metrics", {headers: {"Accept": "application/json"}})
+        .then(r => r.json())
+        .then(r => {
+            if (!r.ok) return;
+            const d = r.data;
+            document.getElementById("cpu-val").innerHTML = d.cpu_percent + '<span class="metric-unit">%</span>';
+            document.getElementById("cpu-bar").style.width = d.cpu_percent + "%";
+            document.getElementById("mem-val").innerHTML = d.memory.used_gb + '<span class="metric-unit"> / ' + d.memory.total_gb + ' GB</span>';
+            document.getElementById("mem-bar").style.width = d.memory.percent + "%";
+        });
+}, 3000);
+
+function formatSpeed(bps) {
+    const mbps = (bps * 8) / 1000000;
+    if (mbps >= 1) return mbps.toFixed(1) + ' Mbps';
+    const kbps = (bps * 8) / 1000;
+    if (kbps >= 1) return kbps.toFixed(0) + ' Kbps';
+    return (bps * 8).toFixed(0) + ' bps';
+}
+
+function pollNetSpeed() {
+    fetch("/api/network/speed").then(r => r.json()).then(r => {
+        if (!r.ok) return;
+        const now = r.data;
+        if (dashLastBytes && dashLastTime) {
+            const dt = now.timestamp - dashLastTime;
+            if (dt > 0) {
+                const downBps = Math.max(0, (now.bytes_recv - dashLastBytes.recv) / dt);
+                const upBps = Math.max(0, (now.bytes_sent - dashLastBytes.sent) / dt);
+                document.getElementById("dash-speed-down").textContent = formatSpeed(downBps);
+                document.getElementById("dash-speed-up").textContent = formatSpeed(upBps);
+
+                if (ispDown > 0) {
+                    const pct = Math.min(100, ((downBps * 8 / 1048576) / ispDown) * 100);
+                    const bar = document.getElementById("dash-down-bar");
+                    const label = document.getElementById("dash-down-pct");
+                    if (bar) bar.style.width = pct + "%";
+                    if (label) label.textContent = pct.toFixed(0);
+                }
+                if (ispUp > 0) {
+                    const pct = Math.min(100, ((upBps * 8 / 1048576) / ispUp) * 100);
+                    const bar = document.getElementById("dash-up-bar");
+                    const label = document.getElementById("dash-up-pct");
+                    if (bar) bar.style.width = pct + "%";
+                    if (label) label.textContent = pct.toFixed(0);
+                }
+            }
+        }
+        dashLastBytes = {sent: now.bytes_sent, recv: now.bytes_recv};
+        dashLastTime = now.timestamp;
+    });
+}
+
+pollNetSpeed();
+setInterval(pollNetSpeed, 2000);
+</script>
+{% endblock %}

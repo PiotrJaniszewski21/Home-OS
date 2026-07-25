@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}Settings — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto settings-page">
+    <div class="settings-heading mb-6"><div class="settings-mark">⚙</div><div><h1>Settings</h1><p>Personalise Home OS and manage your server</p></div></div>
+
+    <!-- Profile -->
+    <div class="glass-card mb-4">
+        <p class="section-label">Profile</p>
+        <form method="POST" action="{{ url_for('settings.save_profile') }}" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Username</label>
+                    <input type="text" class="glass-input" value="{{ user.username }}" disabled style="opacity:0.5;">
+                </div>
+                <div>
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Email</label>
+                    <input type="email" name="email" class="glass-input" value="{{ user.email or '' }}" placeholder="Optional">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Current Password</label>
+                    <input type="password" name="current_password" class="glass-input" autocomplete="current-password" placeholder="Required to change password">
+                </div>
+                <div>
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">New Password</label>
+                    <input type="password" name="new_password" class="glass-input" autocomplete="new-password" placeholder="Leave blank to keep">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Default Page</label>
+                    <select name="default_page" class="glass-input">
+                        <option value="dashboard" {% if user.default_page == 'dashboard' %}selected{% endif %}>Dashboard</option>
+                        <option value="files" {% if user.default_page == 'files' %}selected{% endif %}>Files</option>
+                        <option value="calendar" {% if user.default_page == 'calendar' %}selected{% endif %}>Calendar</option>
+                        <option value="budget" {% if user.default_page == 'budget' %}selected{% endif %}>Budget</option>
+                        <option value="storage" {% if user.default_page == 'storage' %}selected{% endif %}>Storage</option>
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Save Profile</button>
+        </form>
+    </div>
+
+    <!-- Mobile Dock -->
+    <div class="glass-card mb-4">
+        <p class="section-label">Mobile Dock</p>
+        <p class="text-tertiary text-xs mb-3">Choose which tabs appear in your mobile dock. Only pages you have access to are shown.</p>
+        <form method="POST" action="{{ url_for('settings.save_dock') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="dock-picker">
+                {% set dock_items = current_user.visible_dock_tabs %}
+                {% set all_tabs = [
+                    ('dashboard', 'Home', '⊞'),
+                    ('files', 'Files', '📁'),
+                    ('storage', 'Storage', '💾'),
+                    ('media', 'Media', '▶'),
+                    ('calendar', 'Calendar', '📅'),
+                    ('budget', 'Budget', '💰'),
+                    ('network', 'Network', '📡'),
+                    ('settings', 'Settings', '⚙'),
+                ] %}
+                {% for key, label, icon in all_tabs %}
+                {% if current_user.has_permission(key) %}
+                <label class="dock-pick-item">
+                    <input type="checkbox" name="dock_tabs" value="{{ key }}" {% if key in dock_items %}checked{% endif %}>
+                    <span class="dock-pick-icon">{{ icon }}</span>
+                    <span class="dock-pick-label">{{ label }}</span>
+                </label>
+                {% endif %}
+                {% endfor %}
+            </div>
+            <button type="submit" class="btn btn-primary mt-3">Save Dock</button>
+        </form>
+    </div>
+
+    {% if current_user.is_admin %}
+    <!-- Server -->
+    <div class="glass-card mb-4">
+        <p class="section-label">Server</p>
+        <form method="POST" action="{{ url_for('settings.save_server') }}" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div>
+                <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Trash Retention (days)</label>
+                <input type="number" name="trash_days" class="glass-input" value="{{ config.storage.trash_retention_days }}">
+            </div>
+            <button type="submit" class="btn btn-primary">Save Server Settings</button>
+        </form>
+    </div>
+
+    <!-- AdGuard -->
+    <div class="glass-card mb-4">
+        <p class="section-label">AdGuard Home</p>
+        <form method="POST" action="{{ url_for('settings.save_adguard') }}" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div>
+                <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">URL</label>
+                <input type="url" name="adguard_url" class="glass-input" value="{{ config.get('adguard', {}).get('url', 'http://localhost:3000') }}" placeholder="http://localhost:3000">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Username</label>
+                    <input type="text" name="adguard_username" class="glass-input" value="{{ config.get('adguard', {}).get('username', '') }}" placeholder="AdGuard username">
+                </div>
+                <div>
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Password</label>
+                    <input type="password" name="adguard_password" class="glass-input" value="{{ config.get('adguard', {}).get('password', '') }}" placeholder="AdGuard password">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Save AdGuard Settings</button>
+        </form>
+    </div>
+
+    <!-- Remote Access -->
+    <div class="glass-card mb-4">
+        <div class="flex items-center justify-between mb-3">
+            <p class="section-label" style="margin-bottom: 0;">Remote Access</p>
+            <a href="{{ url_for('network.network_view') }}#tunnel" class="btn btn-ghost" style="font-size: 11px; padding: 0.3rem 0.6rem;">Manage</a>
+        </div>
+        {% if tunnel_url %}
+        <div class="flex items-center gap-3">
+            <span class="badge badge-success">Active</span>
+            <span class="text-secondary text-sm">{{ tunnel_url }}</span>
+        </div>
+        {% else %}
+        <p class="text-tertiary text-sm">Manage in Network &rarr; Remote Access</p>
+        {% endif %}
+    </div>
+
+    <!-- About -->
+    <div class="glass-card">
+        <p class="section-label">About</p>
+        <div class="space-y-2 text-sm">
+            <div class="flex justify-between">
+                <span class="text-tertiary">Version</span>
+                <span class="font-medium">0.1.0</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-tertiary">Python</span>
+                <span class="font-medium">{{ config.server.get('python_version', '') or '' }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-tertiary">Storage Root</span>
+                <span class="font-medium text-xs">{{ config.storage.root }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-tertiary">Database</span>
+                <span class="font-medium text-xs">{{ config.database.path }}</span>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.settings-heading { display:flex; align-items:center; gap:1rem; }
+.settings-heading p { margin-top:0.25rem; color:var(--text-tertiary); font-size:13px; }
+.settings-mark { display:flex; align-items:center; justify-content:center; width:56px; height:56px; border-radius:18px; background:var(--page-gradient); box-shadow:0 12px 25px rgba(var(--page-accent-rgb),0.2); color:#fff; font-size:24px; }
+.settings-page > .glass-card { position:relative; overflow:hidden; }
+.settings-page > .glass-card::before { content:""; position:absolute; inset:0 auto 0 0; width:3px; background:var(--page-gradient); opacity:0.72; }
+.dock-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 0.5rem;
+}
+.dock-pick-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.75rem 0.5rem;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+}
+.dock-pick-item:has(input:checked) {
+    background: rgba(10, 132, 255, 0.1);
+    box-shadow: 0 0 0 2px var(--accent);
+}
+.dock-pick-item:hover { background: rgba(255, 255, 255, 0.5); }
+.dock-pick-item input[type="checkbox"] { display: none; }
+.dock-pick-icon { font-size: 1.25rem; }
+.dock-pick-label { font-size: 0.6875rem; font-weight: 500; color: var(--text-secondary); }
+</style>
+{% endblock %}

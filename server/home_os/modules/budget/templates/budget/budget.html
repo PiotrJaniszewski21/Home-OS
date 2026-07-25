@@ -1,0 +1,357 @@
+{% extends "base.html" %}
+{% block title %}Budget — Home OS{% endblock %}
+{% block content %}
+<main class="budget-shell" aria-busy="true">
+    <header class="budget-header">
+        <div>
+            <p class="budget-eyebrow">Household finances</p>
+            <h1>Budget</h1>
+            <p class="budget-subtitle">Track committed spending, income and what remains.</p>
+        </div>
+        <a href="{{ url_for('calendar.calendar_view') }}" class="btn btn-primary">Add in Calendar</a>
+    </header>
+
+    <div class="budget-toolbar glass-panel">
+        <div class="tab-bar" role="tablist" aria-label="Budget period">
+            <button class="tab active" data-tab="monthly" role="tab" aria-selected="true">Monthly</button>
+            <button class="tab" data-tab="yearly" role="tab" aria-selected="false">Yearly</button>
+        </div>
+        <div class="period-nav">
+            <button id="period-previous" class="icon-button" aria-label="Previous period">‹</button>
+            <button id="period-current" class="period-title" type="button"></button>
+            <button id="period-next" class="icon-button" aria-label="Next period">›</button>
+        </div>
+        <button id="refresh-budget" class="btn btn-ghost" type="button">Refresh</button>
+    </div>
+
+    <div id="budget-alert" class="budget-alert hidden" role="alert"></div>
+    <div id="budget-loading" class="budget-loading glass-panel">
+        <span class="budget-spinner" aria-hidden="true"></span>
+        <span>Calculating your household forecast…</span>
+    </div>
+
+    <section id="monthly-view" class="hidden">
+        <div class="forecast-grid">
+            <article class="forecast-hero glass-card">
+                <div class="forecast-hero-top">
+                    <div>
+                        <p class="stat-label">Available after commitments</p>
+                        <p id="remaining-value" class="forecast-value">£0.00</p>
+                        <p id="remaining-context" class="forecast-context"></p>
+                    </div>
+                    <span id="forecast-status" class="forecast-status">On track</span>
+                </div>
+                <div class="coverage-track" aria-hidden="true"><span id="coverage-fill"></span></div>
+                <div class="forecast-meta">
+                    <span><strong id="coverage-value">0%</strong> income coverage</span>
+                    <span><strong id="savings-rate">0%</strong> remaining</span>
+                </div>
+            </article>
+
+            <article class="metric-card glass-card">
+                <span class="metric-icon income-icon">↓</span>
+                <div><p class="stat-label">Total income</p><p id="income-value" class="metric-value">£0.00</p><p id="income-detail" class="metric-detail"></p></div>
+            </article>
+            <article class="metric-card glass-card">
+                <span class="metric-icon outgoing-icon">↑</span>
+                <div><p class="stat-label">Committed outgoings</p><p id="outgoing-value" class="metric-value">£0.00</p><p id="outgoing-detail" class="metric-detail"></p></div>
+            </article>
+        </div>
+
+        <div class="budget-columns">
+            <section class="glass-card budget-section">
+                <div class="section-heading"><div><p class="section-kicker">Household</p><h2>Monthly income</h2></div><span id="income-user-count" class="count-badge"></span></div>
+                <div id="income-list"></div>
+            </section>
+            <section class="glass-card budget-section">
+                <div class="section-heading"><div><p class="section-kicker">Distribution</p><h2>Largest commitments</h2></div></div>
+                <div id="chart-bars" class="chart-bars"></div>
+            </section>
+        </div>
+
+        <section class="glass-panel budget-table-card">
+            <div class="table-heading">
+                <div><p class="section-kicker">Regular costs</p><h2>Recurring bills</h2></div>
+                <label class="search-field"><span class="sr-only">Filter bills</span><input id="bill-filter" type="search" placeholder="Filter bills…" autocomplete="off"></label>
+            </div>
+            <div class="table-scroll">
+                <table class="glass-table">
+                    <thead><tr><th>Bill</th><th>Frequency</th><th>Due</th><th>Monthly average</th><th>Status</th></tr></thead>
+                    <tbody id="bills-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <div class="budget-columns transactions-grid">
+            <section class="glass-panel budget-table-card">
+                <div class="table-heading"><div><p class="section-kicker">Money out</p><h2>One-off payments</h2></div><strong id="payment-total"></strong></div>
+                <div class="table-scroll"><table class="glass-table"><thead><tr><th>Payment</th><th>Date</th><th>Status</th></tr></thead><tbody id="payments-body"></tbody></table></div>
+            </section>
+            <section class="glass-panel budget-table-card">
+                <div class="table-heading"><div><p class="section-kicker">Money in</p><h2>One-off income</h2></div><strong id="income-event-total"></strong></div>
+                <div class="table-scroll"><table class="glass-table"><thead><tr><th>Income</th><th>Date</th><th>Status</th></tr></thead><tbody id="income-events-body"></tbody></table></div>
+            </section>
+        </div>
+    </section>
+
+    <section id="yearly-view" class="hidden">
+        <div id="year-overview" class="year-overview"></div>
+        <div class="glass-panel budget-table-card">
+            <div class="table-heading"><div><p class="section-kicker">12 month outlook</p><h2>Annual forecast</h2></div></div>
+            <div class="table-scroll"><table class="glass-table"><thead><tr><th>Month</th><th>Income</th><th>Bills</th><th>One-off out</th><th>One-off in</th><th>Net</th></tr></thead><tbody id="year-body"></tbody></table></div>
+        </div>
+    </section>
+</main>
+
+<style>
+.budget-shell { max-width: 1180px; margin: 0 auto; padding-bottom: 3rem; }
+.budget-header { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:1.5rem; }
+.budget-header h1 { margin:.1rem 0 .3rem; font-size:2rem; letter-spacing:-.03em; }
+.budget-eyebrow,.section-kicker,.stat-label { margin:0; color:var(--text-tertiary); font-size:.69rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase; }
+.budget-subtitle,.forecast-context,.metric-detail { color:var(--text-secondary); font-size:.82rem; margin:0; }
+.budget-toolbar { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:1rem; padding:.55rem; margin-bottom:1rem; }
+.budget-toolbar > :last-child { justify-self:end; }
+.tab-bar { display:flex; width:max-content; gap:3px; padding:3px; border-radius:9px; background:rgba(0,60,120,.05); }
+.tab { border:0; padding:.45rem .85rem; border-radius:7px; background:transparent; color:var(--text-secondary); cursor:pointer; font:inherit; font-size:.78rem; font-weight:600; }
+.tab.active { color:var(--text-primary); background:rgba(255,255,255,.84); box-shadow:0 1px 5px rgba(0,40,80,.1); }
+.period-nav { display:flex; align-items:center; gap:.35rem; }
+.icon-button,.period-title { border:0; background:transparent; color:var(--text-primary); cursor:pointer; }
+.icon-button { width:2rem; height:2rem; border-radius:50%; font-size:1.55rem; line-height:1; }
+.icon-button:hover { background:rgba(0,60,120,.06); }
+.period-title { min-width:150px; font-weight:700; font-size:.9rem; }
+.budget-loading,.budget-alert { padding:1rem; display:flex; align-items:center; justify-content:center; gap:.65rem; color:var(--text-secondary); }
+.budget-alert { justify-content:flex-start; margin-bottom:1rem; border:1px solid rgba(255,59,48,.18); border-radius:12px; color:var(--danger); background:rgba(255,59,48,.06); }
+.budget-spinner { width:16px; height:16px; border:2px solid rgba(10,132,255,.2); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.forecast-grid { display:grid; grid-template-columns:1.6fr 1fr 1fr; gap:.85rem; margin-bottom:.85rem; }
+.forecast-hero,.metric-card,.budget-section { padding:1.15rem; }
+.forecast-hero-top { display:flex; justify-content:space-between; gap:1rem; }
+.forecast-value { margin:.3rem 0 .15rem; font-size:clamp(1.9rem,4vw,2.8rem); line-height:1; font-weight:750; letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
+.forecast-status,.count-badge { align-self:flex-start; padding:.28rem .55rem; border-radius:100px; background:rgba(40,205,65,.1); color:var(--success); font-size:.7rem; font-weight:700; }
+.forecast-status.negative { background:rgba(255,59,48,.1); color:var(--danger); }
+.coverage-track { height:7px; margin:1.1rem 0 .6rem; overflow:hidden; border-radius:100px; background:rgba(0,60,120,.07); }
+.coverage-track span { display:block; height:100%; width:0; border-radius:inherit; background:var(--success); transition:width .45s ease; }
+.forecast-meta { display:flex; justify-content:space-between; gap:1rem; color:var(--text-secondary); font-size:.72rem; }
+.metric-card { display:flex; align-items:center; gap:.85rem; min-width:0; }
+.metric-icon { display:grid; place-items:center; width:38px; height:38px; flex:0 0 auto; border-radius:11px; font-size:1.1rem; font-weight:700; }
+.income-icon { color:var(--success); background:rgba(40,205,65,.1); }.outgoing-icon { color:var(--danger); background:rgba(255,59,48,.1); }
+.metric-value { margin:.18rem 0; font-size:1.25rem; font-weight:750; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+.budget-columns { display:grid; grid-template-columns:1fr 1fr; gap:.85rem; margin-bottom:.85rem; }
+.section-heading,.table-heading { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem; }
+.section-heading h2,.table-heading h2 { margin:.15rem 0 0; font-size:1rem; }
+.income-row { display:grid; grid-template-columns:minmax(90px,1fr) auto 120px auto; gap:.55rem; align-items:center; padding:.55rem 0; border-bottom:1px solid rgba(0,60,120,.055); }
+.income-row:last-child { border-bottom:0; }.income-name { font-size:.82rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; }
+.income-input,.search-field input { border:1px solid rgba(0,60,120,.1); border-radius:8px; background:rgba(255,255,255,.55); color:var(--text-primary); outline:none; }
+.income-input { width:100%; padding:.42rem .55rem; font:inherit; font-size:.8rem; text-align:right; }
+.income-input:focus,.search-field input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(10,132,255,.11); }
+.chart-bars { display:grid; gap:.65rem; }.budget-bar-row { display:grid; grid-template-columns:minmax(80px,130px) 1fr auto; align-items:center; gap:.65rem; }
+.budget-bar-label,.budget-bar-amount { font-size:.74rem; }.budget-bar-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.budget-bar-amount { color:var(--text-secondary); font-variant-numeric:tabular-nums; }
+.budget-bar-track { height:8px; overflow:hidden; border-radius:100px; background:rgba(0,60,120,.06); }.budget-bar-fill { height:100%; border-radius:inherit; background:var(--accent); }
+.budget-table-card { padding:0; overflow:hidden; margin-bottom:.85rem; }.table-heading { padding:1rem; margin:0; border-bottom:1px solid rgba(0,60,120,.06); }.table-scroll { overflow-x:auto; }
+.search-field input { width:180px; padding:.45rem .65rem; font:inherit; font-size:.76rem; }
+.glass-table td,.glass-table th { white-space:nowrap; }.glass-table td:first-child { white-space:normal; min-width:150px; }
+.bill-title { font-weight:650; }.bill-meta { margin-top:.14rem; color:var(--text-tertiary); font-size:.68rem; }
+.money-positive { color:var(--success); }.money-negative { color:var(--danger); }.money-warning { color:var(--warning); }
+.status-button { border:0; padding:.27rem .55rem; border-radius:100px; cursor:pointer; font:inherit; font-size:.68rem; font-weight:700; }
+.status-button.unpaid { color:#b86d00; background:rgba(245,158,11,.12); }.status-button.paid { color:var(--success); background:rgba(40,205,65,.11); }.status-button.not-due { color:var(--text-tertiary); background:rgba(0,60,120,.05); cursor:default; }
+.status-button:disabled { opacity:.55; cursor:wait; }.empty-row { padding:2rem !important; text-align:center; color:var(--text-tertiary); }
+.year-overview { display:grid; grid-template-columns:repeat(4,1fr); gap:.85rem; margin-bottom:.85rem; }.year-stat { padding:1rem; }.year-stat strong { display:block; margin-top:.3rem; font-size:1.25rem; font-variant-numeric:tabular-nums; }
+.hidden { display:none !important; }.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+@media (max-width:850px) { .forecast-grid { grid-template-columns:1fr 1fr; }.forecast-hero { grid-column:1/-1; }.budget-columns { grid-template-columns:1fr; }.year-overview { grid-template-columns:1fr 1fr; } }
+@media (max-width:620px) { .budget-header { align-items:center; }.budget-subtitle { display:none; }.budget-toolbar { grid-template-columns:1fr auto; }.budget-toolbar .period-nav { grid-column:1/-1; grid-row:2; justify-content:center; }.budget-toolbar > :last-child { grid-column:2; grid-row:1; }.forecast-grid { grid-template-columns:1fr; }.forecast-hero { grid-column:auto; }.income-row { grid-template-columns:1fr auto 105px; }.income-row > :last-child { display:none; }.search-field input { width:130px; }.year-overview { grid-template-columns:1fr; } }
+</style>
+
+<script nonce="{{ g.csp_nonce }}">
+const CSRF = "{{ csrf_token() }}";
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const money = new Intl.NumberFormat('en-GB', {style:'currency', currency:'GBP'});
+const shortMoney = new Intl.NumberFormat('en-GB', {style:'currency', currency:'GBP', maximumFractionDigits:0});
+const dateFormat = new Intl.DateTimeFormat('en-GB', {day:'numeric', month:'short'});
+let currentView = 'monthly';
+let currentYear = new Date().getFullYear();
+let currentMonth = new Date().getMonth() + 1;
+let monthlyData = null;
+
+const byId = id => document.getElementById(id);
+const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
+const eventDate = value => dateFormat.format(new Date(`${value}T12:00:00`));
+const currency = (amount, code='GBP') => code === 'GBP' ? money.format(amount || 0) : `${escapeHtml(code)} ${(amount || 0).toFixed(2)}`;
+
+function setLoading(loading) {
+    byId('budget-loading').classList.toggle('hidden', !loading);
+    byId('refresh-budget').disabled = loading;
+    document.querySelector('.budget-shell').setAttribute('aria-busy', String(loading));
+}
+
+function showError(message) {
+    const alert = byId('budget-alert');
+    alert.textContent = message;
+    alert.classList.remove('hidden');
+}
+
+function clearError() { byId('budget-alert').classList.add('hidden'); }
+
+async function requestJSON(url, options={}) {
+    const response = await fetch(url, {cache:'no-store', ...options});
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || `Request failed (${response.status})`);
+    return payload.data;
+}
+
+function updatePeriodTitle() {
+    byId('period-current').textContent = currentView === 'monthly' ? `${MONTHS[currentMonth - 1]} ${currentYear}` : String(currentYear);
+    byId('period-current').title = 'Return to current period';
+}
+
+function changePeriod(direction) {
+    if (currentView === 'yearly') currentYear += direction;
+    else {
+        currentMonth += direction;
+        if (currentMonth > 12) { currentMonth = 1; currentYear += 1; }
+        if (currentMonth < 1) { currentMonth = 12; currentYear -= 1; }
+    }
+    loadActiveView();
+}
+
+function currentPeriod() {
+    const now = new Date();
+    currentYear = now.getFullYear();
+    currentMonth = now.getMonth() + 1;
+    loadActiveView();
+}
+
+async function loadMonthly() {
+    setLoading(true); clearError(); updatePeriodTitle();
+    try {
+        monthlyData = await requestJSON(`/api/budget/summary?year=${currentYear}&month=${currentMonth}`);
+        renderMonthly(monthlyData);
+        byId('monthly-view').classList.remove('hidden');
+    } catch (error) { showError(error.message); }
+    finally { setLoading(false); }
+}
+
+function renderMonthly(data) {
+    const totalIncome = data.total_monthly_income + data.total_income_events;
+    const remaining = data.monthly_remaining;
+    byId('remaining-value').textContent = money.format(remaining);
+    byId('remaining-value').className = `forecast-value ${remaining >= 0 ? 'money-positive' : 'money-negative'}`;
+    byId('remaining-context').textContent = `${MONTHS[currentMonth - 1]} forecast after bills and one-off payments`;
+    byId('forecast-status').textContent = remaining >= 0 ? 'On track' : 'Over budget';
+    byId('forecast-status').classList.toggle('negative', remaining < 0);
+    byId('coverage-value').textContent = `${Math.round(data.coverage_percent)}%`;
+    byId('savings-rate').textContent = `${Math.round(data.savings_rate)}%`;
+    byId('coverage-fill').style.width = `${Math.min(Math.max(data.coverage_percent, 0), 100)}%`;
+    byId('coverage-fill').style.background = data.coverage_percent >= 100 ? 'var(--success)' : 'var(--danger)';
+    byId('income-value').textContent = money.format(totalIncome);
+    byId('income-detail').textContent = data.total_income_events ? `${money.format(data.total_income_events)} is one-off` : 'Household recurring income';
+    byId('outgoing-value').textContent = money.format(data.committed_outgoings);
+    byId('outgoing-detail').textContent = `${money.format(data.monthly_bills)} recurring · ${money.format(data.total_payments)} one-off`;
+    renderIncomes(data.incomes);
+    renderChart(data.bills);
+    renderBills(data.bills);
+    renderEvents('payments-body', data.payments, false);
+    renderEvents('income-events-body', data.income_events, true);
+    byId('payment-total').textContent = money.format(data.upcoming_payments_total);
+    byId('income-event-total').textContent = money.format(data.upcoming_income_total);
+}
+
+function renderIncomes(incomes) {
+    byId('income-user-count').textContent = `${incomes.length} ${incomes.length === 1 ? 'person' : 'people'}`;
+    byId('income-list').innerHTML = incomes.length ? incomes.map(item => `<label class="income-row">
+        <span class="income-name">${escapeHtml(item.username)}</span><span class="text-tertiary">£</span>
+        <input class="income-input" type="number" min="0" max="100000000" step="0.01" value="${Number(item.monthly_income || 0).toFixed(2)}" data-username="${escapeHtml(item.username)}">
+        <span class="text-tertiary text-xs">per month</span></label>`).join('') : '<p class="empty-row">No active household members.</p>';
+}
+
+function renderChart(bills) {
+    const topBills = [...bills].sort((a,b) => b.monthly_equivalent - a.monthly_equivalent).slice(0,6);
+    const maximum = Math.max(...topBills.map(bill => bill.monthly_equivalent), 0);
+    byId('chart-bars').innerHTML = topBills.length ? topBills.map(bill => `<div class="budget-bar-row">
+        <span class="budget-bar-label" title="${escapeHtml(bill.title)}">${escapeHtml(bill.title)}</span>
+        <div class="budget-bar-track"><div class="budget-bar-fill" style="width:${maximum ? bill.monthly_equivalent / maximum * 100 : 0}%"></div></div>
+        <span class="budget-bar-amount">${currency(bill.monthly_equivalent, bill.currency)}</span></div>`).join('') : '<p class="empty-row">No recurring bills yet.</p>';
+}
+
+function billStatus(bill) {
+    if (!bill.is_due) return '<span class="status-button not-due">Not due</span>';
+    const label = bill.expected_count > 1 ? `${bill.paid_count}/${bill.expected_count} paid` : (bill.is_paid ? 'Paid' : 'Due');
+    return `<button class="status-button ${bill.is_paid ? 'paid' : 'unpaid'}" data-bill-id="${bill.id}">${label}</button>`;
+}
+
+function renderBills(bills) {
+    const query = byId('bill-filter').value.trim().toLowerCase();
+    const filtered = bills.filter(bill => bill.title.toLowerCase().includes(query));
+    byId('bills-body').innerHTML = filtered.length ? filtered.map(bill => `<tr>
+        <td><div class="bill-title">${escapeHtml(bill.title)}</div><div class="bill-meta">${escapeHtml(bill.created_by || 'Household')}</div></td>
+        <td><span class="badge badge-ghost">${escapeHtml(bill.recurrence)}</span></td>
+        <td>${bill.next_date ? eventDate(bill.next_date) : '—'}<div class="bill-meta">${bill.is_due ? currency(bill.amount * bill.expected_count, bill.currency) : ''}</div></td>
+        <td>${currency(bill.monthly_equivalent, bill.currency)}</td><td>${billStatus(bill)}</td></tr>`).join('') : '<tr><td colspan="5" class="empty-row">No matching recurring bills.</td></tr>';
+}
+
+function renderEvents(target, events, income) {
+    const sorted = [...events].sort((a,b) => a.date.localeCompare(b.date));
+    byId(target).innerHTML = sorted.length ? sorted.map(event => `<tr>
+        <td><div class="bill-title">${escapeHtml(event.title)}</div><div class="bill-meta ${income ? 'money-positive' : 'money-negative'}">${income ? '+' : '−'}${currency(event.amount, event.currency)}</div></td>
+        <td>${eventDate(event.date)}</td><td><button class="status-button ${event.is_paid ? 'paid' : 'unpaid'}" data-event-id="${event.id}">${event.is_paid ? (income ? 'Received' : 'Paid') : (income ? 'Pending' : 'Due')}</button></td></tr>`).join('') : `<tr><td colspan="3" class="empty-row">No one-off ${income ? 'income' : 'payments'} this month.</td></tr>`;
+}
+
+async function loadYearly() {
+    setLoading(true); clearError(); updatePeriodTitle();
+    try {
+        const data = await requestJSON(`/api/budget/yearly?year=${currentYear}`);
+        renderYearly(data); byId('yearly-view').classList.remove('hidden');
+    } catch (error) { showError(error.message); }
+    finally { setLoading(false); }
+}
+
+function renderYearly(data) {
+    const stats = [['Annual income',data.yearly_income,'money-positive'],['Recurring bills',data.yearly_bills,'money-negative'],['One-off spending',data.yearly_payments,'money-warning'],['Annual net',data.yearly_net,data.yearly_net >= 0 ? 'money-positive' : 'money-negative']];
+    byId('year-overview').innerHTML = stats.map(([label,value,style]) => `<article class="glass-card year-stat"><p class="stat-label">${label}</p><strong class="${style}">${shortMoney.format(value)}</strong></article>`).join('');
+    byId('year-body').innerHTML = data.months.map(month => `<tr><td class="bill-title">${MONTHS[month.month-1]}</td><td class="money-positive">${shortMoney.format(month.income)}</td><td class="money-negative">${shortMoney.format(month.bills)}</td><td>${month.payments ? shortMoney.format(month.payments) : '—'}</td><td>${month.income_events ? shortMoney.format(month.income_events) : '—'}</td><td class="${month.net >= 0 ? 'money-positive' : 'money-negative'}"><strong>${shortMoney.format(month.net)}</strong></td></tr>`).join('');
+}
+
+async function saveIncome(input) {
+    input.disabled = true;
+    try {
+        await requestJSON('/api/budget/income', {method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':CSRF}, body:JSON.stringify({username:input.dataset.username, monthly_income:Number(input.value)})});
+        await loadMonthly();
+    } catch (error) { showError(error.message); input.disabled = false; }
+}
+
+async function toggleBill(button) {
+    button.disabled = true;
+    try {
+        await requestJSON(`/api/budget/bills/${button.dataset.billId}/toggle-paid`, {method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':CSRF}, body:JSON.stringify({year:currentYear, month:currentMonth})});
+        await loadMonthly();
+    } catch (error) { showError(error.message); button.disabled = false; }
+}
+
+async function toggleEvent(button) {
+    button.disabled = true;
+    try {
+        await requestJSON(`/api/calendar/events/${button.dataset.eventId}/toggle-paid`, {method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':CSRF}, body:JSON.stringify({year:currentYear, month:currentMonth})});
+        await loadMonthly();
+    } catch (error) { showError(error.message); button.disabled = false; }
+}
+
+function switchView(view) {
+    currentView = view;
+    document.querySelectorAll('.tab').forEach(tab => { const active = tab.dataset.tab === view; tab.classList.toggle('active', active); tab.setAttribute('aria-selected', String(active)); });
+    byId('monthly-view').classList.add('hidden'); byId('yearly-view').classList.add('hidden');
+    loadActiveView();
+}
+
+function loadActiveView() { return currentView === 'monthly' ? loadMonthly() : loadYearly(); }
+
+document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => switchView(tab.dataset.tab)));
+byId('period-previous').addEventListener('click', () => changePeriod(-1));
+byId('period-next').addEventListener('click', () => changePeriod(1));
+byId('period-current').addEventListener('click', currentPeriod);
+byId('refresh-budget').addEventListener('click', loadActiveView);
+byId('bill-filter').addEventListener('input', () => monthlyData && renderBills(monthlyData.bills));
+byId('income-list').addEventListener('change', event => { if (event.target.matches('.income-input')) saveIncome(event.target); });
+byId('bills-body').addEventListener('click', event => { const button = event.target.closest('[data-bill-id]'); if (button) toggleBill(button); });
+document.addEventListener('click', event => { const button = event.target.closest('[data-event-id]'); if (button) toggleEvent(button); });
+loadMonthly();
+</script>
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}HomeMusic — Home OS{% endblock %}
+{% block content %}
+<div id="home-music-app" class="hm-app" data-csrf-token="{{ csrf_token() }}">
+    <header class="hm-topbar">
+        <button class="hm-brand" type="button" data-view="listen" aria-label="HomeMusic Listen Now">
+            <span class="hm-brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M9 18V5l11-2v13M9 9l11-2M6 20a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm11-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>
+            </span>
+            <span>HomeMusic</span>
+        </button>
+        <form id="music-search-form" class="hm-search" role="search">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>
+            <input id="hm-search-input" type="search" placeholder="Artists, albums and songs" autocomplete="off" aria-label="Search HomeMusic">
+            <button type="submit">Search</button>
+            <div id="hm-search-history" class="hm-search-history hidden"></div>
+        </form>
+    </header>
+
+    <div id="hm-alert" class="hm-alert hidden" role="alert"></div>
+
+    <div class="hm-workspace">
+        <nav class="hm-sidebar" aria-label="HomeMusic">
+            <button class="hm-nav-item active" type="button" data-view="listen">
+                <svg viewBox="0 0 24 24"><path d="M12 3 4 9v11h6v-6h4v6h6V9l-8-6Z"/></svg><span>Listen Now</span>
+            </button>
+            <button class="hm-nav-item" type="button" data-view="search">
+                <svg viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Search</span>
+            </button>
+            <button class="hm-nav-item" type="button" data-view="radio">
+                <svg viewBox="0 0 24 24"><path d="M5 9h14v11H5V9Zm3-4 8 4M8 14h.01M11 14h5M8 17h.01M11 17h5"/></svg><span>Radio</span>
+            </button>
+            <p class="hm-nav-label">Library</p>
+            <button class="hm-nav-item" type="button" data-view="library">
+                <svg viewBox="0 0 24 24"><path d="M5 4h14v16H5V4Zm4 0v16M5 9h4"/></svg><span>Library</span>
+            </button>
+            <button class="hm-nav-item" type="button" data-view="albums">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/></svg><span>Albums</span>
+            </button>
+            <button class="hm-nav-item" type="button" data-view="playlists">
+                <svg viewBox="0 0 24 24"><path d="M5 6h10M5 11h10M5 16h6M18 14v6M15 17h6"/></svg><span>Playlists</span>
+            </button>
+            <button class="hm-nav-item" type="button" data-view="loved">
+                <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78Z"/></svg><span>Loved Songs</span>
+            </button>
+            <button class="hm-nav-item" type="button" data-view="history">
+                <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span>Recently Played</span>
+            </button>
+        </nav>
+
+        <main id="hm-content" class="hm-content" tabindex="-1" aria-live="polite"></main>
+    </div>
+
+    <footer id="hm-mini-player" class="hm-mini-player hidden" aria-label="Music player">
+        <button id="hm-player-summary" class="hm-player-summary" type="button" aria-label="Open Now Playing">
+            <span class="hm-mini-art"><img id="hm-mini-image" alt="" class="hidden"><svg id="hm-mini-placeholder" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13M9 9l11-2M6 20a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm11-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg></span>
+            <span class="hm-mini-copy"><strong id="hm-mini-title">Nothing Playing</strong><span id="hm-mini-artist">Choose something to play</span></span>
+        </button>
+        <div class="hm-mini-controls">
+            <button id="hm-previous" type="button" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M6 5v14M19 6l-9 6 9 6V6Z"/></svg></button>
+            <button id="hm-play" class="hm-play-button" type="button" aria-label="Play"><svg viewBox="0 0 24 24"><path id="hm-play-icon" d="m8 5 11 7-11 7V5Z"/></svg></button>
+            <button id="hm-next" type="button" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M18 5v14M5 6l9 6-9 6V6Z"/></svg></button>
+        </div>
+        <div class="hm-mini-progress">
+            <input id="hm-progress" type="range" min="0" max="1000" value="0" aria-label="Playback position">
+            <span id="hm-current-time">0:00</span><span id="hm-duration">0:00</span>
+        </div>
+        <div class="hm-mini-actions">
+            <button id="hm-love" type="button" aria-label="Love"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78Z"/></svg></button>
+            <button id="hm-queue-toggle" type="button" aria-label="Show queue"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+        </div>
+    </footer>
+
+    <audio id="hm-audio" preload="metadata"></audio>
+
+    <div id="hm-overlay" class="hm-overlay hidden" role="dialog" aria-modal="true">
+        <button class="hm-overlay-backdrop" type="button" data-close-overlay aria-label="Close"></button>
+        <section id="hm-overlay-panel" class="hm-overlay-panel"></section>
+    </div>
+
+    <div id="hm-menu" class="hm-menu hidden" role="dialog" aria-modal="true">
+        <button class="hm-overlay-backdrop" type="button" data-close-menu aria-label="Close"></button>
+        <section id="hm-menu-panel" class="hm-menu-panel"></section>
+    </div>
+</div>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/home-music.css') }}?v=10">
+<script nonce="{{ g.csp_nonce }}" src="{{ url_for('static', filename='js/home-music.js') }}?v=10" defer></script>
+{% endblock %}
