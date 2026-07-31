@@ -23,12 +23,20 @@ fi
 echo "Stopping service..."
 systemctl stop home-os 2>/dev/null || true
 systemctl disable home-os 2>/dev/null || true
+systemctl disable --now home-os-http-redirect 2>/dev/null || true
+systemctl disable --now home-os-autodelete.timer 2>/dev/null || true
+systemctl stop home-os-autodelete.service 2>/dev/null || true
 systemctl disable --now home-os-instant-stream.timer 2>/dev/null || true
 systemctl disable --now torrserver.service 2>/dev/null || true
 if [ -f /etc/samba/smb.conf ]; then
     sed -i "\|include = $INSTALL_DIR/config/smb_shares.conf|d" /etc/samba/smb.conf
 fi
 rm -f /etc/systemd/system/home-os.service
+rm -f /etc/systemd/system/home-os-http-redirect.service
+rm -f /etc/systemd/system/home-os-autodelete.service
+rm -f /etc/systemd/system/home-os-autodelete.timer
+rm -f /etc/systemd/system/home-os-autodelete.service.d/override.conf
+rmdir /etc/systemd/system/home-os-autodelete.service.d 2>/dev/null || true
 rm -f /etc/systemd/system/home-os-media-helper@.service
 rm -f /etc/systemd/system/home-os-instant-stream.service
 rm -f /etc/systemd/system/home-os-instant-stream.timer

@@ -346,7 +346,7 @@ enum HomeOSError: Error {
 // MARK: - SSL Trust (for self-signed certs)
 
 /// Allows connecting to the Home OS server with a self-signed TLS certificate.
-/// This is necessary because the server uses a self-signed cert on port 4443.
+/// This is necessary because the server uses a self-signed certificate on port 443.
 final class TrustAllDelegate: NSObject, URLSessionDelegate {
     func urlSession(
         _ session: URLSession,
@@ -839,7 +839,7 @@ if SharedConfig.isConfigured {
 ## Testing
 
 1. Build and run the main app
-2. Log in via Settings (enter server URL like `https://192.168.0.8:4443`, username, password)
+2. Log in via Settings (enter server URL like `https://192.168.0.8`, username, password)
 3. Open Finder → sidebar should show "Home OS" under "Locations"
 4. Click it — your server's storage directory contents appear
 5. Open a file — it downloads on demand

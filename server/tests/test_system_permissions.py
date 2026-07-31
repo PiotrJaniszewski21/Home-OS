@@ -1,11 +1,9 @@
 import os
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from flask import Flask
 from home_os.app import create_app
-from home_os.modules.media import routes as media_routes
 from home_os.services.system_service import privileged_command
 
 
@@ -52,31 +50,28 @@ class SystemPermissionTests(unittest.TestCase):
         self.assertIn('chmod 2750 "$INSTALL_DIR/storage"', installer)
         self.assertIn('chmod 2770 "$INSTALL_DIR/storage/HomeOS"', installer)
 
-    def test_autodelete_timer_uses_root_backend_model(self):
-        completed = MagicMock(returncode=0, stderr="")
-        with (
-            Flask(__name__).app_context(),
-            patch.object(media_routes, "run_privileged", return_value=completed) as run,
-        ):
-            self.assertTrue(media_routes._manage_autodelete_timer(True))
+    def test_installer_provisions_http_redirect_service(self):
+        installer = (ROOT_DIR / "install.sh").read_text()
+        redirect_unit = installer.split(
+            "cat > /etc/systemd/system/home-os-http-redirect.service << EOF", 1
+        )[1].split("EOF", 1)[0]
 
-        script = run.call_args.args[0][2]
-        self.assertIn("User=root", script)
-        self.assertNotIn("User=homeos", script)
-        self.assertNotIn("SupplementaryGroups=", script)
+        self.assertIn("ExecStart=$INSTALL_DIR/app/venv/bin/python -m home_os.http_redirect", redirect_unit)
+        self.assertIn("User=$USER", redirect_unit)
+        self.assertIn("AmbientCapabilities=CAP_NET_BIND_SERVICE", redirect_unit)
+        self.assertIn("CapabilityBoundingSet=CAP_NET_BIND_SERVICE", redirect_unit)
+        self.assertIn("NoNewPrivileges=true", redirect_unit)
+        self.assertIn("ProtectSystem=strict", redirect_unit)
+        self.assertIn("systemctl enable home-os home-os-http-redirect", installer)
 
-    def test_installer_migrates_existing_autodelete_unit(self):
+    def test_installer_removes_retired_autodelete_units(self):
         installer = (ROOT_DIR / "install.sh").read_text()
 
-        self.assertIn(
-            "if [ -f /etc/systemd/system/home-os-autodelete.service ]; then",
-            installer,
-        )
-        self.assertIn("User=root", installer)
-        self.assertIn(
-            "systemctl reset-failed home-os-autodelete.service",
-            installer,
-        )
+        self.assertIn("systemctl stop home-os-autodelete.timer", installer)
+        self.assertIn("systemctl disable home-os-autodelete.timer", installer)
+        self.assertIn("/etc/systemd/system/home-os-autodelete.service", installer)
+        self.assertIn('autodelete_state*.json*', installer)
+        self.assertIn("DELETE FROM settings WHERE key LIKE 'autodelete_%'", installer)
 
     def test_upgrade_migration_matches_root_service_model(self):
         migration = (
@@ -85,7 +80,9 @@ class SystemPermissionTests(unittest.TestCase):
 
         self.assertIn("User=root", migration)
         self.assertIn("NoNewPrivileges=false", migration)
-        self.assertIn("--bind [::]:443 --bind [::]:4443", migration)
+        self.assertIn("--bind [::]:443", migration)
+        self.assertNotIn(":4443", migration)
+        self.assertIn("home-os-http-redirect.service", migration)
         self.assertIn('for folder_name in Movies Series Downloads', migration)
         self.assertIn(
             'chown root:"$MEDIA_GROUP" "$INSTALL_DIR/storage"',

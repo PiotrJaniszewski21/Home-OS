@@ -27,6 +27,53 @@ final class FileProviderConfigurationTests: XCTestCase {
         XCTAssertTrue(source.contains(".allowsDeleting"))
     }
 
+    func testFileProviderAllowsLongRunningLargeFileTransfers() throws {
+        let source = try String(
+            contentsOf: packageRoot()
+                .appendingPathComponent("Sources/HomeOSFileProvider/HomeOSFileProviderBackend.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("transferRequestTimeout: TimeInterval = 2 * 60"))
+        XCTAssertTrue(source.contains("transferResourceTimeout: TimeInterval = 7 * 24 * 60 * 60"))
+        XCTAssertEqual(
+            source.components(separatedBy: "timeoutIntervalForRequest = Self.transferRequestTimeout").count - 1,
+            2
+        )
+        XCTAssertEqual(
+            source.components(separatedBy: "timeoutIntervalForResource = Self.transferResourceTimeout").count - 1,
+            2
+        )
+        XCTAssertFalse(source.contains("timeoutIntervalForRequest = 3"))
+        XCTAssertFalse(source.contains("timeoutIntervalForRequest = 12"))
+        XCTAssertFalse(source.contains("timeoutIntervalForResource = 120"))
+        XCTAssertFalse(source.contains("timeoutIntervalForResource = 300"))
+    }
+
+    func testFileProviderReconcilesCommittedCreateRetries() throws {
+        let backend = try String(
+            contentsOf: packageRoot()
+                .appendingPathComponent("Sources/HomeOSFileProvider/HomeOSFileProviderBackend.swift"),
+            encoding: .utf8
+        )
+        let fileProviderExtension = try String(
+            contentsOf: packageRoot()
+                .appendingPathComponent("Sources/HomeOSFileProvider/HomeOSFileProviderExtension.swift"),
+            encoding: .utf8
+        )
+        let errorMapper = try String(
+            contentsOf: packageRoot()
+                .appendingPathComponent("Sources/HomeOSFileProvider/HomeOSFileProviderErrorMapper.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(fileProviderExtension.contains("options.contains(.mayAlreadyExist)"))
+        XCTAssertTrue(fileProviderExtension.contains("mayAlreadyExist: mayAlreadyExist"))
+        XCTAssertTrue(backend.contains("Reconciled committed File Provider directory retry"))
+        XCTAssertTrue(backend.contains("NSError.fileProviderErrorForCollision(with: existing)"))
+        XCTAssertTrue(errorMapper.contains("NSFileProviderError(.filenameCollision)"))
+    }
+
     func testFileProviderInfoPlistKeepsFinderMenuActionsEnabled() throws {
         let plistURL = packageRoot()
             .appendingPathComponent("Resources/HomeOSFileProvider-Info.plist")

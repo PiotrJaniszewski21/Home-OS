@@ -3,7 +3,15 @@ import Foundation
 import os
 import UniformTypeIdentifiers
 
+struct HomeOSFileProviderItemListing {
+    let items: [HomeOSFileProviderItem]
+    let authoritativeParentIdentifiers: Set<String>?
+}
+
 final class HomeOSFileProviderBackend: @unchecked Sendable {
+    private static let transferRequestTimeout: TimeInterval = 2 * 60
+    private static let transferResourceTimeout: TimeInterval = 7 * 24 * 60 * 60
+
     private let logger = Logger(subsystem: "uk.co.petershomenet.homeos", category: "FileProvider")
     private let remoteSession: URLSession
     private let localSession: URLSession
@@ -15,13 +23,13 @@ final class HomeOSFileProviderBackend: @unchecked Sendable {
 
     init() {
         let remoteConfiguration = URLSessionConfiguration.default
-        remoteConfiguration.timeoutIntervalForRequest = 12
-        remoteConfiguration.timeoutIntervalForResource = 300
+        remoteConfiguration.timeoutIntervalForRequest = Self.transferRequestTimeout
+        remoteConfiguration.timeoutIntervalForResource = Self.transferResourceTimeout
         remoteConfiguration.waitsForConnectivity = false
 
         let localConfiguration = URLSessionConfiguration.default
-        localConfiguration.timeoutIntervalForRequest = 3
-        localConfiguration.timeoutIntervalForResource = 120
+        localConfiguration.timeoutIntervalForRequest = Self.transferRequestTimeout
+        localConfiguration.timeoutIntervalForResource = Self.transferResourceTimeout
         localConfiguration.waitsForConnectivity = false
 
         let localCertificateTrustDelegate = LocalCertificateTrustDelegate()
@@ -45,35 +53,59 @@ final class HomeOSFileProviderBackend: @unchecked Sendable {
     }
 
     func listItems(in containerIdentifier: NSFileProviderItemIdentifier) async throws -> [HomeOSFileProviderItem] {
+        try await itemListing(in: containerIdentifier).items
+    }
+
+    func itemListing(in containerIdentifier: NSFileProviderItemIdentifier) async throws -> HomeOSFileProviderItemListing {
         if containerIdentifier == .trashContainer {
-            return []
+            return HomeOSFileProviderItemListing(items: [], authoritativeParentIdentifiers: nil)
         }
         if containerIdentifier == .workingSet {
             return try await listWorkingSetItems()
         }
         let remotePath = try HomeOSFileProviderPath.remotePath(for: containerIdentifier, identityStore: identityStore)
-        return try await listEntries(path: remotePath)
+        let items = try await listEntries(path: remotePath)
             .sorted { lhs, rhs in
                 if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory && !rhs.isDirectory }
                 return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
             }
             .map { HomeOSFileProviderItem.from(entry: $0, keepDownloadedStore: keepDownloadedStore, identityStore: identityStore) }
+        return HomeOSFileProviderItemListing(items: items, authoritativeParentIdentifiers: nil)
     }
 
-    private func listWorkingSetItems() async throws -> [HomeOSFileProviderItem] {
+    private func listWorkingSetItems() async throws -> HomeOSFileProviderItemListing {
         let username = HomeOSSharedSettings.load().username.trimmingCharacters(in: .whitespacesAndNewlines)
-        var paths = ["/", "/users"]
+        var paths: [(path: String, recursive: Bool)] = [
+            ("/", false),
+            ("/HomeOS", true),
+            ("/users", false),
+        ]
         if !username.isEmpty {
-            paths.append("/users/\(username)")
+            paths.append(("/users/\(username)", true))
         }
 
         var entriesByPath: [String: FileEntry] = [:]
-        for path in paths {
-            for entry in try await listEntries(path: path) {
+        var authoritativeParents = Set<String>()
+        for source in paths {
+            authoritativeParents.insert(
+                HomeOSFileProviderPath.identifier(
+                    for: source.path,
+                    identityStore: identityStore
+                ).rawValue
+            )
+            for entry in try await listEntries(path: source.path, recursive: source.recursive) {
                 entriesByPath[HomeOSFileProviderPath.normalize(entry.path)] = entry
+                if source.recursive, entry.isDirectory {
+                    authoritativeParents.insert(
+                        HomeOSFileProviderPath.identifier(
+                            for: entry.path,
+                            identityStore: identityStore
+                        ).rawValue
+                    )
+                }
             }
         }
-        return entriesByPath.values
+        let items = entriesByPath.values
             .sorted { lhs, rhs in
                 if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory && !rhs.isDirectory }
                 return lhs.path.localizedStandardCompare(rhs.path) == .orderedAscending
@@ -85,6 +117,10 @@ final class HomeOSFileProviderBackend: @unchecked Sendable {
                     identityStore: identityStore
                 )
             }
+        return HomeOSFileProviderItemListing(
+            items: items,
+            authoritativeParentIdentifiers: authoritativeParents
+        )
     }
 
     func fetchContents(
@@ -106,18 +142,38 @@ final class HomeOSFileProviderBackend: @unchecked Sendable {
     func createItem(
         from template: NSFileProviderItem,
         contents: URL?,
+        mayAlreadyExist: Bool = false,
         onProgress: (@Sendable (Double?) async -> Void)? = nil
     ) async throws -> HomeOSFileProviderItem {
         let parentPath = try HomeOSFileProviderPath.remotePath(for: template.parentItemIdentifier, identityStore: identityStore)
         let targetPath = HomeOSFileProviderPath.join(parentPath, template.filename)
         var createdPath = targetPath
 
+        if mayAlreadyExist,
+           let existing = try await existingItem(at: targetPath),
+           representsSameItem(existing, as: template, contents: contents) {
+            logger.info("Reconciled existing File Provider item at \(targetPath, privacy: .private)")
+            return existing
+        }
+
         if isDirectory(template, contents: contents) {
-            try await withMutationClient { client in
-                let response = try await client.createDirectory(path: targetPath)
-                if !response.ok {
-                    throw APIError.requestFailed(response.error ?? "Could not create \(template.filename).")
+            do {
+                try await withMutationClient { client in
+                    let response = try await client.createDirectory(path: targetPath)
+                    if !response.ok {
+                        throw APIError.requestFailed(response.error ?? "Could not create \(template.filename).")
+                    }
                 }
+            } catch {
+                guard Self.isAlreadyExists(error),
+                      let existing = try? await existingItem(at: targetPath) else {
+                    throw error
+                }
+                guard existing.contentType.conforms(to: .folder) else {
+                    throw NSError.fileProviderErrorForCollision(with: existing)
+                }
+                logger.info("Reconciled committed File Provider directory retry at \(targetPath, privacy: .private)")
+                return existing
             }
         } else if let contents {
             let stagedContents = try stageUploadContents(contents, preferredFilename: template.filename)
@@ -252,9 +308,9 @@ final class HomeOSFileProviderBackend: @unchecked Sendable {
         return HomeOSFileProviderPath.parentIdentifier(for: path, identityStore: identityStore)
     }
 
-    private func listEntries(path: String) async throws -> [FileEntry] {
+    private func listEntries(path: String, recursive: Bool = false) async throws -> [FileEntry] {
         try await withReadClient { client in
-            let response = try await client.listDirectory(path: path)
+            let response = try await client.listDirectory(path: path, recursive: recursive)
             guard response.ok, let data = response.data else {
                 throw APIError.requestFailed(response.error ?? "Could not list \(path).")
             }
@@ -348,6 +404,56 @@ final class HomeOSFileProviderBackend: @unchecked Sendable {
             return true
         }
         return false
+    }
+
+    private func existingItem(at remotePath: String) async throws -> HomeOSFileProviderItem? {
+        let normalizedPath = HomeOSFileProviderPath.normalize(remotePath)
+        let parentPath = HomeOSFileProviderPath.parentPath(for: normalizedPath)
+        guard let entry = try await listEntries(path: parentPath).first(where: {
+            HomeOSFileProviderPath.normalize($0.path)
+                .localizedCaseInsensitiveCompare(normalizedPath) == .orderedSame
+        }) else {
+            return nil
+        }
+        return HomeOSFileProviderItem.from(
+            entry: entry,
+            keepDownloadedStore: keepDownloadedStore,
+            identityStore: identityStore
+        )
+    }
+
+    private func representsSameItem(
+        _ existing: HomeOSFileProviderItem,
+        as template: NSFileProviderItem,
+        contents: URL?
+    ) -> Bool {
+        let expectedDirectory = isDirectory(template, contents: contents)
+        let existingDirectory = existing.contentType.conforms(to: .folder)
+        guard expectedDirectory == existingDirectory else { return false }
+        guard !expectedDirectory else { return true }
+
+        let expectedSize: Int64?
+        if let contents {
+            expectedSize = try? contents.resourceValues(forKeys: [.fileSizeKey])
+                .fileSize
+                .map(Int64.init)
+        } else {
+            expectedSize = 0
+        }
+        guard let expectedSize, let existingSize = existing.documentSize?.int64Value else {
+            return false
+        }
+        return expectedSize == existingSize
+    }
+
+    private static func isAlreadyExists(_ error: Error) -> Bool {
+        guard let apiError = error as? APIError,
+              case .requestFailed(let message) = apiError else {
+            return false
+        }
+        let normalized = message.lowercased()
+        return normalized.contains("already exists")
+            || normalized.contains("name already taken")
     }
 
     private func ensureCurrentVersion(

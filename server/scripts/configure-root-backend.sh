@@ -67,7 +67,7 @@ User=root
 Group=root
 WorkingDirectory=$INSTALL_DIR/app
 Environment=HOME_OS_CONFIG=$INSTALL_DIR/config/config.yaml
-ExecStart=$INSTALL_DIR/app/venv/bin/gunicorn --bind [::]:443 --bind [::]:4443 --workers 3 --worker-class gevent --no-control-socket --certfile $INSTALL_DIR/config/tls/cert.pem --keyfile $INSTALL_DIR/config/tls/key.pem --access-logfile $INSTALL_DIR/logs/access.log --error-logfile $INSTALL_DIR/logs/error.log home_os.app:create_app()
+ExecStart=$INSTALL_DIR/app/venv/bin/gunicorn --bind [::]:443 --workers 3 --worker-class gevent --no-control-socket --certfile $INSTALL_DIR/config/tls/cert.pem --keyfile $INSTALL_DIR/config/tls/key.pem --access-logfile $INSTALL_DIR/logs/access.log --error-logfile $INSTALL_DIR/logs/error.log home_os.app:create_app()
 Restart=always
 RestartSec=5
 UMask=0077
@@ -88,14 +88,42 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 WantedBy=multi-user.target
 UNIT
 
+cat > /etc/systemd/system/home-os-http-redirect.service <<UNIT
+[Unit]
+Description=Home OS HTTP to HTTPS Redirect
+After=network.target
+Before=home-os.service
+
+[Service]
+Type=simple
+User=$SERVICE_USER
+Group=$SERVICE_USER
+WorkingDirectory=$INSTALL_DIR/app
+ExecStart=$INSTALL_DIR/app/venv/bin/python -m home_os.http_redirect
+Restart=always
+RestartSec=5
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
 rm -f \
     /etc/sudoers.d/homeos \
     /etc/polkit-1/rules.d/50-home-os-media.rules \
     /etc/systemd/system/home-os.service.d/media-helper.conf
 
 systemctl daemon-reload
-systemctl enable home-os
+systemctl enable home-os home-os-http-redirect
 systemctl restart home-os
+systemctl restart home-os-http-redirect
 systemctl is-active --quiet home-os
+systemctl is-active --quiet home-os-http-redirect
 
 echo "Home OS root backend configured successfully."

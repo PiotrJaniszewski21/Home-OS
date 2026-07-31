@@ -21,7 +21,7 @@ struct SettingsView: View {
             Section("Server") {
                 TextField("Domain URL", text: $serverURL, prompt: Text("https://home.example.com"))
                     .textFieldStyle(.roundedBorder)
-                TextField("Local URL", text: $localServerURL, prompt: Text("Auto-discovered, or enter https://192.168.1.20:4443"))
+                TextField("Local URL", text: $localServerURL, prompt: Text("Auto-discovered, or enter https://192.168.1.20"))
                     .textFieldStyle(.roundedBorder)
                 HStack {
                     Button {

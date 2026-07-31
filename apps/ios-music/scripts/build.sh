@@ -40,14 +40,38 @@ case "$MODE" in
       build
     ;;
   device)
+    DEVICE_ID="${HOMEMUSIC_DEVICE_ID:-}"
+    if [[ -z "$DEVICE_ID" ]]; then
+      DEVICE_ID="$(
+        xcodebuild \
+          -project HomeMusic.xcodeproj \
+          -scheme HomeMusic \
+          -showdestinations |
+          awk -F'id:' '
+            /platform:iOS,/ && !/placeholder/ {
+              split($2, fields, ",")
+              gsub(/^[[:space:]]+|[[:space:]]+$/, "", fields[1])
+              print fields[1]
+              exit
+            }
+          '
+      )"
+    fi
+    if [[ -z "$DEVICE_ID" ]]; then
+      echo "No connected physical iPhone found. Connect and unlock the iPhone, then try again." >&2
+      exit 1
+    fi
+
     xcodebuild \
       -project HomeMusic.xcodeproj \
       -scheme HomeMusic \
       -configuration Debug \
-      -destination 'generic/platform=iOS' \
+      -destination "platform=iOS,id=$DEVICE_ID" \
       -derivedDataPath "$PROJECT_DIR/.build/device" \
       -allowProvisioningUpdates \
+      -allowProvisioningDeviceRegistration \
       build
+    echo "HomeMusic built for iPhone $DEVICE_ID"
     ;;
   *)
     echo "usage: $0 [mac|simulator|device]" >&2

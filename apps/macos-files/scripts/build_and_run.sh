@@ -120,12 +120,12 @@ build_without_signing() {
 
 open_app() {
   [[ -d "$APP_BUNDLE" ]] || build_app
-  /usr/bin/open -n "$APP_BUNDLE"
+  /usr/bin/open "$APP_BUNDLE"
 }
 
 open_app_with_args() {
   [[ -d "$APP_BUNDLE" ]] || build_app
-  /usr/bin/open -n "$APP_BUNDLE" --args "$@"
+  /usr/bin/open "$APP_BUNDLE" --args "$@"
 }
 
 register_app_and_provider() {

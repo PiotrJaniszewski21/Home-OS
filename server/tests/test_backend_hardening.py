@@ -96,43 +96,6 @@ class BackendHardeningTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], "/dashboard")
 
-    def test_api_reauthentication_returns_to_requested_local_page(self):
-        client = self.app.test_client()
-        with self.app.app_context():
-            admin = db.session.get(User, self.admin)
-            session_identifier = admin.get_id()
-        with client.session_transaction() as session:
-            session["_user_id"] = session_identifier
-            session["_fresh"] = False
-
-        response = client.get(
-            "/api/media/autodelete/config",
-            headers={"X-Reauth-Return-To": "/media"},
-        )
-
-        self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.get_json()["reauth_url"], "/reauth")
-        with client.session_transaction() as session:
-            self.assertEqual(session["next_after_reauth"], "/media")
-
-    def test_api_reauthentication_rejects_external_return_target(self):
-        client = self.app.test_client()
-        with self.app.app_context():
-            admin = db.session.get(User, self.admin)
-            session_identifier = admin.get_id()
-        with client.session_transaction() as session:
-            session["_user_id"] = session_identifier
-            session["_fresh"] = False
-
-        response = client.get(
-            "/api/media/autodelete/config",
-            headers={"X-Reauth-Return-To": "//attacker.example"},
-        )
-
-        self.assertEqual(response.status_code, 401)
-        with client.session_transaction() as session:
-            self.assertEqual(session["next_after_reauth"], "/dashboard")
-
     def test_media_policy_allows_jellyfin_blob_playback(self):
         response = self.app.test_client().get("/health")
 

@@ -2,8 +2,8 @@
 
 ## Network
 - **Local IP**: 192.168.0.8
-- **Port**: 4443 (HTTPS, self-signed certificate)
-- **URL**: `https://192.168.0.8:4443`
+- **Port**: 443 (HTTPS, self-signed certificate)
+- **URL**: `https://192.168.0.8`
 - **Remote URL** (when Cloudflare tunnel is active): The quick tunnel URL changes each time. For permanent access, set up a named tunnel with a domain.
 
 ## Authentication

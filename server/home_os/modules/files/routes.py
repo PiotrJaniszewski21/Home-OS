@@ -193,11 +193,17 @@ def browse(filepath=""):
         resolved = svc._resolve_and_validate(path)
         return send_file(resolved, as_attachment=True, download_name=resolved.name)
 
-    entries = svc.list_directory(
-        path,
-        sort_by=request.args.get("sort", "name"),
-        reverse=request.args.get("reverse", "").lower() == "true",
-    )
+    try:
+        if request.args.get("recursive", "").lower() in ("1", "true"):
+            entries = svc.list_directory_recursive(path)
+        else:
+            entries = svc.list_directory(
+                path,
+                sort_by=request.args.get("sort", "name"),
+                reverse=request.args.get("reverse", "").lower() == "true",
+            )
+    except OverflowError as error:
+        return jsonify({"ok": False, "error": str(error)}), 413
 
     if _wants_json_response():
         return jsonify({"ok": True, "data": {"path": path, "entries": entries}})

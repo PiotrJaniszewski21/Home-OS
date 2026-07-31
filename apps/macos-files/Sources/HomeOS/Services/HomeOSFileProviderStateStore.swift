@@ -22,7 +22,10 @@ final class HomeOSFileProviderIdentityStore: @unchecked Sendable {
             if let rawIdentifier = paths[path] {
                 return NSFileProviderItemIdentifier(rawIdentifier)
             }
-            let identifier = NSFileProviderItemIdentifier(path)
+            let rawIdentifier = paths.values.contains(path)
+                ? uniqueIdentifier(excluding: Set(paths.values))
+                : path
+            let identifier = NSFileProviderItemIdentifier(rawIdentifier)
             paths[path] = identifier.rawValue
             saveLocked(paths)
             return identifier
@@ -69,6 +72,7 @@ final class HomeOSFileProviderIdentityStore: @unchecked Sendable {
             for path in moved.keys {
                 paths.removeValue(forKey: path)
             }
+            paths = paths.filter { $0.value != rootIdentifier.rawValue }
             for (path, identifier) in moved {
                 let suffix = String(path.dropFirst(oldPath.count))
                 paths[newPath + suffix] = identifier
@@ -92,11 +96,49 @@ final class HomeOSFileProviderIdentityStore: @unchecked Sendable {
     }
 
     private func loadLocked() -> [String: String] {
-        defaults?.dictionary(forKey: defaultsKey) as? [String: String] ?? [:]
+        let stored = defaults?.dictionary(forKey: defaultsKey) as? [String: String] ?? [:]
+        let repaired = repairDuplicateIdentifiers(in: stored)
+        if repaired != stored {
+            saveLocked(repaired)
+            fileProviderStateLogger.warning("Repaired duplicate File Provider path identifiers")
+        }
+        return repaired
     }
 
     private func saveLocked(_ paths: [String: String]) {
         defaults?.set(paths, forKey: defaultsKey)
+    }
+
+    private func repairDuplicateIdentifiers(in paths: [String: String]) -> [String: String] {
+        let groupedPaths = Dictionary(grouping: paths.keys) { paths[$0] ?? "" }
+        var repaired = paths
+        var occupiedIdentifiers = Set(paths.values)
+
+        for identifier in groupedPaths.keys.sorted() {
+            guard let matchingPaths = groupedPaths[identifier], matchingPaths.count > 1 else {
+                continue
+            }
+            let orderedPaths = matchingPaths.sorted { lhs, rhs in
+                if lhs == identifier { return true }
+                if rhs == identifier { return false }
+                return lhs.localizedStandardCompare(rhs) == .orderedAscending
+            }
+            for path in orderedPaths.dropFirst() {
+                let replacement = uniqueIdentifier(excluding: occupiedIdentifiers)
+                repaired[path] = replacement
+                occupiedIdentifiers.insert(replacement)
+            }
+        }
+        return repaired
+    }
+
+    private func uniqueIdentifier(excluding occupied: Set<String>) -> String {
+        while true {
+            let candidate = "homeos-\(UUID().uuidString.lowercased())"
+            if !occupied.contains(candidate) {
+                return candidate
+            }
+        }
     }
 }
 
@@ -152,7 +194,7 @@ final class HomeOSFileProviderSnapshotStore: @unchecked Sendable {
         containerIdentifier: String,
         from anchor: Data,
         current snapshots: [HomeOSFileProviderSnapshot],
-        preserveMissingItems: Bool = false
+        authoritativeParentIdentifiers: Set<String>? = nil
     ) throws -> HomeOSFileProviderChangeSet {
         try lock.withLock {
             var histories = loadLocked()
@@ -168,8 +210,10 @@ final class HomeOSFileProviderSnapshotStore: @unchecked Sendable {
             }
 
             var current = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.itemIdentifier, $0) })
-            if preserveMissingItems {
-                for (identifier, snapshot) in previousItems where current[identifier] == nil {
+            if let authoritativeParentIdentifiers {
+                for (identifier, snapshot) in previousItems
+                where current[identifier] == nil
+                    && !authoritativeParentIdentifiers.contains(snapshot.parentIdentifier) {
                     current[identifier] = snapshot
                 }
             }

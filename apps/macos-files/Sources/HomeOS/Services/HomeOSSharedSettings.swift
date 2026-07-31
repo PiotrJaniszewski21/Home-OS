@@ -24,8 +24,8 @@ struct HomeOSSharedSettings: Codable, Equatable, Sendable {
         authToken: String,
         username: String
     ) {
-        self.serverURL = serverURL
-        self.localServerURL = localServerURL
+        self.serverURL = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.localServerURL = Self.normalizedLocalURL(localServerURL)
         self.preferLocalServer = preferLocalServer
         self.authToken = authToken
         self.username = username
@@ -43,7 +43,11 @@ struct HomeOSSharedSettings: Codable, Equatable, Sendable {
             }
         }
 
-        if let settings = SharedSettingsKeychain.load(), settings.hasStoredValues {
+        if let storedSettings = SharedSettingsKeychain.load(), storedSettings.hasStoredValues {
+            let settings = storedSettings.normalized()
+            if settings != storedSettings {
+                SharedSettingsKeychain.save(settings)
+            }
             migrateIfNeeded(settings, primaryDefaults: primaryDefaults)
             removeLegacyTokens()
             logLoaded(settings, source: "keychain")
@@ -113,6 +117,21 @@ struct HomeOSSharedSettings: Codable, Equatable, Sendable {
 
     private var hasStoredValues: Bool {
         !serverURL.isEmpty || !localServerURL.isEmpty || !authToken.isEmpty || !username.isEmpty
+    }
+
+    private func normalized() -> HomeOSSharedSettings {
+        HomeOSSharedSettings(
+            serverURL: serverURL,
+            localServerURL: localServerURL,
+            preferLocalServer: preferLocalServer,
+            authToken: authToken,
+            username: username
+        )
+    }
+
+    private static func normalizedLocalURL(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ConnectionEndpointResolver.normalizedURL(trimmed) ?? trimmed
     }
 
     private init(defaults: UserDefaults) {

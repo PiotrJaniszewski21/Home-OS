@@ -17,6 +17,7 @@ final class FileProviderDomainServiceTests: XCTestCase {
             [
                 NSFileProviderItemIdentifier.rootContainer.rawValue,
                 NSFileProviderItemIdentifier.workingSet.rawValue,
+                "/HomeOS",
                 "/users",
                 "/users/Peter",
             ]
@@ -36,6 +37,7 @@ final class FileProviderDomainServiceTests: XCTestCase {
             [
                 NSFileProviderItemIdentifier.rootContainer.rawValue,
                 NSFileProviderItemIdentifier.workingSet.rawValue,
+                "/HomeOS",
                 "/users",
                 "/users/peter",
             ]
@@ -61,6 +63,30 @@ final class FileProviderDomainServiceTests: XCTestCase {
 
         XCTAssertFalse(identifiers.map(\.rawValue).contains("/users/not-a-folder"))
         XCTAssertEqual(identifiers.last?.rawValue, "/users/Peter")
+    }
+
+    func testRemoteRefreshIncludesTopLevelHomeFolders() {
+        let identifiers = FileProviderDomainService.remoteChangeContainerIdentifiers(
+            username: "",
+            userDirectoryEntries: [],
+            homeDirectoryEntries: [
+                entry(name: "Downloads", path: "/HomeOS/Downloads"),
+                entry(name: "Series", path: "/HomeOS/Series"),
+                entry(name: "readme.txt", path: "/HomeOS/readme.txt", isDirectory: false),
+            ]
+        )
+
+        XCTAssertEqual(
+            identifiers.map(\.rawValue),
+            [
+                NSFileProviderItemIdentifier.rootContainer.rawValue,
+                NSFileProviderItemIdentifier.workingSet.rawValue,
+                "/HomeOS",
+                "/users",
+                "/HomeOS/Downloads",
+                "/HomeOS/Series",
+            ]
+        )
     }
 
     private func entry(name: String, path: String, isDirectory: Bool = true) -> FileEntry {

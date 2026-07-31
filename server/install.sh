@@ -194,26 +194,55 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 WantedBy=multi-user.target
 EOF
 
-# Upgrade existing auto-delete timers to the root backend model. Older units ran
-# as "homeos" and could not read the root-only Home OS configuration.
-if [ -f /etc/systemd/system/home-os-autodelete.service ]; then
-    cat > /etc/systemd/system/home-os-autodelete.service << EOF
+cat > /etc/systemd/system/home-os-http-redirect.service << EOF
 [Unit]
-Description=Home OS Media Auto-Delete
-After=network.target plexmediaserver.service sonarr.service radarr.service
+Description=Home OS HTTP to HTTPS Redirect
+After=network.target
+Before=home-os.service
 
 [Service]
-Type=oneshot
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/app/venv/bin/python -c "import sys; sys.path.insert(0, '$INSTALL_DIR/app'); from home_os.services.media_cleanup import run_cleanup_cycle; run_cleanup_cycle()"
-User=root
-UMask=0002
+Type=simple
+User=$USER
+Group=$GROUP
+WorkingDirectory=$INSTALL_DIR/app
+ExecStart=$INSTALL_DIR/app/venv/bin/python -m home_os.http_redirect
+Restart=always
+RestartSec=5
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=$INSTALL_DIR/data $INSTALL_DIR/storage
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
 EOF
+
+# Remove the retired media auto-delete feature from upgraded installations.
+systemctl stop home-os-autodelete.timer home-os-autodelete.service 2>/dev/null || true
+systemctl disable home-os-autodelete.timer 2>/dev/null || true
+rm -f \
+    /etc/systemd/system/home-os-autodelete.timer \
+    /etc/systemd/system/home-os-autodelete.service \
+    /etc/systemd/system/home-os-autodelete.service.d/override.conf
+rmdir /etc/systemd/system/home-os-autodelete.service.d 2>/dev/null || true
+rm -f "$INSTALL_DIR/data"/autodelete_state*.json*
+if [ -f "$INSTALL_DIR/data/home_os.db" ]; then
+    "$INSTALL_DIR/app/venv/bin/python" - "$INSTALL_DIR/data/home_os.db" <<'PY'
+import sqlite3
+import sys
+
+database = sqlite3.connect(sys.argv[1])
+with database:
+    database.execute("DELETE FROM settings WHERE key LIKE 'autodelete_%'")
+    database.execute(
+        "DELETE FROM settings WHERE key IN (?, ?, ?)",
+        ("plex_token", "sonarr_api_key", "radarr_api_key"),
+    )
+database.close()
+PY
 fi
 
 # Set permissions
@@ -236,9 +265,8 @@ rm -f "$INSTALL_DIR/config/smb_shares.conf"
 
 # Enable and start
 systemctl daemon-reload
-systemctl reset-failed home-os-autodelete.service 2>/dev/null || true
-systemctl enable home-os
-systemctl start home-os
+systemctl enable home-os home-os-http-redirect
+systemctl start home-os home-os-http-redirect
 
 echo ""
 echo "============================================"

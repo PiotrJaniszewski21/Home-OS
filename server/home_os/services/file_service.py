@@ -13,6 +13,8 @@ from home_os.models.trash import TrashEntry
 
 
 class FileService:
+    MAX_RECURSIVE_ENTRIES = 50000
+
     def __init__(
         self,
         storage_root,
@@ -161,6 +163,59 @@ class FileService:
             "modified": lambda e: (not e["is_dir"], e["modified"]),
         }
         entries.sort(key=key_map.get(sort_by, key_map["name"]), reverse=reverse)
+        return entries
+
+    def list_directory_recursive(self, relative_path="/"):
+        """List a complete directory tree without following symlinks."""
+        resolved = self._resolve_and_validate(relative_path)
+
+        if not resolved.exists():
+            raise FileNotFoundError(f"Directory not found: {relative_path}")
+        if not resolved.is_dir():
+            raise NotADirectoryError(f"Not a directory: {relative_path}")
+
+        storage_root = self.storage_root.resolve()
+        entries = []
+
+        def raise_walk_error(error):
+            raise error
+
+        for root, dirs, files in os.walk(
+            resolved,
+            followlinks=False,
+            onerror=raise_walk_error,
+        ):
+            root_path = Path(root)
+            dirs[:] = sorted(
+                name for name in dirs
+                if not (root_path / name).is_symlink()
+            )
+            for name in dirs + sorted(files):
+                item = root_path / name
+                if item.is_symlink():
+                    continue
+                item_stat = item.stat()
+                item_path = "/" + item.relative_to(storage_root).as_posix()
+                is_directory = item.is_dir()
+                entries.append({
+                    "name": item.name,
+                    "path": item_path,
+                    "is_dir": is_directory,
+                    "size": item_stat.st_size if not is_directory else None,
+                    "modified": datetime.fromtimestamp(
+                        item_stat.st_mtime,
+                        tz=timezone.utc,
+                    ).isoformat(),
+                    "extension": (
+                        item.suffix.lstrip(".").lower()
+                        if not is_directory else None
+                    ),
+                })
+
+                if len(entries) > self.MAX_RECURSIVE_ENTRIES:
+                    raise OverflowError("Directory tree is too large to enumerate safely")
+
+        entries.sort(key=lambda entry: entry["path"].lower())
         return entries
 
     def get_file_info(self, relative_path):

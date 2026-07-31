@@ -85,6 +85,34 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-token")
     }
 
+    func testRecursiveDirectoryListingUsesBoundedTreeQuery() async throws {
+        let session = makeMockSession()
+        let client = try APIClient(baseURL: "https://example.test", authToken: "test-token", session: session)
+
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            let body = #"{"ok":true,"data":{"path":"/HomeOS","entries":[]}}"#.data(using: .utf8)!
+            return (response, body)
+        }
+
+        _ = try await client.listDirectory(path: "/HomeOS", recursive: true)
+
+        let request = try XCTUnwrap(MockURLProtocol.lastRequest)
+        XCTAssertEqual(request.url?.path, "/files/HomeOS")
+        XCTAssertEqual(
+            URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first(where: { $0.name == "recursive" })?
+                .value,
+            "1"
+        )
+    }
+
     func testNetworkSpeedUsesExpectedAPIPath() async throws {
         let session = makeMockSession()
         let client = try APIClient(baseURL: "https://example.test", authToken: "test-token", session: session)

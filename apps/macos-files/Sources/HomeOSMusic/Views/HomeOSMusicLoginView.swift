@@ -34,7 +34,7 @@ struct HomeOSMusicLoginView: View {
 
             Form {
                 TextField("Home OS URL", text: $serverURL, prompt: Text("https://example.com"))
-                TextField("Local URL", text: $localServerURL, prompt: Text("https://192.168.1.20:4443"))
+                TextField("Local URL", text: $localServerURL, prompt: Text("https://192.168.1.20"))
                 Toggle("Prefer local connection", isOn: $preferLocal)
                 TextField("Username", text: $username)
                 SecureField("Password", text: $password)

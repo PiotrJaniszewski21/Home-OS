@@ -264,7 +264,8 @@ final class FileProviderDomainService: ObservableObject {
         guard let manager = NSFileProviderManager(for: domain) else { return }
         let fallbackIdentifiers = Self.remoteChangeContainerIdentifiers(
             username: username,
-            userDirectoryEntries: []
+            userDirectoryEntries: [],
+            homeDirectoryEntries: []
         )
         await signalContainers(fallbackIdentifiers, using: manager)
 
@@ -276,7 +277,8 @@ final class FileProviderDomainService: ObservableObject {
             }
             let canonicalIdentifiers = Self.remoteChangeContainerIdentifiers(
                 username: username,
-                userDirectoryEntries: response.data?.entries ?? []
+                userDirectoryEntries: response.data?.entries ?? [],
+                homeDirectoryEntries: []
             )
             let fallbackValues = Set(fallbackIdentifiers.map(\.rawValue))
             await signalContainers(
@@ -285,6 +287,25 @@ final class FileProviderDomainService: ObservableObject {
             )
         } catch {
             fileProviderLogger.warning("Could not resolve the server user folder before refreshing Finder: \(error.localizedDescription, privacy: .public)")
+        }
+
+        do {
+            let response = try await client.listDirectory(path: "/HomeOS")
+            guard response.ok else {
+                throw APIError.requestFailed(response.error ?? "Could not list Home OS folders.")
+            }
+            let homeIdentifiers = Self.remoteChangeContainerIdentifiers(
+                username: "",
+                userDirectoryEntries: [],
+                homeDirectoryEntries: response.data?.entries ?? []
+            )
+            let fallbackValues = Set(fallbackIdentifiers.map(\.rawValue))
+            await signalContainers(
+                homeIdentifiers.filter { !fallbackValues.contains($0.rawValue) },
+                using: manager
+            )
+        } catch {
+            fileProviderLogger.warning("Could not resolve Home OS folders before refreshing Finder: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -304,13 +325,22 @@ final class FileProviderDomainService: ObservableObject {
 
     static func remoteChangeContainerIdentifiers(
         username: String,
-        userDirectoryEntries: [FileEntry]
+        userDirectoryEntries: [FileEntry],
+        homeDirectoryEntries: [FileEntry] = []
     ) -> [NSFileProviderItemIdentifier] {
         var identifiers: [NSFileProviderItemIdentifier] = [
             .rootContainer,
             .workingSet,
+            NSFileProviderItemIdentifier("/HomeOS"),
             NSFileProviderItemIdentifier("/users"),
         ]
+        identifiers.append(contentsOf: homeDirectoryEntries.compactMap { entry in
+            guard entry.isDirectory else { return nil }
+            let path = normalizedContainerPath(entry.path)
+            guard path != "/HomeOS", path.hasPrefix("/HomeOS/") else { return nil }
+            return NSFileProviderItemIdentifier(path)
+        })
+
         let normalizedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedUsername.isEmpty else { return identifiers }
 

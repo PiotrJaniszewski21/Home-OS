@@ -1,0 +1,4 @@
+fastapi==0.128.5
+invisible-playwright==0.4.8
+playwright-captcha==0.1.5
+uvicorn==0.40.0

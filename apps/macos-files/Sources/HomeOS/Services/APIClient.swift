@@ -35,8 +35,13 @@ final class APIClient: Sendable {
         try await get("/health")
     }
 
-    func listDirectory(path: String) async throws -> FileListResponse {
-        try await get("/files\(encodedFilePath(path))", accept: "application/json")
+    func listDirectory(path: String, recursive: Bool = false) async throws -> FileListResponse {
+        let queryItems = recursive ? [URLQueryItem(name: "recursive", value: "1")] : []
+        return try await get(
+            "/files\(encodedFilePath(path))",
+            accept: "application/json",
+            queryItems: queryItems
+        )
     }
 
     func downloadFile(path: String, onProgress: (@Sendable (Double?) async -> Void)? = nil) async throws -> Data {

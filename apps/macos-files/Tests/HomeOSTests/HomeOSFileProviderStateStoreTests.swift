@@ -23,6 +23,53 @@ final class HomeOSFileProviderStateStoreTests: XCTestCase {
         XCTAssertEqual(store.identifier(forNormalizedPath: "/Renamed/child.txt"), child)
     }
 
+    func testIdentityStoreDoesNotReuseIdentifierWhenOriginalFolderNameReturns() {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = HomeOSFileProviderIdentityStore(defaults: defaults)
+
+        let documents = store.identifier(forNormalizedPath: "/users/Peter/untitled folder")
+        store.moveTree(
+            fromNormalizedPath: "/users/Peter/untitled folder",
+            toNormalizedPath: "/users/Peter/Documents",
+            rootIdentifier: documents
+        )
+        let newUntitledFolder = store.identifier(
+            forNormalizedPath: "/users/Peter/untitled folder"
+        )
+
+        XCTAssertNotEqual(newUntitledFolder, documents)
+        XCTAssertEqual(store.path(for: documents), "/users/Peter/Documents")
+        XCTAssertEqual(
+            store.path(for: newUntitledFolder),
+            "/users/Peter/untitled folder"
+        )
+    }
+
+    func testIdentityStoreRepairsPersistedDuplicateIdentifiers() {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let reusedIdentifier = "/users/Peter/untitled folder"
+        defaults.set(
+            [
+                "/users/Peter/3D Models": reusedIdentifier,
+                "/users/Peter/Documents": reusedIdentifier,
+                "/users/Peter/untitled folder": reusedIdentifier,
+            ],
+            forKey: "HomeOSFileProviderPathIdentifiers"
+        )
+        let store = HomeOSFileProviderIdentityStore(defaults: defaults)
+
+        let models = store.identifier(forNormalizedPath: "/users/Peter/3D Models")
+        let documents = store.identifier(forNormalizedPath: "/users/Peter/Documents")
+        let untitled = store.identifier(forNormalizedPath: "/users/Peter/untitled folder")
+
+        XCTAssertEqual(Set([models, documents, untitled]).count, 3)
+        XCTAssertEqual(store.path(for: models), "/users/Peter/3D Models")
+        XCTAssertEqual(store.path(for: documents), "/users/Peter/Documents")
+        XCTAssertEqual(store.path(for: untitled), "/users/Peter/untitled folder")
+    }
+
     func testIdentityStoreCanBeClearedBetweenAccounts() {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -112,31 +159,54 @@ final class HomeOSFileProviderStateStoreTests: XCTestCase {
         XCTAssertEqual(changes.updatedIdentifiers, ["/a.txt"])
     }
 
-    func testSnapshotStoreCanPreserveMissingWorkingSetItems() throws {
+    func testSnapshotStorePreservesItemsOutsideAuthoritativeParents() throws {
         let (defaults, suiteName) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = HomeOSFileProviderSnapshotStore(defaults: defaults)
         let original = [
-            snapshot("/root-folder", fingerprint: "v1"),
-            snapshot("/nested.txt", fingerprint: "v1"),
+            snapshot("/root-folder", parent: "root", fingerprint: "v1"),
+            snapshot("/nested.txt", parent: "/unscanned", fingerprint: "v1"),
         ]
         let anchor = store.recordFullEnumeration(containerIdentifier: "working-set", snapshots: original)
 
         let changes = try store.changes(
             containerIdentifier: "working-set",
             from: anchor,
-            current: [snapshot("/root-folder", fingerprint: "v1")],
-            preserveMissingItems: true
+            current: [snapshot("/root-folder", parent: "root", fingerprint: "v1")],
+            authoritativeParentIdentifiers: ["root"]
         )
 
         XCTAssertTrue(changes.updatedIdentifiers.isEmpty)
         XCTAssertTrue(changes.deletedIdentifiers.isEmpty)
     }
 
-    private func snapshot(_ identifier: String, fingerprint: String) -> HomeOSFileProviderSnapshot {
+    func testSnapshotStoreDeletesItemsMissingFromAuthoritativeParents() throws {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = HomeOSFileProviderSnapshotStore(defaults: defaults)
+        let anchor = store.recordFullEnumeration(
+            containerIdentifier: "working-set",
+            snapshots: [snapshot("/Downloads/old", parent: "/Downloads", fingerprint: "v1")]
+        )
+
+        let changes = try store.changes(
+            containerIdentifier: "working-set",
+            from: anchor,
+            current: [],
+            authoritativeParentIdentifiers: ["/Downloads"]
+        )
+
+        XCTAssertEqual(changes.deletedIdentifiers, ["/Downloads/old"])
+    }
+
+    private func snapshot(
+        _ identifier: String,
+        parent: String = NSFileProviderItemIdentifier.rootContainer.rawValue,
+        fingerprint: String
+    ) -> HomeOSFileProviderSnapshot {
         HomeOSFileProviderSnapshot(
             itemIdentifier: identifier,
-            parentIdentifier: NSFileProviderItemIdentifier.rootContainer.rawValue,
+            parentIdentifier: parent,
             fingerprint: fingerprint
         )
     }

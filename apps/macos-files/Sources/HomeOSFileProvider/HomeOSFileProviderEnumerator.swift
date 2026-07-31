@@ -76,7 +76,8 @@ final class HomeOSFileProviderEnumerator: NSObject, NSFileProviderEnumerator {
             guard !isInvalidated else { return }
             do {
                 Self.logger.info("Enumerating changes for \(self.containerIdentifier.rawValue, privacy: .public)")
-                var items = try await backend.listItems(in: containerIdentifier)
+                let listing = try await backend.itemListing(in: containerIdentifier)
+                var items = listing.items
                 let pendingIdentifiers = snapshotStore.pendingUpdatedIdentifiers(
                     in: containerIdentifier.rawValue
                 )
@@ -93,7 +94,7 @@ final class HomeOSFileProviderEnumerator: NSObject, NSFileProviderEnumerator {
                     containerIdentifier: containerIdentifier.rawValue,
                     from: anchor.rawValue,
                     current: items.map(\.snapshot),
-                    preserveMissingItems: containerIdentifier == .workingSet
+                    authoritativeParentIdentifiers: listing.authoritativeParentIdentifiers
                 )
                 let updatedItems = items.filter { changes.updatedIdentifiers.contains($0.itemIdentifier.rawValue) }
                 let deletedIdentifiers = changes.deletedIdentifiers.map { rawValue in

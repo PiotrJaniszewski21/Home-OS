@@ -23,6 +23,9 @@ enum HomeOSFileProviderErrorMapper {
             if looksUnauthenticated(message) {
                 return NSFileProviderError(.notAuthenticated)
             }
+            if looksLikeCollision(message) {
+                return NSFileProviderError(.filenameCollision)
+            }
             return NSFileProviderError(.serverUnreachable)
         }
     }
@@ -35,5 +38,11 @@ enum HomeOSFileProviderErrorMapper {
             || lowercased.contains("sign in")
             || lowercased.contains("login")
             || lowercased.contains("html instead of json")
+    }
+
+    private static func looksLikeCollision(_ message: String) -> Bool {
+        let lowercased = message.lowercased()
+        return lowercased.contains("already exists")
+            || lowercased.contains("name already taken")
     }
 }

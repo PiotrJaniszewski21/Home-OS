@@ -88,7 +88,8 @@ final class HomeOSMusicSession: ObservableObject {
                     continue
                 }
                 self.serverURL = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-                self.localServerURL = localServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                self.localServerURL = ConnectionEndpointResolver.normalizedURL(localServerURL)
+                    ?? localServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
                 self.preferLocalServer = preferLocal
                 self.username = data.user.username
                 authToken = data.token

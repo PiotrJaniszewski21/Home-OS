@@ -180,7 +180,7 @@ struct HomeOSApp: App {
             }
 
             do {
-                try await Task.sleep(for: .seconds(30))
+                try await Task.sleep(for: .seconds(10))
             } catch {
                 return
             }
@@ -271,7 +271,37 @@ struct HomeOSApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if !Self.isRunningTests, Self.shouldTerminateDuplicateInstance() {
+            NSApp.terminate(nil)
+            return
+        }
+
         AppIcon.install()
         NSApp.setActivationPolicy(.accessory)
+    }
+
+    static func shouldTerminateDuplicateInstance(
+        currentPID: pid_t = ProcessInfo.processInfo.processIdentifier,
+        runningPIDs: [pid_t]? = nil
+    ) -> Bool {
+        let matchingPIDs: [pid_t]
+        if let runningPIDs {
+            matchingPIDs = runningPIDs
+        } else {
+            guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return false }
+            matchingPIDs = NSRunningApplication
+                .runningApplications(withBundleIdentifier: bundleIdentifier)
+                .filter { !$0.isTerminated }
+                .map(\.processIdentifier)
+        }
+
+        guard let primaryPID = matchingPIDs.min() else { return false }
+        return currentPID != primaryPID
+    }
+
+    private static var isRunningTests: Bool {
+        let environment = ProcessInfo.processInfo.environment
+        return environment.keys.contains { $0.hasPrefix("XCTest") || $0 == "XCInjectBundleInto" }
+            || Bundle.allBundles.contains { $0.bundlePath.hasSuffix(".xctest") }
     }
 }

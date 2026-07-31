@@ -32,7 +32,8 @@ final class AppState: ObservableObject {
             HomeOSFileProviderSnapshotStore.shared.clear()
         }
         self.serverURL = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.localServerURL = localServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.localServerURL = ConnectionEndpointResolver.normalizedURL(localServerURL)
+            ?? localServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
         self.preferLocalServer = preferLocalServer
         self.authToken = token
         self.username = user.username

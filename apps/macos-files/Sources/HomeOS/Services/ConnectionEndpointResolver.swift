@@ -79,13 +79,17 @@ struct ConnectionEndpointResolver: Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !trimmed.isEmpty,
-              let url = URL(string: trimmed),
-              let scheme = url.scheme?.lowercased(),
-              scheme == "https"
+              var components = URLComponents(string: trimmed),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "https",
+              components.host != nil
         else {
             return nil
         }
-        return trimmed
+        if components.port == 4443 {
+            components.port = nil
+        }
+        return components.string
     }
 
     private static func deduplicated(_ candidates: [ConnectionEndpoint]) -> [ConnectionEndpoint] {

@@ -12,7 +12,7 @@ A macOS app with two components:
 
 ## The Server
 
-Home OS runs on a Debian Linux box at `https://<ip>:4443` with a self-signed TLS cert. It has a REST API for file operations. All endpoints require `Authorization: Bearer <token>`. The token is obtained via `POST /api/login` with username/password.
+Home OS runs on a Debian Linux box at `https://<ip>` with a self-signed TLS cert. It has a REST API for file operations. All endpoints require `Authorization: Bearer <token>`. The token is obtained via `POST /api/login` with username/password.
 
 The server's API is documented in `IMPLEMENTATION.md` under "API Endpoints Used". The file listing endpoint returns JSON with entries containing `name`, `path`, `is_dir`, `size`, and `modified` fields.
 
@@ -53,7 +53,7 @@ You can either refactor the existing app or start fresh — the key new work is 
 After building and running:
 1. User launches HomeOS.app
 2. A menu bar icon appears
-3. User opens Settings, enters `https://192.168.0.8:4443`, username `Peter`, and password
+3. User opens Settings, enters `https://192.168.0.8`, username `Peter`, and password
 4. Login succeeds → "Home OS" appears in Finder's sidebar under Locations
 5. Clicking it shows the server's storage folder contents
 6. Double-clicking a file downloads it and opens it

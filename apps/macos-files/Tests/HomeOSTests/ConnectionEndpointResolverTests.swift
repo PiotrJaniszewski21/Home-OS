@@ -10,7 +10,7 @@ final class ConnectionEndpointResolverTests: XCTestCase {
         )
 
         XCTAssertEqual(candidates, [
-            ConnectionEndpoint(kind: .local, url: "https://192.168.1.20:4443"),
+            ConnectionEndpoint(kind: .local, url: "https://192.168.1.20"),
             ConnectionEndpoint(kind: .remote, url: "https://petershomenet.co.uk"),
         ])
     }
@@ -18,7 +18,7 @@ final class ConnectionEndpointResolverTests: XCTestCase {
     func testCandidatesPreferDomainBeforeLocalWhenLocalPreferenceDisabled() {
         let candidates = ConnectionEndpointResolver.candidates(
             domainURL: "https://petershomenet.co.uk",
-            localURL: "https://192.168.1.20:4443",
+            localURL: "https://192.168.1.20",
             preferLocal: false
         )
 
@@ -29,13 +29,13 @@ final class ConnectionEndpointResolverTests: XCTestCase {
         let candidates = ConnectionEndpointResolver.candidates(
             domainURL: "https://petershomenet.co.uk",
             localURL: "",
-            discoveredLocalURLs: ["https://homeos.local:4443", "https://192.168.1.20:4443"],
+            discoveredLocalURLs: ["https://homeos.local", "https://192.168.1.20"],
             preferLocal: true
         )
 
         XCTAssertEqual(candidates, [
-            ConnectionEndpoint(kind: .local, url: "https://homeos.local:4443"),
-            ConnectionEndpoint(kind: .local, url: "https://192.168.1.20:4443"),
+            ConnectionEndpoint(kind: .local, url: "https://homeos.local"),
+            ConnectionEndpoint(kind: .local, url: "https://192.168.1.20"),
             ConnectionEndpoint(kind: .remote, url: "https://petershomenet.co.uk"),
         ])
     }
@@ -56,7 +56,7 @@ final class ConnectionEndpointResolverTests: XCTestCase {
         let resolver = ConnectionEndpointResolver()
         let recorder = EndpointProbeRecorder()
         let candidates = [
-            ConnectionEndpoint(kind: .local, url: "https://192.168.1.20:4443"),
+            ConnectionEndpoint(kind: .local, url: "https://192.168.1.20"),
             ConnectionEndpoint(kind: .remote, url: "https://petershomenet.co.uk"),
         ]
 
@@ -77,18 +77,18 @@ final class ConnectionEndpointResolverTests: XCTestCase {
         let candidates = ConnectionEndpointResolver.localCandidates([
             " https://homeos.local:4443/ ",
             "ftp://homeos.local",
-            "https://homeos.local:4443",
+            "https://homeos.local",
         ])
 
         XCTAssertEqual(candidates, [
-            ConnectionEndpoint(kind: .local, url: "https://homeos.local:4443"),
+            ConnectionEndpoint(kind: .local, url: "https://homeos.local"),
         ])
     }
 
     func testResolveReportsAllFailures() async {
         let resolver = ConnectionEndpointResolver()
         let candidates = [
-            ConnectionEndpoint(kind: .local, url: "https://192.168.1.20:4443"),
+            ConnectionEndpoint(kind: .local, url: "https://192.168.1.20"),
             ConnectionEndpoint(kind: .remote, url: "https://petershomenet.co.uk"),
         ]
 
@@ -100,6 +100,17 @@ final class ConnectionEndpointResolverTests: XCTestCase {
 
     func testRejectsPlainHTTP() {
         XCTAssertNil(ConnectionEndpointResolver.normalizedURL("http://192.168.1.20:5000"))
+    }
+
+    func testMigratesLegacyPortAndPreservesOtherExplicitPorts() {
+        XCTAssertEqual(
+            ConnectionEndpointResolver.normalizedURL("https://192.168.1.20:4443"),
+            "https://192.168.1.20"
+        )
+        XCTAssertEqual(
+            ConnectionEndpointResolver.normalizedURL("https://home.example:8443"),
+            "https://home.example:8443"
+        )
     }
 }
 

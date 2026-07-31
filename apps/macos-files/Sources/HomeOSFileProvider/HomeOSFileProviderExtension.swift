@@ -64,11 +64,13 @@ final class HomeOSFileProviderExtension: NSObject, NSFileProviderReplicatedExten
         request: NSFileProviderRequest,
         completionHandler: @escaping (NSFileProviderItem?, NSFileProviderItemFields, Bool, Error?) -> Void
     ) -> Progress {
-        transferLogger.debug("File Provider create upload entry invoked")
+        let mayAlreadyExist = options.contains(.mayAlreadyExist)
+        transferLogger.debug("File Provider create upload entry invoked, may already exist: \(mayAlreadyExist, privacy: .public)")
         return progressTask(fileOperationKind: .uploading, filename: itemTemplate.filename) { [backend] progress in
             let item = try await backend.createItem(
                 from: itemTemplate,
                 contents: url,
+                mayAlreadyExist: mayAlreadyExist,
                 onProgress: { value in Self.update(progress, with: value) }
             )
             completionHandler(item, [], false, nil)
