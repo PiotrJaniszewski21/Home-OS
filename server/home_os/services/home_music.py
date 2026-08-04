@@ -1541,6 +1541,53 @@ class HomeMusicService:
     def stream_url(self, video_id):
         return self.stream_details(video_id).url
 
+    def _fast_resolve_innertube(self, video_id):
+        """Attempts high-speed direct stream URL resolution using InnerTube API (~150ms)."""
+        import json
+        import urllib.request
+        start = time.monotonic()
+        url = "https://www.youtube.com/youtubei/v1/player"
+        payload = {
+            "videoId": video_id,
+            "context": {
+                "client": {
+                    "clientName": "ANDROID_VR",
+                    "clientVersion": "1.54.1",
+                    "hl": "en",
+                    "gl": "US"
+                }
+            }
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "com.google.android.apps.youtube.vr.oculus/1.54.1 (Linux; U; Android 12; en_US)"
+        }
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers=headers,
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=4) as response:
+                data = json.loads(response.read().decode("utf-8"))
+
+            streaming_data = data.get("streamingData", {})
+            formats = streaming_data.get("adaptiveFormats", []) + streaming_data.get("formats", [])
+            audio_formats = [f for f in formats if "audio" in f.get("mimeType", "") and "url" in f]
+
+            if audio_formats:
+                best = max(audio_formats, key=lambda f: f.get("bitrate", 0))
+                stream_url = best["url"]
+                raw_duration = data.get("videoDetails", {}).get("lengthSeconds")
+                duration = float(raw_duration) if raw_duration else None
+                elapsed_ms = (time.monotonic() - start) * 1000
+                logger.info("[FAST-INNERTUBE] Resolved %s stream in %.1f ms", video_id, elapsed_ms)
+                return stream_url, duration
+        except Exception as exc:
+            logger.debug("[FAST-INNERTUBE] Fast resolution for %s bypassed: %s", video_id, exc)
+        return None, None
+
     def stream_details(self, video_id):
         video_id = self.validate_video_id(video_id)
         if self.is_track_unavailable(video_id):
@@ -1567,6 +1614,20 @@ class HomeMusicService:
                 self._store_stream_in_memory(video_id, cached)
                 self._log_stream_resolution(video_id, "shared-after-lock", started_at)
                 return cached
+
+            # Attempt ultra-fast InnerTube resolution (~150ms)
+            fast_url, fast_duration = self._fast_resolve_innertube(video_id)
+            if fast_url and self._is_allowed_stream_url(fast_url):
+                details = StreamDetails(
+                    url=fast_url,
+                    duration_seconds=fast_duration if fast_duration and fast_duration > 0 else None,
+                    expires_at=self._stream_expiry(fast_url),
+                )
+                self._store_stream_in_memory(video_id, details)
+                self._write_shared_stream(video_id, details)
+                self.clear_track_unavailable(video_id)
+                self._log_stream_resolution(video_id, "innertube-fast", started_at)
+                return details
 
             try:
                 from yt_dlp import YoutubeDL
