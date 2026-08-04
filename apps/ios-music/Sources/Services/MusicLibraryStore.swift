@@ -9,10 +9,21 @@ final class MusicLibraryStore: ObservableObject {
     @Published private(set) var playlistSuggestions: [Int: [Track]] = [:]
     @Published var message: String?
     @Published var isLoading = false
+    private var snapshotClient: APIClient?
+    private var loadedSnapshotNamespaces = Set<String>()
 
     func load(using client: APIClient?) async {
         guard let client else { return }
-        isLoading = true
+        snapshotClient = client
+        let namespace = HomeFeedStore.namespace(for: client)
+        if loadedSnapshotNamespaces.insert(namespace).inserted,
+           let snapshot = LibrarySnapshotStore.load(for: client) {
+            apply(snapshot)
+        }
+        isLoading = playlists.isEmpty
+            && likedTracks.isEmpty
+            && recentTracks.isEmpty
+            && savedAlbums.isEmpty
         defer { isLoading = false }
         async let playlistRequest = client.playlists()
         async let libraryRequest = client.library()
@@ -23,6 +34,7 @@ final class MusicLibraryStore: ObservableObject {
             likedTracks = try await libraryRequest
             recentTracks = try await historyRequest
             savedAlbums = try await albumRequest
+            persistSnapshot()
             message = nil
         } catch {
             message = error.localizedDescription
@@ -46,6 +58,7 @@ final class MusicLibraryStore: ObservableObject {
                 savedAlbums.insert(saved, at: 0)
                 message = "Added to Library"
             }
+            persistSnapshot()
         } catch {
             message = error.localizedDescription
         }
@@ -57,6 +70,7 @@ final class MusicLibraryStore: ObservableObject {
             let playlist = try await client.createPlaylist(name: name, description: description)
             playlists.insert(playlist, at: 0)
             message = "Playlist created"
+            persistSnapshot()
             return playlist
         } catch {
             message = error.localizedDescription
@@ -69,6 +83,7 @@ final class MusicLibraryStore: ObservableObject {
         do {
             try await client.deletePlaylist(playlist)
             playlists.removeAll { $0.id == playlist.id }
+            persistSnapshot()
         } catch {
             message = error.localizedDescription
         }
@@ -81,6 +96,7 @@ final class MusicLibraryStore: ObservableObject {
         do {
             replace(try await client.renamePlaylist(playlist, name: cleanedName))
             message = "Playlist renamed"
+            persistSnapshot()
             return true
         } catch {
             message = error.localizedDescription
@@ -94,6 +110,7 @@ final class MusicLibraryStore: ObservableObject {
             let updated = try await client.add(track, to: playlist)
             replace(updated)
             message = "Added to \(playlist.name)"
+            persistSnapshot()
         } catch {
             message = error.localizedDescription
         }
@@ -104,6 +121,7 @@ final class MusicLibraryStore: ObservableObject {
         do {
             let updated = try await client.remove(track, from: playlist)
             replace(updated)
+            persistSnapshot()
         } catch {
             message = error.localizedDescription
         }
@@ -135,6 +153,7 @@ final class MusicLibraryStore: ObservableObject {
                 likedTracks.removeAll { $0.id == updated.id }
                 message = "Removed from Loved Songs"
             }
+            persistSnapshot()
         } catch {
             message = error.localizedDescription
         }
@@ -148,6 +167,30 @@ final class MusicLibraryStore: ObservableObject {
         for playlist in offlinePlaylists where !playlists.contains(where: { $0.id == playlist.id }) {
             playlists.append(playlist)
         }
+    }
+
+    private func apply(_ snapshot: MusicLibrarySnapshot) {
+        let offlineOnly = playlists.filter { playlist in
+            !snapshot.playlists.contains { $0.id == playlist.id }
+        }
+        playlists = snapshot.playlists + offlineOnly
+        likedTracks = snapshot.likedTracks
+        recentTracks = snapshot.recentTracks
+        savedAlbums = snapshot.savedAlbums
+    }
+
+    private func persistSnapshot() {
+        guard let snapshotClient else { return }
+        try? LibrarySnapshotStore.save(
+            MusicLibrarySnapshot(
+                playlists: playlists,
+                likedTracks: likedTracks,
+                recentTracks: recentTracks,
+                savedAlbums: savedAlbums,
+                savedAt: Date()
+            ),
+            for: snapshotClient
+        )
     }
 
     private func replace(_ playlist: Playlist) {

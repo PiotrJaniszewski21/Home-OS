@@ -20,6 +20,9 @@ struct HomeMusicApp: App {
             .environmentObject(offlineMusic)
             .tint(.homeMusicRed)
             .preferredColorScheme(nil)
+            .onAppear {
+                AutomaticCacheRefresh.schedule()
+            }
             .onChange(of: session.isSignedIn) { _, isSignedIn in
                 if !isSignedIn {
                     player.stop()
@@ -27,6 +30,22 @@ struct HomeMusicApp: App {
                 }
             }
         }
+        .backgroundTask(.appRefresh(AutomaticCacheRefresh.identifier)) {
+            await refreshAutomaticCache()
+            AutomaticCacheRefresh.schedule()
+        }
+    }
+
+    private func refreshAutomaticCache() async {
+        guard let client = session.client,
+              let candidates = try? await client.automaticCacheCandidates() else {
+            return
+        }
+        offlineMusic.connect(client: client)
+        await offlineMusic.maintainAutomaticCache(
+            candidates: candidates,
+            force: true
+        )
     }
 }
 

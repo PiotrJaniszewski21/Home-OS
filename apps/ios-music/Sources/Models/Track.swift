@@ -23,7 +23,7 @@ struct Track: Codable, Identifiable, Hashable {
 }
 
 extension String {
-    var highResolutionMusicArtworkURL: URL? {
+    func musicArtworkURL(maximumDimension: Int) -> URL? {
         let pattern = #"=w(\d+)-h(\d+)([^?]*)$"#
         guard let expression = try? NSRegularExpression(pattern: pattern),
               let match = expression.firstMatch(
@@ -38,9 +38,9 @@ extension String {
               max(width, height) > 0 else {
             return URL(string: self)
         }
-        let maximumDimension = 1200.0
-        let scale = maximumDimension / Double(max(width, height))
-        guard scale > 1 else { return URL(string: self) }
+        let requestedDimension = Double(max(64, maximumDimension))
+        let scale = requestedDimension / Double(max(width, height))
+        guard abs(scale - 1) > 0.01 else { return URL(string: self) }
         let upgradedWidth = max(1, Int((Double(width) * scale).rounded()))
         let upgradedHeight = max(1, Int((Double(height) * scale).rounded()))
         let replacement = "=w\(upgradedWidth)-h\(upgradedHeight)\(self[suffixRange])"
@@ -51,12 +51,48 @@ extension String {
         )
         return URL(string: upgraded)
     }
+
+    var highResolutionMusicArtworkURL: URL? {
+        musicArtworkURL(maximumDimension: 1200)
+    }
 }
 
 struct APIEnvelope<Value: Decodable>: Decodable {
     let ok: Bool
     let data: Value
     let message: String?
+}
+
+struct MusicSearchResult: Codable {
+    let tracks: [Track]
+    let genre: String?
+    let recentReleases: [MusicRelease]
+    let classics: [Track]
+    let hotArtists: [ArtistSummary]
+
+    enum CodingKeys: String, CodingKey {
+        case tracks, genre, classics
+        case recentReleases = "recent_releases"
+        case hotArtists = "hot_artists"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tracks = try container.decode([Track].self, forKey: .tracks)
+        genre = try container.decodeIfPresent(String.self, forKey: .genre)
+        recentReleases = try container.decodeIfPresent(
+            [MusicRelease].self,
+            forKey: .recentReleases
+        ) ?? []
+        classics = try container.decodeIfPresent(
+            [Track].self,
+            forKey: .classics
+        ) ?? []
+        hotArtists = try container.decodeIfPresent(
+            [ArtistSummary].self,
+            forKey: .hotArtists
+        ) ?? []
+    }
 }
 
 struct LoginPayload: Decodable {
@@ -68,12 +104,16 @@ struct PlaybackPayload: Decodable {
     let directURL: String?
     let expiresIn: Int
     let durationSeconds: Double?
+    let sourceExpiresAt: TimeInterval?
+    let cacheHit: Bool
 
     enum CodingKeys: String, CodingKey {
         case path
         case directURL = "direct_url"
         case expiresIn = "expires_in"
         case durationSeconds = "duration_seconds"
+        case sourceExpiresAt = "source_expires_at"
+        case cacheHit = "cache_hit"
     }
 }
 
@@ -81,11 +121,26 @@ struct PlaybackSource {
     let url: URL
     let durationSeconds: Double?
     let fallbackURL: URL?
+    let expiresAt: Date?
+    let cacheHit: Bool
 
-    init(url: URL, durationSeconds: Double?, fallbackURL: URL? = nil) {
+    init(
+        url: URL,
+        durationSeconds: Double?,
+        fallbackURL: URL? = nil,
+        expiresAt: Date? = nil,
+        cacheHit: Bool = false
+    ) {
         self.url = url
         self.durationSeconds = durationSeconds
         self.fallbackURL = fallbackURL
+        self.expiresAt = expiresAt
+        self.cacheHit = cacheHit
+    }
+
+    func isUsable(for interval: TimeInterval = 60) -> Bool {
+        guard let expiresAt else { return true }
+        return expiresAt.timeIntervalSinceNow > interval
     }
 }
 
@@ -121,6 +176,7 @@ struct ArtistSummary: Codable, Identifiable, Hashable {
 struct MusicRelease: Codable, Identifiable, Hashable {
     let id: String
     let title: String
+    let artist: String?
     let thumbnail: String
     let year: String
     let type: String

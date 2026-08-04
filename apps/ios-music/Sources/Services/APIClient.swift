@@ -4,8 +4,11 @@ struct APIClient {
     let baseURL: URL
     let token: String
 
-    func search(_ query: String) async throws -> [Track] {
-        try await get("/api/music/search", query: [URLQueryItem(name: "q", value: query)])
+    func search(_ query: String) async throws -> MusicSearchResult {
+        try await get(
+            "/api/music/search/smart",
+            query: [URLQueryItem(name: "q", value: query)]
+        )
     }
 
     func searchArtists(_ query: String) async throws -> [ArtistSummary] {
@@ -20,6 +23,10 @@ struct APIClient {
             "/api/music/search/albums",
             query: [URLQueryItem(name: "q", value: query)]
         )
+    }
+
+    func genres() async throws -> [String] {
+        try await get("/api/music/genres")
     }
 
     func artist(_ id: String) async throws -> ArtistDetail {
@@ -66,8 +73,11 @@ struct APIClient {
         try await get("/api/music/recommendations")
     }
 
-    func homeFeed() async throws -> HomeMusicFeed {
-        try await get("/api/music/home")
+    func homeFeed(forceRefresh: Bool = false) async throws -> HomeMusicFeed {
+        let query = forceRefresh
+            ? [URLQueryItem(name: "refresh", value: "1")]
+            : []
+        return try await get("/api/music/home", query: query)
     }
 
     func recommendations(seedIDs: [String], excluding excludeIDs: [String], limit: Int = 15) async throws -> [Track] {
@@ -100,6 +110,10 @@ struct APIClient {
 
     func history() async throws -> [Track] {
         try await get("/api/music/history")
+    }
+
+    func automaticCacheCandidates() async throws -> [Track] {
+        try await get("/api/music/cache/candidates")
     }
 
     func library() async throws -> [Track] {
@@ -168,22 +182,56 @@ struct APIClient {
         )
     }
 
-    func playback(for track: Track) async throws -> PlaybackSource {
+    func playback(
+        for track: Track,
+        prefetch: Bool = false
+    ) async throws -> PlaybackSource {
+        var query = [URLQueryItem(name: "id", value: track.id)]
+        if prefetch {
+            query.append(URLQueryItem(name: "prefetch", value: "1"))
+        }
         let payload: PlaybackPayload = try await get(
             "/api/music/playback-url",
-            query: [
-                URLQueryItem(name: "id", value: track.id),
-                URLQueryItem(name: "direct", value: "1"),
-            ]
+            query: query
         )
         guard let proxyURL = URL(string: payload.path, relativeTo: baseURL)?.absoluteURL else {
             throw APIError.invalidResponse
         }
         let directURL = payload.directURL.flatMap(URL.init(string:))
+        let expiresAt: Date
+        if directURL == nil {
+            expiresAt = Date().addingTimeInterval(TimeInterval(payload.expiresIn))
+        } else if let sourceExpiresAt = payload.sourceExpiresAt {
+            expiresAt = Date(timeIntervalSince1970: sourceExpiresAt)
+        } else {
+            expiresAt = Date().addingTimeInterval(180)
+        }
         return PlaybackSource(
             url: directURL ?? proxyURL,
             durationSeconds: payload.durationSeconds,
-            fallbackURL: directURL == nil ? nil : proxyURL
+            fallbackURL: directURL == nil ? nil : proxyURL,
+            expiresAt: expiresAt,
+            cacheHit: payload.cacheHit
+        )
+    }
+
+    func prepareServerCache(for tracks: [Track]) async throws {
+        struct Body: Encodable {
+            let trackIDs: [String]
+
+            enum CodingKeys: String, CodingKey {
+                case trackIDs = "track_ids"
+            }
+        }
+        struct Result: Decodable {
+            let requested: Int
+            let cached: Int
+            let queued: Int
+        }
+        let _: Result = try await send(
+            "/api/music/cache/prepare",
+            method: "POST",
+            body: Body(trackIDs: Array(tracks.map(\.id).prefix(20)))
         )
     }
 
@@ -226,6 +274,64 @@ struct APIClient {
                 durationSeconds: track.durationSeconds,
                 playedSeconds: playedSeconds,
                 completed: completed
+            )
+        )
+    }
+
+    func recordPlaybackMetric(
+        eventID: UUID,
+        trackID: String,
+        scenario: String,
+        sourceKind: String,
+        sourceReadyMilliseconds: Int?,
+        audibleMilliseconds: Int?,
+        success: Bool,
+        fallbackUsed: Bool,
+        appVersion: String,
+        osVersion: String
+    ) async throws {
+        struct Body: Encodable {
+            let eventID: UUID
+            let trackID: String
+            let scenario: String
+            let sourceKind: String
+            let sourceReadyMilliseconds: Int?
+            let audibleMilliseconds: Int?
+            let success: Bool
+            let fallbackUsed: Bool
+            let appVersion: String
+            let osVersion: String
+
+            enum CodingKeys: String, CodingKey {
+                case eventID = "event_id"
+                case trackID = "track_id"
+                case scenario
+                case sourceKind = "source_kind"
+                case sourceReadyMilliseconds = "source_ready_ms"
+                case audibleMilliseconds = "audible_ms"
+                case success
+                case fallbackUsed = "fallback_used"
+                case appVersion = "app_version"
+                case osVersion = "os_version"
+            }
+        }
+        struct Result: Decodable {
+            let recorded: Bool
+        }
+        let _: Result = try await send(
+            "/api/music/playback-metrics",
+            method: "POST",
+            body: Body(
+                eventID: eventID,
+                trackID: trackID,
+                scenario: scenario,
+                sourceKind: sourceKind,
+                sourceReadyMilliseconds: sourceReadyMilliseconds,
+                audibleMilliseconds: audibleMilliseconds,
+                success: success,
+                fallbackUsed: fallbackUsed,
+                appVersion: appVersion,
+                osVersion: osVersion
             )
         )
     }

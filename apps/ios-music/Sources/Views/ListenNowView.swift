@@ -9,6 +9,7 @@ final class ListenNowModel: ObservableObject {
     )
     @Published var isLoading = false
     @Published var error: String?
+    private var loadedCacheIdentity: String?
 
     var isEmpty: Bool {
         feed.suggestedSongs.isEmpty
@@ -16,12 +17,21 @@ final class ListenNowModel: ObservableObject {
             && feed.newReleases.isEmpty
     }
 
-    func load(using client: APIClient?) async {
-        guard let client else { return }
+    func load(using client: APIClient?, forceRefresh: Bool = false) async {
+        guard let client, !isLoading else { return }
+        let cacheIdentity = HomeFeedStore.namespace(for: client)
+        if loadedCacheIdentity != cacheIdentity {
+            if let cached = HomeFeedStore.load(for: client) {
+                feed = cached
+            }
+            loadedCacheIdentity = cacheIdentity
+        }
         isLoading = true
         defer { isLoading = false }
         do {
-            feed = try await client.homeFeed()
+            let refreshedFeed = try await client.homeFeed(forceRefresh: forceRefresh)
+            feed = refreshedFeed
+            try? HomeFeedStore.save(refreshedFeed, for: client)
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -81,10 +91,16 @@ struct ListenNowView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
-                        Task { await model.load(using: session.client) }
+                        Task {
+                            await model.load(
+                                using: session.client,
+                                forceRefresh: true
+                            )
+                        }
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
+                    .disabled(model.isLoading)
                     Menu {
                         Button("Sign Out", role: .destructive, action: session.signOut)
                     } label: {
@@ -92,8 +108,13 @@ struct ListenNowView: View {
                     }
                 }
             }
-            .refreshable { await model.load(using: session.client) }
+            .refreshable {
+                await model.load(using: session.client, forceRefresh: true)
+            }
             .task { await model.load(using: session.client) }
+            .task(id: model.feed.suggestedSongs.map(\.id)) {
+                player.prepareForLikelyPlayback(model.feed.suggestedSongs)
+            }
             .overlay {
                 if model.isLoading && model.isEmpty {
                     ProgressView("Personalising Listen Now…")

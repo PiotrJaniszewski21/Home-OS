@@ -1,0 +1,33 @@
+[Unit]
+Description=Home OS music background cache maintenance
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=@INSTALL_DIR@/app
+Environment=HOME_OS_CONFIG=@INSTALL_DIR@/config/config.yaml
+Environment=HOME_OS_MUSIC_AUDIO_CACHE_DIR=/var/cache/home-os/music-audio
+Environment=HOME_OS_MUSIC_AUDIO_CACHE_MAX_BYTES=107374182400
+Environment=HOME_OS_MUSIC_AUDIO_CACHE_TARGET_BYTES=96636764160
+Environment=HOME_OS_MUSIC_AUDIO_WARM_LIMIT=40
+Environment=HOME_OS_MUSIC_FEED_AUDIO_WARM_LIMIT=20
+Environment=HOME_OS_MUSIC_FEED_CACHE_DIR=/run/home-os/music-feeds
+Environment=HOME_OS_MUSIC_GENRE_CACHE_DIR=/var/cache/home-os/music-genres
+Environment=HOME_OS_MUSIC_METADATA_CACHE_DIR=/var/cache/home-os/music-metadata
+Environment=HOME_OS_YTDLP_CACHE_DIR=/var/cache/home-os/yt-dlp
+CacheDirectory=home-os
+CacheDirectoryMode=0700
+ExecStart=@INSTALL_DIR@/app/venv/bin/python -m home_os.music_cache_maintenance
+TimeoutStartSec=45m
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

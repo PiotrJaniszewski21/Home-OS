@@ -44,6 +44,11 @@ final class OfflineMusicStore: ObservableObject {
     private var albumRecords: [String: OfflineAlbumRecord] = [:]
     private var audioDownloadsInProgress = Set<String>()
     private var rootURL: URL?
+    private let automaticCache = AutomaticMusicCache()
+
+    var automaticMaintenanceDue: Bool {
+        automaticCache.maintenanceDue
+    }
 
     var downloadedTracks: [Track] {
         trackRecords.values
@@ -75,6 +80,7 @@ final class OfflineMusicStore: ObservableObject {
         rootURL = support.appending(path: "OfflineMusic/\(digest)", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: tracksURL, withIntermediateDirectories: true)
         loadManifests()
+        automaticCache.connect(client: client)
     }
 
     func disconnect() {
@@ -92,6 +98,7 @@ final class OfflineMusicStore: ObservableObject {
         activeTrackIDs = []
         audioDownloadsInProgress = []
         errorMessage = nil
+        automaticCache.disconnect()
     }
 
     func isDownloaded(_ track: Track) -> Bool {
@@ -165,7 +172,21 @@ final class OfflineMusicStore: ObservableObject {
 
     func localURL(for track: Track) -> URL? {
         let url = fileURL(trackID: track.id)
-        return fileExists(trackID: track.id) ? url : nil
+        if fileExists(trackID: track.id) {
+            return url
+        }
+        return automaticCache.localURL(for: track)
+    }
+
+    func cacheAutomatically(_ tracks: [Track]) async {
+        await automaticCache.cache(tracks)
+    }
+
+    func maintainAutomaticCache(
+        candidates: [Track],
+        force: Bool = false
+    ) async {
+        await automaticCache.maintain(candidates: candidates, force: force)
     }
 
     func download(_ track: Track) async {
@@ -307,6 +328,10 @@ final class OfflineMusicStore: ObservableObject {
 
     private func ensureAudioFile(for track: Track) async throws {
         if fileExists(trackID: track.id) { return }
+        let destination = fileURL(trackID: track.id)
+        if automaticCache.promote(track, to: destination) {
+            return
+        }
         while audioDownloadsInProgress.contains(track.id) {
             try await Task.sleep(for: .milliseconds(150))
             if fileExists(trackID: track.id) { return }
@@ -319,7 +344,6 @@ final class OfflineMusicStore: ObservableObject {
         for attempt in 0..<3 {
             do {
                 let source = try await client.downloadSource(for: track)
-                let destination = fileURL(trackID: track.id)
                 try await downloadFile(from: source, to: destination)
                 return
             } catch is CancellationError {

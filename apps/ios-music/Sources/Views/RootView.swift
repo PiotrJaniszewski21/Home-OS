@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct RootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var session: AppSession
     @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var offlineMusic: OfflineMusicStore
@@ -17,13 +18,25 @@ struct RootView: View {
                 }
                 .sheet(isPresented: $showNowPlaying) {
                     NowPlayingView()
+                        .environmentObject(session)
+                        .environmentObject(player)
+                        .environmentObject(offlineMusic)
+                        .environmentObject(library)
+                        .environmentObject(radio)
                         .presentationDetents([.large])
                         .presentationDragIndicator(.visible)
+                        .presentationBackground {
+                            PlayerBackground(url: player.currentTrack?.thumbnail)
+                        }
                         .interactiveDismissDisabled(false)
                 }
                 .environmentObject(library)
                 .environmentObject(radio)
                 .task { await prepare() }
+                .onChange(of: scenePhase) { _, phase in
+                    guard phase == .active else { return }
+                    Task { await maintainAutomaticCache() }
+                }
         } else {
             tabView
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -33,13 +46,25 @@ struct RootView: View {
                 }
                 .sheet(isPresented: $showNowPlaying) {
                     NowPlayingView()
+                        .environmentObject(session)
+                        .environmentObject(player)
+                        .environmentObject(offlineMusic)
+                        .environmentObject(library)
+                        .environmentObject(radio)
                         .presentationDetents([.large])
                         .presentationDragIndicator(.visible)
+                        .presentationBackground {
+                            PlayerBackground(url: player.currentTrack?.thumbnail)
+                        }
                         .interactiveDismissDisabled(false)
                 }
                 .environmentObject(library)
                 .environmentObject(radio)
                 .task { await prepare() }
+                .onChange(of: scenePhase) { _, phase in
+                    guard phase == .active else { return }
+                    Task { await maintainAutomaticCache() }
+                }
         }
     }
 
@@ -49,6 +74,8 @@ struct RootView: View {
                 .tabItem { Label("Listen Now", systemImage: "play.circle.fill") }
             SearchView()
                 .tabItem { Label("Search", systemImage: "magnifyingglass") }
+            GenresView()
+                .tabItem { Label("Genres", systemImage: "square.grid.2x2.fill") }
             RadioView()
                 .tabItem { Label("Radio", systemImage: "radio.fill") }
             LibraryView()
@@ -65,6 +92,19 @@ struct RootView: View {
         _ = await (libraryLoad, radioLoad)
         offlineMusic.reconcile(playlists: library.playlists)
         await offlineMusic.resumeIncompleteDownloads(playlists: library.playlists)
+        await maintainAutomaticCache()
+    }
+
+    private func maintainAutomaticCache(force: Bool = false) async {
+        guard force || offlineMusic.automaticMaintenanceDue,
+              let client = session.client,
+              let candidates = try? await client.automaticCacheCandidates() else {
+            return
+        }
+        await offlineMusic.maintainAutomaticCache(
+            candidates: candidates,
+            force: force
+        )
     }
 }
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh Home OS music caches hourly
+
+[Timer]
+OnBootSec=10m
+OnUnitActiveSec=1h
+RandomizedDelaySec=10m
+AccuracySec=1m
+Unit=home-os-music-cache.service
+
+[Install]
+WantedBy=timers.target

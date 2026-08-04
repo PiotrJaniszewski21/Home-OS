@@ -416,23 +416,22 @@ private struct AppleMusicScrubber: View {
     }
 }
 
-private struct PlayerBackground: View {
+struct PlayerBackground: View {
     let url: String?
+    @State private var artworkImage: UIImage?
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
                 Color(uiColor: .systemBackground)
-                if let url, let artworkURL = URL(string: url) {
-                    AsyncImage(url: artworkURL) { image in
-                        image
+                if let artworkImage {
+                    Image(uiImage: artworkImage)
                             .resizable()
                             .scaledToFill()
                             .frame(width: proxy.size.width, height: proxy.size.height)
                             .clipped()
                             .blur(radius: 60)
                             .opacity(0.38)
-                    } placeholder: { Color.clear }
                 }
                 Rectangle().fill(.ultraThinMaterial)
                 LinearGradient(
@@ -443,6 +442,14 @@ private struct PlayerBackground: View {
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .clipped()
+        }
+        .task(id: url) {
+            artworkImage = nil
+            guard let url,
+                  let artworkURL = url.highResolutionMusicArtworkURL else {
+                return
+            }
+            artworkImage = await ArtworkCacheStore.shared.image(for: artworkURL)
         }
     }
 }

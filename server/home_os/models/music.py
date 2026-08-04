@@ -56,6 +56,34 @@ class MusicListen(db.Model):
         }
 
 
+class MusicPlaybackMetric(db.Model):
+    __tablename__ = "music_playback_metrics"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.String(36), nullable=False, unique=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    track_id = db.Column(db.String(11), nullable=False)
+    scenario = db.Column(db.String(32), nullable=False, index=True)
+    source_kind = db.Column(db.String(32), nullable=False, index=True)
+    source_ready_ms = db.Column(db.Integer, nullable=True)
+    audible_ms = db.Column(db.Integer, nullable=True)
+    success = db.Column(db.Boolean, nullable=False, default=True)
+    fallback_used = db.Column(db.Boolean, nullable=False, default=False)
+    app_version = db.Column(db.String(32), nullable=False, default="")
+    os_version = db.Column(db.String(64), nullable=False, default="")
+    recorded_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+
+
 class MusicPlaylist(db.Model):
     __tablename__ = "music_playlists"
 

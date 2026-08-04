@@ -15,7 +15,10 @@ final class AppSession: ObservableObject {
             if let server = try CredentialStore.load(account: "server"),
                let token = try CredentialStore.load(account: "token"),
                let url = Self.validServerURL(server) {
-                serverText = server
+                serverText = url.absoluteString
+                if server != url.absoluteString {
+                    try CredentialStore.save(url.absoluteString, account: "server")
+                }
                 client = APIClient(baseURL: url, token: token)
                 isSignedIn = true
             }
@@ -107,6 +110,9 @@ final class AppSession: ObservableObject {
             string: value.trimmingCharacters(in: .whitespacesAndNewlines)
         ), components.scheme?.lowercased() == "https", components.host != nil else {
             return nil
+        }
+        if components.port == 4443 {
+            components.port = nil
         }
         components.path = ""
         components.query = nil

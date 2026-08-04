@@ -32,6 +32,9 @@ targets:
           - UIInterfaceOrientationPortrait
         UIBackgroundModes:
           - audio
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - uk.co.petershomenet.homemusic.cache-refresh
         NSLocalNetworkUsageDescription: HomeMusic can connect directly to your Home OS server on your local network.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoadsForMedia: true

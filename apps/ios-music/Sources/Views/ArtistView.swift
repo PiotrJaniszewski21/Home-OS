@@ -8,10 +8,26 @@ final class ArtistModel: ObservableObject {
 
     func load(id: String, using client: APIClient?) async {
         guard let client else { return }
-        isLoading = true
+        let key = "artist:\(id)"
+        if let cached = await CatalogCacheStore.shared.load(
+            ArtistDetail.self,
+            key: key,
+            client: client,
+            maximumAge: 7 * 24 * 60 * 60
+        ) {
+            artist = cached
+        }
+        isLoading = artist == nil
         defer { isLoading = false }
         do {
             artist = try await client.artist(id)
+            if let artist {
+                await CatalogCacheStore.shared.save(
+                    artist,
+                    key: key,
+                    client: client
+                )
+            }
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -92,6 +108,9 @@ struct ArtistView: View {
             }
         }
         .task(id: artistID) { await model.load(id: artistID, using: session.client) }
+        .task(id: model.artist?.essentials.map(\.id) ?? []) {
+            player.prepareForLikelyPlayback(model.artist?.essentials ?? [])
+        }
     }
 }
 
@@ -172,10 +191,26 @@ final class AlbumModel: ObservableObject {
 
     func load(id: String, using client: APIClient?) async {
         guard let client else { return }
-        isLoading = true
+        let key = "album:\(id)"
+        if let cached = await CatalogCacheStore.shared.load(
+            AlbumDetail.self,
+            key: key,
+            client: client,
+            maximumAge: 7 * 24 * 60 * 60
+        ) {
+            album = cached
+        }
+        isLoading = album == nil
         defer { isLoading = false }
         do {
             album = try await client.album(id)
+            if let album {
+                await CatalogCacheStore.shared.save(
+                    album,
+                    key: key,
+                    client: client
+                )
+            }
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -185,6 +220,7 @@ final class AlbumModel: ObservableObject {
 
 struct AlbumView: View {
     @EnvironmentObject private var session: AppSession
+    @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var library: MusicLibraryStore
     @EnvironmentObject private var offlineMusic: OfflineMusicStore
     @StateObject private var model = AlbumModel()
@@ -267,6 +303,9 @@ struct AlbumView: View {
             }
         }
         .task(id: albumID) { await model.load(id: albumID, using: session.client) }
+        .task(id: model.album?.tracks.map(\.id) ?? []) {
+            player.prepareForLikelyPlayback(model.album?.tracks ?? [])
+        }
     }
 }
 

@@ -1,6 +1,12 @@
 import AVFoundation
 import MediaPlayer
+import OSLog
 import UIKit
+
+private let playbackLogger = Logger(
+    subsystem: "uk.co.petershomenet.homemusic",
+    category: "Playback"
+)
 
 enum PlaybackState: Equatable {
     case idle
@@ -8,6 +14,52 @@ enum PlaybackState: Equatable {
     case playing
     case paused
     case failed(String)
+}
+
+private enum PlaybackScenario: String {
+    case selection
+    case playlistSelection = "playlist_selection"
+    case next
+    case previous
+    case autoplay
+}
+
+private enum PlaybackSourceKind: String {
+    case downloaded
+    case deviceCache = "device_cache"
+    case starterCache = "starter_cache"
+    case serverCache = "server_cache"
+    case providerStream = "provider_stream"
+    case fallbackProxy = "fallback_proxy"
+}
+
+private struct PlaybackMetricState {
+    let eventID = UUID()
+    let trackID: String
+    let scenario: PlaybackScenario
+    let startedAt: ContinuousClock.Instant
+    var sourceKind: PlaybackSourceKind = .providerStream
+    var sourceReadyMilliseconds: Int?
+    var fallbackUsed = false
+}
+
+private final class PreparedPlayback {
+    let source: PlaybackSource
+    let item: AVPlayerItem
+    let cachedAsset: CachedAudioAsset?
+    let sourceKind: PlaybackSourceKind
+
+    init(
+        source: PlaybackSource,
+        item: AVPlayerItem,
+        cachedAsset: CachedAudioAsset?,
+        sourceKind: PlaybackSourceKind
+    ) {
+        self.source = source
+        self.item = item
+        self.cachedAsset = cachedAsset
+        self.sourceKind = sourceKind
+    }
 }
 
 @MainActor
@@ -25,7 +77,11 @@ final class PlayerManager: ObservableObject {
     @Published private(set) var previewTrackID: String?
     @Published private(set) var previewProgress: Double = 0
     @Published var autoplayEnabled = true
-    @Published var queue: [Track] = []
+    @Published var queue: [Track] = [] {
+        didSet {
+            prepareForLikelyPlayback(queue)
+        }
+    }
     private var previousTracks: [Track] = []
     private var sourceTrackIDs: [String] = []
     private var playedTrackIDs = Set<String>()
@@ -36,27 +92,45 @@ final class PlayerManager: ObservableObject {
     private var completionObserver: NSObjectProtocol?
     private var failureObserver: NSObjectProtocol?
     private var stalledObserver: NSObjectProtocol?
+    private var routeChangeObserver: NSObjectProtocol?
     private var completedItem: AVPlayerItem?
-    private var isAdvancingQueue = false
+    private var isRecoveringPlaybackFailure = false
+    private var consecutivePlaybackFailures = 0
     private var historyRecordedForTrack: String?
     private var previewTimeObserver: Any?
     private var previewStopTask: Task<Void, Never>?
+    private var playbackWatchdogTask: Task<Void, Never>?
     private var resumeAfterPreview = false
     private let previewStartSeconds: Double = 60
     private var playbackRequestID = UUID()
     private var previewRequestID = UUID()
-    private var preparedSources: [String: (source: PlaybackSource, preparedAt: Date)] = [:]
+    private var preparedPlaybacks: [String: PreparedPlayback] = [:]
+    private var preparedSources: [String: PlaybackSource] = [:]
+    private var sourcePreparationTask: Task<PlaybackSource?, Never>?
+    private var sourcePreparationTrackID: String?
+    private var sourcePreparationGeneration = UUID()
+    private var automaticCacheTask: Task<Void, Never>?
+    private var serverCachePreparationTask: Task<Void, Never>?
+    private var recentPlaybackSources: [String: PlaybackSource] = [:]
+    private var recentPlaybackTrackIDs: [String] = []
+    private var pendingLikelyTracks: [Track] = []
+    private var activeCachedAsset: CachedAudioAsset?
     private var playbackFallbackURL: URL?
     private var isUsingPlaybackFallback = false
-    private var authoritativeDuration: Double?
+    private var fallbackDuration: Double?
     private weak var session: AppSession?
     private weak var offlineMusic: OfflineMusicStore?
     private static let artworkCache = NSCache<NSString, UIImage>()
+    private var playbackStartedAt: ContinuousClock.Instant?
+    private var activePlaybackMetric: PlaybackMetricState?
+    private static let maximumConsecutivePlaybackFailures = 3
+    private static let localPreparationLimit = 12
 
     init() {
         player.automaticallyWaitsToMinimizeStalling = true
         configureAudioSession()
         configureRemoteCommands()
+        observeAudioRouteChanges()
         observeTime()
     }
 
@@ -64,21 +138,34 @@ final class PlayerManager: ObservableObject {
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         if let previewTimeObserver { previewPlayer.removeTimeObserver(previewTimeObserver) }
         previewStopTask?.cancel()
+        playbackWatchdogTask?.cancel()
+        sourcePreparationTask?.cancel()
+        serverCachePreparationTask?.cancel()
         if let completionObserver { NotificationCenter.default.removeObserver(completionObserver) }
         if let failureObserver { NotificationCenter.default.removeObserver(failureObserver) }
         if let stalledObserver { NotificationCenter.default.removeObserver(stalledObserver) }
+        if let routeChangeObserver { NotificationCenter.default.removeObserver(routeChangeObserver) }
     }
 
     func connect(session: AppSession, offlineMusic: OfflineMusicStore) {
         self.session = session
         self.offlineMusic = offlineMusic
+        StarterAudioCache.shared.connect(client: session.client)
+        let pendingTracks = pendingLikelyTracks
+        pendingLikelyTracks = []
+        prepareForLikelyPlayback(pendingTracks)
     }
 
     func play(_ track: Track, from tracks: [Track] = []) async {
         currentRadioStation = nil
         sourceTrackIDs = (tracks.isEmpty ? [track] : tracks).map(\.id)
         playedTrackIDs = []
-        await start(track, remaining: remainingTracks(after: track, in: tracks))
+        consecutivePlaybackFailures = 0
+        await start(
+            track,
+            remaining: remainingTracks(after: track, in: tracks),
+            scenario: tracks.isEmpty ? .selection : .playlistSelection
+        )
     }
 
     func play(_ station: RadioStation) async {
@@ -100,9 +187,10 @@ final class PlayerManager: ObservableObject {
         previousTracks = []
         sourceTrackIDs = []
         playedTrackIDs = []
+        consecutivePlaybackFailures = 0
         elapsed = 0
         duration = 0
-        authoritativeDuration = nil
+        fallbackDuration = nil
         historyRecordedForTrack = nil
         prepareArtwork(for: station.playerTrack)
         let asset = AVURLAsset(
@@ -118,23 +206,42 @@ final class PlayerManager: ObservableObject {
         let item = AVPlayerItem(asset: asset)
         item.preferredForwardBufferDuration = 2
         completedItem = nil
-        player.replaceCurrentItem(with: item)
+        replacePlaybackItem(with: item)
         observeFailure(of: item)
         observeStatus(of: item)
         player.playImmediately(atRate: 1)
         updateNowPlaying()
     }
 
-    private func start(_ track: Track, remaining: [Track]) async {
+    private func start(
+        _ track: Track,
+        remaining: [Track],
+        scenario: PlaybackScenario
+    ) async {
         let requestID = UUID()
         playbackRequestID = requestID
+        playbackWatchdogTask?.cancel()
+        playbackStartedAt = .now
+        activePlaybackMetric = PlaybackMetricState(
+            trackID: track.id,
+            scenario: scenario,
+            startedAt: .now
+        )
         do {
             configureAudioSession()
             playbackError = nil
             playbackState = .loading
             isBuffering = true
-            let source = try await playbackSource(for: track)
+            let preparation = try await playbackPreparation(for: track)
+            let source = preparation.source
             guard playbackRequestID == requestID else { return }
+            let sourceReadyMilliseconds = playbackMilliseconds()
+            activePlaybackMetric?.sourceKind = preparation.sourceKind
+            activePlaybackMetric?.sourceReadyMilliseconds = sourceReadyMilliseconds
+            if let playbackStartedAt {
+                let elapsed = playbackStartedAt.duration(to: .now)
+                playbackLogger.info("Playback source ready in \(elapsed, privacy: .public)")
+            }
             if let currentTrack, currentTrack.id != track.id { previousTracks.append(currentTrack) }
             currentTrack = track
             playedTrackIDs.insert(track.id)
@@ -142,57 +249,243 @@ final class PlayerManager: ObservableObject {
             queue = remaining
             historyRecordedForTrack = nil
             elapsed = 0
-            let reportedDuration = source.durationSeconds ?? Double(track.durationSeconds ?? 0)
+            let reportedDuration = preferredDuration(
+                source: source.durationSeconds,
+                track: track.durationSeconds
+            )
             duration = reportedDuration
-            authoritativeDuration = reportedDuration > 0 ? reportedDuration : nil
+            fallbackDuration = validDuration(reportedDuration)
             playbackFallbackURL = source.fallbackURL
             isUsingPlaybackFallback = false
-            let item = AVPlayerItem(url: source.url)
-            item.preferredForwardBufferDuration = 8
+            let item = preparation.item
+            item.preferredForwardBufferDuration = 2
             completedItem = nil
-            player.replaceCurrentItem(with: item)
+            replacePlaybackItem(with: item)
+            activeCachedAsset = preparation.cachedAsset
             observeCompletion(of: item)
             observeFailure(of: item)
             observeStatus(of: item)
             player.playImmediately(atRate: 1)
+            schedulePlaybackWatchdog(for: item)
             updateNowPlaying()
-            prefetchSources(for: Array(remaining.prefix(2)))
+            prepareNextPlaybackSource(remaining.first)
+            prepareForLikelyPlayback(remaining)
+            automaticCacheTask?.cancel()
+            let automaticTracks = [track] + Array(remaining.prefix(2))
+            automaticCacheTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(12))
+                guard !Task.isCancelled else { return }
+                await self?.offlineMusic?.cacheAutomatically(automaticTracks)
+            }
         } catch {
             guard playbackRequestID == requestID else { return }
-            isPlaying = false
-            playbackError = error.localizedDescription
-            playbackState = .failed(error.localizedDescription)
-            isBuffering = false
+            finishPlaybackMetric(success: false)
+            consecutivePlaybackFailures += 1
+            if shouldSkipPreparationFailure(error),
+               consecutivePlaybackFailures < Self.maximumConsecutivePlaybackFailures,
+               let next = remaining.first {
+                playbackError = nil
+                playbackState = .loading
+                isBuffering = true
+                await start(
+                    next,
+                    remaining: Array(remaining.dropFirst()),
+                    scenario: scenario
+                )
+                return
+            }
+            setPlaybackFailure(playbackFailureMessage(for: error))
         }
     }
 
-    private func playbackSource(for track: Track) async throws -> PlaybackSource {
+    private func shouldSkipPreparationFailure(_ error: Error) -> Bool {
+        guard case APIError.http(let status, _) = error else { return false }
+        return status == 502
+    }
+
+    private func playbackPreparation(for track: Track) async throws -> PreparedPlayback {
+        if sourcePreparationTrackID == track.id,
+           let sourcePreparationTask {
+            let source = await sourcePreparationTask.value
+            self.sourcePreparationTask = nil
+            sourcePreparationTrackID = nil
+            if let source, source.isUsable() {
+                preparedSources.removeValue(forKey: track.id)
+                return makePreparation(track: track, source: source)
+            }
+        } else if sourcePreparationTask != nil {
+            sourcePreparationTask?.cancel()
+            sourcePreparationTask = nil
+            sourcePreparationTrackID = nil
+        }
+        if let prepared = preparedPlaybacks.removeValue(forKey: track.id),
+           prepared.source.isUsable() {
+            if !prepared.source.url.isFileURL, prepared.cachedAsset == nil {
+                return makePreparation(
+                    track: track,
+                    source: prepared.source
+                )
+            }
+            return prepared
+        }
         if let localURL = offlineMusic?.localURL(for: track) {
-            return PlaybackSource(
+            return makeLocalPreparation(
+                track: track,
                 url: localURL,
                 durationSeconds: track.durationSeconds.map(Double.init)
             )
         }
-        if let prepared = preparedSources.removeValue(forKey: track.id),
-           Date().timeIntervalSince(prepared.preparedAt) < 180 {
-            return prepared.source
+        if let source = preparedSources.removeValue(forKey: track.id),
+           source.isUsable() {
+            return makePreparation(track: track, source: source)
+        }
+        if let source = recentPlaybackSources[track.id],
+           source.isUsable() {
+            return makePreparation(track: track, source: source)
         }
         guard let client = session?.client else {
             throw APIError.network(URLError(.notConnectedToInternet))
         }
-        return try await client.playback(for: track)
+        let source = try await client.playback(for: track)
+        return makePreparation(track: track, source: source)
     }
 
-    private func prefetchSources(for tracks: [Track]) {
-        guard let client = session?.client else { return }
-        for track in tracks where offlineMusic?.localURL(for: track) == nil && preparedSources[track.id] == nil {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                if let source = try? await client.playback(for: track) {
-                    self.preparedSources[track.id] = (source, Date())
-                }
-            }
+    private func makeLocalPreparation(
+        track: Track,
+        url: URL,
+        durationSeconds: Double?
+    ) -> PreparedPlayback {
+        let sourceKind: PlaybackSourceKind = (
+            offlineMusic?.isDownloaded(track) == true
+                ? .downloaded
+                : .deviceCache
+        )
+        let source = PlaybackSource(
+            url: url,
+            durationSeconds: durationSeconds
+        )
+        return PreparedPlayback(
+            source: source,
+            item: AVPlayerItem(url: url),
+            cachedAsset: nil,
+            sourceKind: sourceKind
+        )
+    }
+
+    private func makePreparation(
+        track: Track,
+        source: PlaybackSource,
+        preferredSourceKind: PlaybackSourceKind? = nil
+    ) -> PreparedPlayback {
+        rememberPlaybackSource(source, for: track.id)
+        let authorization = session?.client.flatMap { client in
+            source.url.host == client.baseURL.host
+                ? "Bearer \(client.token)"
+                : nil
         }
+        let usesHomeOSProxy = authorization != nil
+        if !usesHomeOSProxy {
+            StarterAudioCache.shared.warm(
+                trackID: track.id,
+                sourceURL: source.url,
+                authorization: authorization
+            )
+        }
+        let cachedAsset = usesHomeOSProxy
+            ? nil
+            : CachedAudioAsset(
+                trackID: track.id,
+                sourceURL: source.url,
+                authorization: authorization
+            )
+        let item = cachedAsset.map { AVPlayerItem(asset: $0.asset) }
+            ?? AVPlayerItem(url: source.url)
+        let sourceKind = cachedAsset == nil
+            ? preferredSourceKind ?? (
+                source.cacheHit ? .serverCache : .providerStream
+            )
+            : .starterCache
+        return PreparedPlayback(
+            source: source,
+            item: item,
+            cachedAsset: cachedAsset,
+            sourceKind: sourceKind
+        )
+    }
+
+    private func rememberPlaybackSource(_ source: PlaybackSource, for trackID: String) {
+        recentPlaybackSources[trackID] = source
+        recentPlaybackTrackIDs.removeAll { $0 == trackID }
+        recentPlaybackTrackIDs.append(trackID)
+        while recentPlaybackTrackIDs.count > 30 {
+            let removedTrackID = recentPlaybackTrackIDs.removeFirst()
+            recentPlaybackSources.removeValue(forKey: removedTrackID)
+        }
+    }
+
+    func prepareForLikelyPlayback(_ tracks: [Track]) {
+        var seen = Set<String>()
+        let candidates = tracks.filter {
+            $0.id != currentTrack?.id && seen.insert($0.id).inserted
+        }
+        guard offlineMusic != nil else {
+            pendingLikelyTracks = Array(
+                candidates.prefix(Self.localPreparationLimit)
+            )
+            return
+        }
+        for track in candidates.prefix(Self.localPreparationLimit) {
+            guard preparedPlaybacks[track.id] == nil,
+                  let localURL = offlineMusic?.localURL(for: track) else {
+                continue
+            }
+            preparedPlaybacks[track.id] = makeLocalPreparation(
+                track: track,
+                url: localURL,
+                durationSeconds: track.durationSeconds.map(Double.init)
+            )
+        }
+        serverCachePreparationTask?.cancel()
+        let serverCandidates = Array(candidates.prefix(Self.localPreparationLimit))
+        guard !serverCandidates.isEmpty, let client = session?.client else { return }
+        serverCachePreparationTask = Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            try? await client.prepareServerCache(for: serverCandidates)
+        }
+    }
+
+    private func prepareNextPlaybackSource(_ track: Track?) {
+        guard let track,
+              offlineMusic?.localURL(for: track) == nil,
+              preparedSources[track.id]?.isUsable() != true,
+              recentPlaybackSources[track.id]?.isUsable() != true,
+              let client = session?.client else {
+            sourcePreparationTask?.cancel()
+            sourcePreparationTask = nil
+            sourcePreparationTrackID = nil
+            return
+        }
+        sourcePreparationTask?.cancel()
+        sourcePreparationTrackID = track.id
+        let generation = sourcePreparationGeneration
+        sourcePreparationTask = Task { @MainActor [weak self] in
+            guard let self,
+                  let source = try? await client.playback(
+                    for: track,
+                    prefetch: true
+                  ),
+                  !Task.isCancelled,
+                  self.sourcePreparationGeneration == generation else {
+                return nil
+            }
+            self.preparedSources[track.id] = source
+            return source
+        }
+    }
+
+    private func replacePlaybackItem(with item: AVPlayerItem?) {
+        player.replaceCurrentItem(with: item)
     }
 
     func togglePlayback() {
@@ -218,7 +511,8 @@ final class PlayerManager: ObservableObject {
 
     func playNext() {
         guard currentRadioStation == nil else { return }
-        Task { await advanceQueue() }
+        consecutivePlaybackFailures = 0
+        Task { await advanceQueue(scenario: .next) }
     }
 
     func playPrevious() {
@@ -228,17 +522,26 @@ final class PlayerManager: ObservableObject {
             return
         }
         let remaining = currentTrack.map { [$0] + queue } ?? queue
-        Task { await start(previous, remaining: remaining) }
+        consecutivePlaybackFailures = 0
+        Task {
+            await start(
+                previous,
+                remaining: remaining,
+                scenario: .previous
+            )
+        }
     }
 
     func playNext(_ track: Track) {
-        queue.removeAll { $0.id == track.id }
-        queue.insert(track, at: 0)
+        var updatedQueue = queue.filter { $0.id != track.id }
+        updatedQueue.insert(track, at: 0)
+        queue = updatedQueue
     }
 
     func playLater(_ track: Track) {
-        queue.removeAll { $0.id == track.id }
-        queue.append(track)
+        var updatedQueue = queue.filter { $0.id != track.id }
+        updatedQueue.append(track)
+        queue = updatedQueue
     }
 
     func toggleLike() async {
@@ -307,25 +610,44 @@ final class PlayerManager: ObservableObject {
 
     func stop() {
         playbackRequestID = UUID()
+        playbackWatchdogTask?.cancel()
         stopPreview(resumeMainPlayer: false)
         player.pause()
-        player.replaceCurrentItem(with: nil)
+        replacePlaybackItem(with: nil)
         completedItem = nil
-        isAdvancingQueue = false
+        isRecoveringPlaybackFailure = false
+        consecutivePlaybackFailures = 0
         currentTrack = nil
         currentRadioStation = nil
         queue = []
         previousTracks = []
         sourceTrackIDs = []
         playedTrackIDs = []
+        sourcePreparationGeneration = UUID()
+        sourcePreparationTask?.cancel()
+        sourcePreparationTask = nil
+        sourcePreparationTrackID = nil
+        automaticCacheTask?.cancel()
+        automaticCacheTask = nil
+        serverCachePreparationTask?.cancel()
+        serverCachePreparationTask = nil
+        preparedPlaybacks.removeAll()
+        preparedSources.removeAll()
+        recentPlaybackSources.removeAll()
+        recentPlaybackTrackIDs.removeAll()
+        pendingLikelyTracks = []
+        activeCachedAsset = nil
+        StarterAudioCache.shared.connect(client: nil)
+        activePlaybackMetric = nil
         artworkImage = nil
         elapsed = 0
         duration = 0
-        authoritativeDuration = nil
+        fallbackDuration = nil
         isPlaying = false
         isBuffering = false
         playbackError = nil
         playbackState = .idle
+        playbackStartedAt = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
@@ -335,6 +657,38 @@ final class PlayerManager: ObservableObject {
             try audio.setCategory(.playback, mode: .default, options: [.allowAirPlay])
             try audio.setActive(true)
         } catch {}
+    }
+
+    private func observeAudioRouteChanges() {
+        routeChangeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor in
+                guard let self else { return }
+                let reasonValue = notification.userInfo?[
+                    AVAudioSessionRouteChangeReasonKey
+                ] as? UInt
+                let reason = reasonValue.flatMap(
+                    AVAudioSession.RouteChangeReason.init(rawValue:)
+                )
+                if reason == .oldDeviceUnavailable {
+                    self.player.pause()
+                    self.previewPlayer.pause()
+                    self.resumeAfterPreview = false
+                    self.isPlaying = false
+                    self.isBuffering = false
+                    if self.currentTrack != nil, self.playbackError == nil {
+                        self.playbackState = .paused
+                    }
+                } else {
+                    await Task.yield()
+                    self.synchronizePlaybackState()
+                }
+                self.updateNowPlaying()
+            }
+        }
     }
 
     private func observePreviewTime() {
@@ -389,9 +743,8 @@ final class PlayerManager: ObservableObject {
                 guard let self else { return }
                 let rawElapsed = max(0, time.seconds.isFinite ? time.seconds : 0)
                 let item = self.player.currentItem
-                let itemDuration = item?.duration.seconds ?? 0
-                if self.authoritativeDuration == nil, itemDuration.isFinite, itemDuration > 0 {
-                    self.duration = itemDuration
+                if let item {
+                    self.updateDuration(from: item.duration)
                 }
                 self.elapsed = self.duration > 0 ? min(rawElapsed, self.duration) : rawElapsed
                 self.synchronizePlaybackState()
@@ -429,12 +782,16 @@ final class PlayerManager: ObservableObject {
             Task { @MainActor in
                 let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
                 guard let self else { return }
+                guard self.player.currentItem === item else { return }
                 if self.itemHasReachedEnd(item) {
                     await self.handlePlaybackEnded(item)
                     return
                 }
                 if !self.playFromFallbackIfAvailable() {
-                    self.setPlaybackFailure(error?.localizedDescription ?? "This song could not be played.")
+                    await self.recoverFromPlaybackFailure(
+                        error?.localizedDescription
+                            ?? "This song could not be played."
+                    )
                 }
             }
         }
@@ -444,8 +801,10 @@ final class PlayerManager: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.isBuffering = true
-                self?.playbackState = .loading
+                guard let self, self.player.currentItem === item else { return }
+                self.isBuffering = true
+                self.playbackState = .loading
+                self.schedulePlaybackWatchdog(for: item)
             }
         }
     }
@@ -456,13 +815,18 @@ final class PlayerManager: ObservableObject {
             do {
                 _ = try await item.asset.load(.isPlayable)
                 guard self.player.currentItem === item else { return }
+                if let assetDuration = try? await item.asset.load(.duration) {
+                    self.updateDuration(from: assetDuration)
+                }
                 self.synchronizePlaybackState()
                 self.playbackError = nil
                 self.updateNowPlaying()
             } catch {
                 guard self.player.currentItem === item else { return }
                 if !self.playFromFallbackIfAvailable() {
-                    self.setPlaybackFailure(error.localizedDescription)
+                    await self.recoverFromPlaybackFailure(
+                        error.localizedDescription
+                    )
                 }
             }
         }
@@ -472,23 +836,69 @@ final class PlayerManager: ObservableObject {
         guard currentRadioStation == nil else { return false }
         guard !isUsingPlaybackFallback, let fallbackURL = playbackFallbackURL else { return false }
         isUsingPlaybackFallback = true
-        let item = AVPlayerItem(url: fallbackURL)
+        let fallbackSource = PlaybackSource(
+            url: fallbackURL,
+            durationSeconds: fallbackDuration
+        )
+        activePlaybackMetric?.fallbackUsed = true
+        activePlaybackMetric?.sourceKind = .fallbackProxy
+        let preparation: PreparedPlayback
+        if let currentTrack {
+            preparation = makePreparation(
+                track: currentTrack,
+                source: fallbackSource,
+                preferredSourceKind: .fallbackProxy
+            )
+        } else {
+            preparation = PreparedPlayback(
+                source: fallbackSource,
+                item: AVPlayerItem(url: fallbackURL),
+                cachedAsset: nil,
+                sourceKind: .fallbackProxy
+            )
+        }
+        let item = preparation.item
         item.preferredForwardBufferDuration = 4
         completedItem = nil
-        player.replaceCurrentItem(with: item)
+        replacePlaybackItem(with: item)
+        activeCachedAsset = preparation.cachedAsset
         observeCompletion(of: item)
         observeFailure(of: item)
         observeStatus(of: item)
         player.playImmediately(atRate: 1)
+        schedulePlaybackWatchdog(for: item)
         return true
+    }
+
+    private func schedulePlaybackWatchdog(for item: AVPlayerItem) {
+        playbackWatchdogTask?.cancel()
+        playbackWatchdogTask = Task { @MainActor [weak self, weak item] in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, let self, let item else { return }
+            guard self.player.currentItem === item else { return }
+            guard self.player.timeControlStatus != .playing else { return }
+            guard self.playbackState != .paused else { return }
+            if !self.playFromFallbackIfAvailable() {
+                await self.recoverFromPlaybackFailure(
+                    "This song took too long to start."
+                )
+            }
+        }
     }
 
     private func synchronizePlaybackState() {
         switch player.timeControlStatus {
         case .playing:
+            playbackWatchdogTask?.cancel()
             isPlaying = true
             isBuffering = false
             playbackState = .playing
+            consecutivePlaybackFailures = 0
+            if let playbackStartedAt {
+                let elapsed = playbackStartedAt.duration(to: .now)
+                playbackLogger.info("Playback audible in \(elapsed, privacy: .public)")
+            }
+            finishPlaybackMetric(success: true)
         case .waitingToPlayAtSpecifiedRate:
             isPlaying = false
             isBuffering = true
@@ -503,17 +913,104 @@ final class PlayerManager: ObservableObject {
     }
 
     private func setPlaybackFailure(_ message: String) {
+        playbackWatchdogTask?.cancel()
+        player.pause()
         isPlaying = false
         isBuffering = false
         playbackError = message
         playbackState = .failed(message)
         updateNowPlaying()
+        finishPlaybackMetric(success: false)
     }
 
-    private func advanceQueue() async {
-        guard !isAdvancingQueue else { return }
-        isAdvancingQueue = true
-        defer { isAdvancingQueue = false }
+    private func recoverFromPlaybackFailure(_ message: String) async {
+        guard currentRadioStation == nil else {
+            setPlaybackFailure(message)
+            return
+        }
+        guard !isRecoveringPlaybackFailure else { return }
+        isRecoveringPlaybackFailure = true
+        defer { isRecoveringPlaybackFailure = false }
+        finishPlaybackMetric(success: false)
+        player.pause()
+        isPlaying = false
+        isBuffering = true
+        playbackError = nil
+        playbackState = .loading
+        activeCachedAsset = nil
+        if let trackID = currentTrack?.id {
+            preparedPlaybacks.removeValue(forKey: trackID)
+            recentPlaybackSources.removeValue(forKey: trackID)
+            recentPlaybackTrackIDs.removeAll { $0 == trackID }
+        }
+        consecutivePlaybackFailures += 1
+        guard consecutivePlaybackFailures < Self.maximumConsecutivePlaybackFailures else {
+            setPlaybackFailure(
+                "Several songs could not be played. Please try again in a moment."
+            )
+            return
+        }
+        if queue.isEmpty {
+            await extendQueue()
+        }
+        guard let next = queue.first else {
+            setPlaybackFailure(message)
+            return
+        }
+        let remaining = Array(queue.dropFirst())
+        currentTrack = nil
+        await start(next, remaining: remaining, scenario: .autoplay)
+    }
+
+    private func playbackFailureMessage(for error: Error) -> String {
+        if consecutivePlaybackFailures >= Self.maximumConsecutivePlaybackFailures {
+            return "Several songs could not be played. Please try again in a moment."
+        }
+        return error.localizedDescription
+    }
+
+    private func playbackMilliseconds() -> Int? {
+        guard let startedAt = activePlaybackMetric?.startedAt else {
+            return nil
+        }
+        let components = startedAt.duration(to: .now).components
+        let milliseconds = Int(components.seconds * 1_000)
+            + Int(components.attoseconds / 1_000_000_000_000_000)
+        return max(0, milliseconds)
+    }
+
+    private func finishPlaybackMetric(success: Bool) {
+        guard let metric = activePlaybackMetric else { return }
+        let audibleMilliseconds = success ? playbackMilliseconds() : nil
+        activePlaybackMetric = nil
+        playbackStartedAt = nil
+        guard let client = session?.client else { return }
+        let appVersion = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? ""
+        let build = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleVersion"
+        ) as? String ?? ""
+        let version = build.isEmpty ? appVersion : "\(appVersion) (\(build))"
+        let device = UIDevice.current
+        let osVersion = "\(device.systemName) \(device.systemVersion)"
+        Task {
+            try? await client.recordPlaybackMetric(
+                eventID: metric.eventID,
+                trackID: metric.trackID,
+                scenario: metric.scenario.rawValue,
+                sourceKind: metric.sourceKind.rawValue,
+                sourceReadyMilliseconds: metric.sourceReadyMilliseconds,
+                audibleMilliseconds: audibleMilliseconds,
+                success: success,
+                fallbackUsed: metric.fallbackUsed,
+                appVersion: version,
+                osVersion: osVersion
+            )
+        }
+    }
+
+    private func advanceQueue(scenario: PlaybackScenario) async {
         if queue.isEmpty {
             await extendQueue()
         }
@@ -524,7 +1021,7 @@ final class PlayerManager: ObservableObject {
             return
         }
         let remaining = Array(queue.dropFirst())
-        await start(next, remaining: remaining)
+        await start(next, remaining: remaining, scenario: scenario)
     }
 
     private func handlePlaybackEnded(_ item: AVPlayerItem) async {
@@ -549,7 +1046,7 @@ final class PlayerManager: ObservableObject {
                 )
             }
         }
-        await advanceQueue()
+        await advanceQueue(scenario: .autoplay)
     }
 
     private func itemHasReachedEnd(_ item: AVPlayerItem) -> Bool {
@@ -570,11 +1067,58 @@ final class PlayerManager: ObservableObject {
     }
 
     private func effectiveEndTime(for item: AVPlayerItem) -> Double {
-        if let authoritativeDuration, authoritativeDuration.isFinite, authoritativeDuration > 0 {
-            return authoritativeDuration
+        resolvedDuration(measured: item.duration.seconds) ?? 0
+    }
+
+    private func updateDuration(from mediaTime: CMTime) {
+        guard let resolvedDuration = resolvedDuration(
+            measured: mediaTime.seconds
+        ) else { return }
+        if abs(duration - resolvedDuration) >= 0.1 {
+            duration = resolvedDuration
         }
-        let itemDuration = item.duration.seconds
-        return itemDuration.isFinite && itemDuration > 0 ? itemDuration : 0
+    }
+
+    private func resolvedDuration(measured value: Double) -> Double? {
+        guard let measuredDuration = validDuration(value) else {
+            return fallbackDuration
+        }
+        guard let fallbackDuration else {
+            return measuredDuration
+        }
+        if activeCachedAsset != nil {
+            return fallbackDuration
+        }
+        let ratio = measuredDuration / fallbackDuration
+        guard (0.8...1.2).contains(ratio) else {
+            return fallbackDuration
+        }
+        return measuredDuration
+    }
+
+    private func preferredDuration(
+        source sourceValue: Double?,
+        track trackValue: Int?
+    ) -> Double {
+        let sourceDuration = sourceValue.flatMap(validDuration)
+        let trackDuration = trackValue.flatMap { validDuration(Double($0)) }
+        guard let sourceDuration else {
+            return trackDuration ?? 0
+        }
+        guard let trackDuration else {
+            return sourceDuration
+        }
+        let ratio = sourceDuration / trackDuration
+        return (0.8...1.2).contains(ratio)
+            ? sourceDuration
+            : trackDuration
+    }
+
+    private func validDuration(_ value: Double) -> Double? {
+        guard value.isFinite, value > 0, value <= 24 * 60 * 60 else {
+            return nil
+        }
+        return value
     }
 
     private func extendQueue() async {
@@ -648,8 +1192,8 @@ final class PlayerManager: ObservableObject {
         artworkImage = nil
         guard let url = artworkURL else { return }
         Task {
-            guard let (data, _) = try? await URLSession.shared.data(from: url),
-                  let image = UIImage(data: data), currentTrack?.id == track.id else { return }
+            guard let image = await ArtworkCacheStore.shared.image(for: url),
+                  currentTrack?.id == track.id else { return }
             Self.artworkCache.setObject(image, forKey: cacheKey)
             artworkImage = image
             updateNowPlaying(artwork: nowPlayingArtwork(from: image))

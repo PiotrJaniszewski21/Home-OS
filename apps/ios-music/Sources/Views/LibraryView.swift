@@ -200,11 +200,15 @@ struct TrackCollectionView: View {
                 ContentUnavailableView("No Songs Yet", systemImage: symbol)
             }
         }
+        .task(id: tracks.map(\.id)) {
+            player.prepareForLikelyPlayback(tracks)
+        }
     }
 }
 
 struct PlaylistDetailView: View {
     @EnvironmentObject private var session: AppSession
+    @EnvironmentObject private var player: PlayerManager
     @EnvironmentObject private var library: MusicLibraryStore
     @EnvironmentObject private var offlineMusic: OfflineMusicStore
     let playlistID: Int
@@ -316,6 +320,7 @@ struct PlaylistDetailView: View {
         }
         .task(id: playlist?.tracks.map(\.id)) {
             guard let playlist, !playlist.tracks.isEmpty else { return }
+            player.prepareForLikelyPlayback(playlist.tracks)
             await library.loadSuggestions(for: playlist, using: session.client)
         }
         .sheet(isPresented: $showingRename) {

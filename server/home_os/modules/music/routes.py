@@ -1,6 +1,9 @@
 from functools import wraps
+import gzip
 import shutil
 import tempfile
+from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
 import httpx
 
@@ -10,7 +13,13 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from home_os.modules.music import music_bp
 from home_os.extensions import db
-from home_os.models import MusicListen, MusicPlaylist, MusicPlaylistTrack, MusicSavedAlbum
+from home_os.models import (
+    MusicListen,
+    MusicPlaybackMetric,
+    MusicPlaylist,
+    MusicPlaylistTrack,
+    MusicSavedAlbum,
+)
 from home_os.services.home_music import HomeMusicError, home_music_service
 from home_os.services.live_radio import LiveRadioError, live_radio_service
 from home_os.services.rate_limiter import music_limiter
@@ -18,6 +27,21 @@ from home_os.services.rate_limiter import music_limiter
 
 PLAYBACK_TICKET_MAX_AGE = 300
 RADIO_TICKET_MAX_AGE = 3600
+PLAYBACK_METRIC_SCENARIOS = {
+    "selection",
+    "playlist_selection",
+    "next",
+    "previous",
+    "autoplay",
+}
+PLAYBACK_METRIC_SOURCES = {
+    "downloaded",
+    "device_cache",
+    "starter_cache",
+    "server_cache",
+    "provider_stream",
+    "fallback_proxy",
+}
 
 
 @music_bp.before_request
@@ -26,6 +50,26 @@ def require_music_permission():
         if request.path.startswith("/api/") or request.path == "/proxy-stream":
             return jsonify({"ok": False, "error": "Media access required"}), 403
         abort(403)
+
+
+@music_bp.after_request
+def compress_music_json(response):
+    if (
+        not 200 <= response.status_code < 300
+        or response.direct_passthrough
+        or response.mimetype != "application/json"
+        or response.headers.get("Content-Encoding")
+        or "gzip" not in request.headers.get("Accept-Encoding", "").lower()
+    ):
+        return response
+    payload = response.get_data()
+    if len(payload) < 1024:
+        return response
+    response.set_data(gzip.compress(payload, compresslevel=4, mtime=0))
+    response.headers["Content-Encoding"] = "gzip"
+    response.headers["Content-Length"] = len(response.get_data())
+    response.headers.add("Vary", "Accept-Encoding")
+    return response
 
 
 @music_bp.route("/music")
@@ -41,6 +85,16 @@ def _enforce_rate_limit(category, maximum):
         return jsonify({"ok": False, "error": "Too many music requests"}), 429
     music_limiter.record(key)
     return None
+
+
+def _optional_metric_milliseconds(data, name):
+    value = data.get(name)
+    if value is None:
+        return None
+    value = int(value)
+    if not 0 <= value <= 300_000:
+        raise ValueError(f"{name} is outside the accepted range")
+    return value
 
 
 def _ticket_serializer():
@@ -169,6 +223,61 @@ def search():
     return _search_response()
 
 
+@music_bp.route("/api/music/genres")
+@login_required
+def genres():
+    response = jsonify({
+        "ok": True,
+        "data": home_music_service.genres(),
+    })
+    response.headers["Cache-Control"] = "private, max-age=86400"
+    return response
+
+
+@music_bp.route("/api/music/search/smart")
+@login_required
+def smart_search():
+    limited = _enforce_rate_limit("smart-search", 30)
+    if limited:
+        return limited
+    query = request.args.get("q", "")
+    try:
+        limit = int(request.args.get("limit", 25))
+        genre = home_music_service.resolve_genre(query)
+        if genre is None:
+            tracks = home_music_service.search(query, limit=limit)
+            recent_releases = []
+            classics = []
+            hot_artists = []
+        else:
+            page = home_music_service.genre_page(
+                genre,
+                limit=limit,
+            )
+            tracks = page["popular"]
+            recent_releases = page["recent_releases"]
+            classics = page["classics"]
+            hot_artists = page["hot_artists"]
+    except (TypeError, ValueError) as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    except HomeMusicError as error:
+        current_app.logger.warning("HomeMusic smart search failed: %s", error)
+        return jsonify({"ok": False, "error": str(error)}), 502
+
+    response = jsonify({
+        "ok": True,
+        "data": {
+            "tracks": tracks,
+            "genre": genre,
+            "recent_releases": recent_releases,
+            "classics": classics,
+            "hot_artists": hot_artists,
+        },
+    })
+    response.headers["Cache-Control"] = "private, max-age=300, stale-if-error=86400"
+    return response
+
+
 @music_bp.route("/api/music/search/artists")
 @login_required
 def search_artists():
@@ -185,7 +294,9 @@ def search_artists():
     except HomeMusicError as error:
         current_app.logger.warning("HomeMusic artist search failed: %s", error)
         return jsonify({"ok": False, "error": str(error)}), 502
-    return jsonify({"ok": True, "data": artists})
+    response = jsonify({"ok": True, "data": artists})
+    response.headers["Cache-Control"] = "private, max-age=900, stale-if-error=86400"
+    return response
 
 
 @music_bp.route("/api/music/search/albums")
@@ -204,7 +315,9 @@ def search_albums():
     except HomeMusicError as error:
         current_app.logger.warning("HomeMusic album search failed: %s", error)
         return jsonify({"ok": False, "error": str(error)}), 502
-    return jsonify({"ok": True, "data": albums})
+    response = jsonify({"ok": True, "data": albums})
+    response.headers["Cache-Control"] = "private, max-age=900, stale-if-error=86400"
+    return response
 
 
 @music_bp.route("/api/music/artists/<browse_id>")
@@ -220,7 +333,9 @@ def artist_detail(browse_id):
     except HomeMusicError as error:
         current_app.logger.warning("HomeMusic artist details failed: %s", error)
         return jsonify({"ok": False, "error": str(error)}), 502
-    return jsonify({"ok": True, "data": artist})
+    response = jsonify({"ok": True, "data": artist})
+    response.headers["Cache-Control"] = "private, max-age=21600, stale-if-error=604800"
+    return response
 
 
 @music_bp.route("/api/music/albums/<browse_id>")
@@ -236,7 +351,9 @@ def album_detail(browse_id):
     except HomeMusicError as error:
         current_app.logger.warning("HomeMusic album details failed: %s", error)
         return jsonify({"ok": False, "error": str(error)}), 502
-    return jsonify({"ok": True, "data": album})
+    response = jsonify({"ok": True, "data": album})
+    response.headers["Cache-Control"] = "private, max-age=21600, stale-if-error=604800"
+    return response
 
 
 def _saved_album_for_current_user(album_id):
@@ -303,28 +420,66 @@ def playback_url():
         return limited
     try:
         video_id = home_music_service.validate_video_id(request.args.get("id", ""))
-        stream = home_music_service.stream_details(video_id)
     except ValueError as error:
         return jsonify({"ok": False, "error": str(error)}), 400
-    except HomeMusicError as error:
-        current_app.logger.warning("HomeMusic playback preparation failed: %s", error)
-        return jsonify({"ok": False, "error": str(error)}), 502
     ticket = _create_playback_ticket(video_id)
     path = url_for(
         "music.proxy_stream",
         id=video_id,
         ticket=ticket,
     )
-    direct_url = stream.url if request.args.get("direct") == "1" else None
+    listen = MusicListen.query.filter_by(
+        user_id=current_user.id,
+        track_id=video_id,
+    ).first()
+    cached_path = home_music_service.cached_audio_path(video_id)
+    if cached_path is not None:
+        duration_seconds = listen.duration_seconds if listen else None
+        if duration_seconds is None:
+            duration_seconds = home_music_service.cached_audio_duration(video_id)
+        direct_url = None
+        source_expires_at = None
+    else:
+        try:
+            stream = home_music_service.stream_details(video_id)
+        except HomeMusicError as error:
+            current_app.logger.warning(
+                "HomeMusic playback preparation failed: %s",
+                error,
+            )
+            return jsonify({"ok": False, "error": str(error)}), 502
+        duration_seconds = stream.duration_seconds
+        direct_url = stream.url if request.args.get("direct") == "1" else None
+        source_expires_at = getattr(stream, "expires_at", None)
+        home_music_service.schedule_audio_cache(video_id)
+    if listen is not None and listen.duration_seconds is None and duration_seconds:
+        listen.duration_seconds = round(duration_seconds)
+        db.session.commit()
     return jsonify({
         "ok": True,
         "data": {
             "path": path,
             "direct_url": direct_url,
             "expires_in": PLAYBACK_TICKET_MAX_AGE,
-            "duration_seconds": stream.duration_seconds,
+            "duration_seconds": duration_seconds,
+            "source_expires_at": source_expires_at,
+            "cache_hit": cached_path is not None,
         },
     })
+
+
+@music_bp.route("/api/music/cache/prepare", methods=["POST"])
+@login_required
+def prepare_audio_cache():
+    limited = _enforce_rate_limit("cache-prepare", 120)
+    if limited:
+        return limited
+    data = request.get_json(silent=True) or {}
+    track_ids = data.get("track_ids")
+    if not isinstance(track_ids, list):
+        return jsonify({"ok": False, "error": "track_ids must be a list"}), 400
+    result = home_music_service.schedule_audio_cache_many(track_ids, limit=20)
+    return jsonify({"ok": True, "data": result}), 202
 
 
 def _clean_track_payload(data):
@@ -356,6 +511,91 @@ def history():
     return jsonify({"ok": True, "data": [listen.to_track_dict() for listen in listens]})
 
 
+@music_bp.route("/api/music/playback-metrics", methods=["POST"])
+@login_required
+def record_playback_metric():
+    limited = _enforce_rate_limit("playback-metrics", 600)
+    if limited:
+        return limited
+    data = request.get_json(silent=True) or {}
+    try:
+        event_id = str(UUID(str(data.get("event_id", ""))))
+        track_id = home_music_service.validate_video_id(data.get("track_id", ""))
+        scenario = str(data.get("scenario", ""))
+        source_kind = str(data.get("source_kind", ""))
+        if scenario not in PLAYBACK_METRIC_SCENARIOS:
+            raise ValueError("Invalid playback scenario")
+        if source_kind not in PLAYBACK_METRIC_SOURCES:
+            raise ValueError("Invalid playback source")
+        source_ready_ms = _optional_metric_milliseconds(
+            data,
+            "source_ready_ms",
+        )
+        audible_ms = _optional_metric_milliseconds(data, "audible_ms")
+        success = bool(data.get("success"))
+        if success and audible_ms is None:
+            raise ValueError("Successful playback requires audible_ms")
+    except (TypeError, ValueError) as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+
+    existing = MusicPlaybackMetric.query.filter_by(event_id=event_id).first()
+    if existing is not None:
+        return jsonify({"ok": True, "data": {"recorded": False}})
+
+    metric = MusicPlaybackMetric(
+        event_id=event_id,
+        user_id=current_user.id,
+        track_id=track_id,
+        scenario=scenario,
+        source_kind=source_kind,
+        source_ready_ms=source_ready_ms,
+        audible_ms=audible_ms,
+        success=success,
+        fallback_used=bool(data.get("fallback_used")),
+        app_version=str(data.get("app_version") or "")[:32],
+        os_version=str(data.get("os_version") or "")[:64],
+    )
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+    MusicPlaybackMetric.query.filter(
+        MusicPlaybackMetric.recorded_at < cutoff
+    ).delete(synchronize_session=False)
+    db.session.add(metric)
+    db.session.commit()
+    return jsonify({"ok": True, "data": {"recorded": True}}), 201
+
+
+@music_bp.route("/api/music/cache/candidates")
+@login_required
+def cache_candidates():
+    cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+    listens = (
+        MusicListen.query
+        .filter_by(user_id=current_user.id)
+        .order_by(
+            MusicListen.liked.desc(),
+            MusicListen.last_played_at.desc(),
+            MusicListen.play_count.desc(),
+            MusicListen.completed_count.desc(),
+        )
+        .limit(200)
+        .all()
+    )
+    candidates = [
+        listen
+        for listen in listens
+        if (
+            listen.liked
+            or listen.last_played_at.replace(tzinfo=timezone.utc) >= cutoff
+            or listen.play_count >= 2
+            or listen.completed_count >= 2
+        )
+    ][:60]
+    return jsonify({
+        "ok": True,
+        "data": [listen.to_track_dict() for listen in candidates],
+    })
+
+
 @music_bp.route("/api/music/library")
 @login_required
 def library():
@@ -372,8 +612,6 @@ def library():
 @music_bp.route("/api/music/history", methods=["POST"])
 @login_required
 def record_history():
-    from datetime import datetime, timezone
-
     data = request.get_json(silent=True) or {}
     try:
         video_id, title, artist, thumbnail, duration, played_seconds = _clean_track_payload(data)
@@ -385,7 +623,9 @@ def record_history():
         track_id=video_id,
     ).first()
     now = datetime.now(timezone.utc)
-    if listen is None:
+    completed = bool(data.get("completed"))
+    is_new_listen = listen is None
+    if is_new_listen:
         listen = MusicListen(
             user_id=current_user.id,
             track_id=video_id,
@@ -394,14 +634,17 @@ def record_history():
             completed_count=0,
         )
         db.session.add(listen)
-    else:
+    elif not completed:
         listen.play_count += 1
     listen.title = title
     listen.artist = artist
     listen.thumbnail = thumbnail
-    listen.duration_seconds = duration
+    if duration is not None:
+        listen.duration_seconds = duration
+    if completed and not is_new_listen:
+        played_seconds = max(0, played_seconds - 30)
     listen.total_play_seconds = (listen.total_play_seconds or 0) + played_seconds
-    listen.completed_count = (listen.completed_count or 0) + int(bool(data.get("completed")))
+    listen.completed_count = (listen.completed_count or 0) + int(completed)
     listen.last_played_at = now
     db.session.commit()
     return jsonify({"ok": True, "data": listen.to_track_dict()})
@@ -632,6 +875,8 @@ def personalized_home():
             [listen.track_id for listen in listens[:3]],
             [listen.artist.split(",")[0] for listen in listens],
             exclude_ids=[listen.track_id for listen in listens],
+            cache_key=f"user:{current_user.id}",
+            force_refresh=request.args.get("refresh") == "1",
         )
     except HomeMusicError as error:
         current_app.logger.warning("HomeMusic personalized home failed: %s", error)
@@ -782,9 +1027,24 @@ def proxy_stream():
         return limited
     try:
         video_id = home_music_service.validate_video_id(request.args.get("id", ""))
-        stream_url = home_music_service.stream_url(video_id)
     except ValueError as error:
         return jsonify({"ok": False, "error": str(error)}), 400
+
+    cached_path = home_music_service.cached_audio_path(video_id)
+    if cached_path is not None:
+        response = send_file(
+            cached_path,
+            mimetype="audio/mp4",
+            conditional=True,
+            max_age=0,
+        )
+        response.headers["Accept-Ranges"] = "bytes"
+        response.headers["Cache-Control"] = "private, max-age=86400, immutable"
+        response.headers["X-HomeMusic-Cache"] = "hit"
+        return response
+
+    try:
+        stream_url = home_music_service.stream_url(video_id)
     except HomeMusicError as error:
         current_app.logger.warning("HomeMusic stream extraction failed: %s", error)
         return jsonify({"ok": False, "error": str(error)}), 502
@@ -806,7 +1066,39 @@ def proxy_stream():
     if upstream.status_code not in (200, 206):
         upstream.close()
         client.close()
-        return jsonify({"ok": False, "error": "Audio provider rejected the stream"}), 502
+        home_music_service.invalidate_stream(video_id)
+        try:
+            refreshed_url = home_music_service.stream_url(video_id)
+            client = httpx.Client(
+                follow_redirects=True,
+                timeout=httpx.Timeout(30, read=60),
+            )
+            upstream = client.send(
+                client.build_request(
+                    "GET",
+                    refreshed_url,
+                    headers=upstream_headers,
+                ),
+                stream=True,
+            )
+        except (HomeMusicError, httpx.HTTPError) as error:
+            if "client" in locals():
+                client.close()
+            current_app.logger.warning(
+                "HomeMusic stream refresh failed: %s",
+                error,
+            )
+            return jsonify({
+                "ok": False,
+                "error": "Audio provider rejected the stream",
+            }), 502
+        if upstream.status_code not in (200, 206):
+            upstream.close()
+            client.close()
+            return jsonify({
+                "ok": False,
+                "error": "Audio provider rejected the stream",
+            }), 502
 
     def generate():
         try:
@@ -819,6 +1111,7 @@ def proxy_stream():
         "Accept-Ranges": upstream.headers.get("Accept-Ranges", "bytes"),
         "Cache-Control": "private, no-store",
         "Content-Type": upstream.headers.get("Content-Type", "audio/mp4"),
+        "X-HomeMusic-Cache": "miss",
     }
     for name in ("Content-Length", "Content-Range", "ETag", "Last-Modified"):
         if upstream.headers.get(name):
@@ -842,31 +1135,58 @@ def download_track():
     except ValueError as error:
         return jsonify({"ok": False, "error": str(error)}), 400
 
-    temporary_directory = tempfile.mkdtemp(prefix="home-music-")
-    try:
-        temporary_path = home_music_service.download_audio(
-            video_id,
-            temporary_directory,
-        )
-    except HomeMusicError as error:
-        shutil.rmtree(temporary_directory, ignore_errors=True)
-        current_app.logger.warning(
-            "HomeMusic download failed for %s: %s",
-            video_id,
-            error,
-        )
-        return jsonify({"ok": False, "error": "Audio download is temporarily unavailable"}), 502
+    cached_path = home_music_service.cached_audio_path(video_id)
+    if cached_path is None and home_music_service.audio_cache_enabled:
+        try:
+            cached_path = home_music_service.cache_audio(video_id)
+        except HomeMusicError as error:
+            current_app.logger.warning(
+                "HomeMusic cached download failed for %s: %s",
+                video_id,
+                error,
+            )
+            return jsonify({
+                "ok": False,
+                "error": "Audio download is temporarily unavailable",
+            }), 502
 
-    @after_this_request
-    def remove_temporary_file(response):
-        shutil.rmtree(temporary_directory, ignore_errors=True)
-        return response
+    temporary_directory = None
+    if cached_path is not None:
+        prepared_path = cached_path
+    else:
+        temporary_directory = tempfile.mkdtemp(prefix="home-music-")
+        try:
+            prepared_path = home_music_service.download_audio(
+                video_id,
+                temporary_directory,
+            )
+        except HomeMusicError as error:
+            shutil.rmtree(temporary_directory, ignore_errors=True)
+            current_app.logger.warning(
+                "HomeMusic download failed for %s: %s",
+                video_id,
+                error,
+            )
+            return jsonify({
+                "ok": False,
+                "error": "Audio download is temporarily unavailable",
+            }), 502
 
-    return send_file(
-        temporary_path,
+    if temporary_directory is not None:
+        @after_this_request
+        def remove_temporary_file(response):
+            shutil.rmtree(temporary_directory, ignore_errors=True)
+            return response
+
+    response = send_file(
+        prepared_path,
         mimetype="audio/mp4",
         as_attachment=True,
         download_name=f"{video_id}.m4a",
-        conditional=False,
+        conditional=True,
         max_age=0,
     )
+    response.headers["X-HomeMusic-Cache"] = (
+        "hit" if cached_path is not None else "disabled"
+    )
+    return response

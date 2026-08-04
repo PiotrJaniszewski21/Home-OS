@@ -36,6 +36,9 @@ struct RemoteArtworkView: View {
     let url: String
     var placeholderSymbol = "music.note"
     var placeholderColors: [Color] = [.pink, .purple]
+    var maximumPixelDimension = 512
+    @State private var image: UIImage?
+    @State private var failed = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -45,32 +48,42 @@ struct RemoteArtworkView: View {
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
-                AsyncImage(url: url.highResolutionMusicArtworkURL) { phase in
-                    if let image = phase.image {
-                        ZStack {
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: proxy.size.width, height: proxy.size.height)
-                                .blur(radius: 14)
-                                .opacity(0.48)
-                            image
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: proxy.size.width, height: proxy.size.height)
-                        }
-                    } else if phase.error != nil || url.highResolutionMusicArtworkURL == nil {
-                        Image(systemName: placeholderSymbol)
-                            .font(.largeTitle)
-                            .foregroundStyle(.white.opacity(0.9))
-                    } else {
-                        ProgressView()
-                            .tint(.white)
+                if let image {
+                    ZStack {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .blur(radius: 14)
+                            .opacity(0.48)
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: proxy.size.width, height: proxy.size.height)
                     }
+                } else if failed || url.musicArtworkURL(maximumDimension: maximumPixelDimension) == nil {
+                    Image(systemName: placeholderSymbol)
+                        .font(.largeTitle)
+                        .foregroundStyle(.white.opacity(0.9))
+                } else {
+                    ProgressView()
+                        .tint(.white)
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .clipped()
+        }
+        .task(id: url) {
+            image = nil
+            failed = false
+            guard let artworkURL = url.musicArtworkURL(
+                maximumDimension: maximumPixelDimension
+            ) else {
+                failed = true
+                return
+            }
+            image = await ArtworkCacheStore.shared.image(for: artworkURL)
+            failed = image == nil
         }
     }
 }
