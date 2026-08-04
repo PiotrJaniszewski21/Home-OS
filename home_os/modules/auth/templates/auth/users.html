@@ -2,9 +2,9 @@
 {% block title %}Users — Home OS{% endblock %}
 {% block content %}
 <div class="max-w-4xl mx-auto">
-    <div class="flex items-center justify-between mb-6">
-        <h1>Users</h1>
-        <a href="{{ url_for('auth.create_user') }}" class="btn btn-ghost">+ New User</a>
+    <div class="flex items-center justify-between mb-6 page-titlebar">
+        <div><h1>Users</h1><p class="text-tertiary text-sm mt-1">Manage household access and permissions</p></div>
+        <a href="{{ url_for('auth.create_user') }}" class="btn btn-primary">+ New User</a>
     </div>
 
     <div class="glass-panel" style="padding: 0; overflow: hidden;">

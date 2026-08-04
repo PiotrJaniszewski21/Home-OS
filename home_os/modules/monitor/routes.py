@@ -2,7 +2,7 @@ import platform
 import time
 
 import psutil
-from flask import jsonify, render_template, request
+from flask import jsonify, render_template
 from flask_login import login_required
 
 from home_os.modules.monitor import monitor_bp

@@ -1,0 +1,615 @@
+from functools import wraps
+
+import httpx
+
+from flask import Response, abort, current_app, jsonify, render_template, request, stream_with_context, url_for
+from flask_login import current_user, login_required
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+
+from home_os.modules.music import music_bp
+from home_os.extensions import db
+from home_os.models import MusicListen, MusicPlaylist, MusicPlaylistTrack
+from home_os.services.home_music import HomeMusicError, home_music_service
+from home_os.services.live_radio import LiveRadioError, live_radio_service
+from home_os.services.rate_limiter import music_limiter
+
+
+PLAYBACK_TICKET_MAX_AGE = 300
+
+
+@music_bp.before_request
+def require_music_permission():
+    if current_user.is_authenticated and not current_user.has_permission("media"):
+        if request.path.startswith("/api/") or request.path == "/proxy-stream":
+            return jsonify({"ok": False, "error": "Media access required"}), 403
+        abort(403)
+
+
+@music_bp.route("/music")
+@login_required
+def music_view():
+    return render_template("music/music.html")
+
+
+def _enforce_rate_limit(category, maximum):
+    identity = current_user.id if current_user.is_authenticated else request.remote_addr
+    key = f"music:{category}:{identity}"
+    if music_limiter.is_limited(key, max_attempts=maximum):
+        return jsonify({"ok": False, "error": "Too many music requests"}), 429
+    music_limiter.record(key)
+    return None
+
+
+def _ticket_serializer():
+    return URLSafeTimedSerializer(
+        current_app.secret_key,
+        salt="home-music-playback-v1",
+    )
+
+
+def _create_playback_ticket(video_id):
+    return _ticket_serializer().dumps({
+        "track_id": video_id,
+        "user_id": current_user.id,
+        "auth_version": current_user.auth_version,
+    })
+
+
+def _valid_playback_ticket(ticket, video_id):
+    if not ticket:
+        return False
+    try:
+        payload = _ticket_serializer().loads(
+            ticket,
+            max_age=PLAYBACK_TICKET_MAX_AGE,
+        )
+    except (BadSignature, SignatureExpired):
+        return False
+    if payload.get("track_id") != video_id:
+        return False
+
+    from home_os.extensions import db
+    from home_os.models import User
+
+    user = db.session.get(User, payload.get("user_id"))
+    return bool(
+        user
+        and user.is_active
+        and user.has_permission("media")
+        and user.auth_version == payload.get("auth_version")
+    )
+
+
+def playback_access_required(function):
+    @wraps(function)
+    def decorated(*args, **kwargs):
+        video_id = request.args.get("id", "")
+        if current_user.is_authenticated or _valid_playback_ticket(
+            request.args.get("ticket", ""),
+            video_id,
+        ):
+            return function(*args, **kwargs)
+        return jsonify({"ok": False, "error": "Authentication required"}), 401
+
+    return decorated
+
+
+def _search_response(legacy=False):
+    limited = _enforce_rate_limit("search", 30)
+    if limited:
+        return limited
+    query = request.args.get("q", "")
+    try:
+        limit = int(request.args.get("limit", 20))
+        tracks = home_music_service.search(query, limit=limit)
+    except ValueError as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    except HomeMusicError as error:
+        current_app.logger.warning("HomeMusic search failed: %s", error)
+        return jsonify({"ok": False, "error": str(error)}), 502
+
+    response = jsonify(tracks if legacy else {"ok": True, "data": tracks})
+    response.headers["Cache-Control"] = "private, max-age=60"
+    return response
+
+
+@music_bp.route("/api/music/search")
+@login_required
+def search():
+    return _search_response()
+
+
+@music_bp.route("/api/music/search/artists")
+@login_required
+def search_artists():
+    limited = _enforce_rate_limit("artist-search", 30)
+    if limited:
+        return limited
+    try:
+        artists = home_music_service.search_artists(
+            request.args.get("q", ""),
+            limit=request.args.get("limit", 8),
+        )
+    except (TypeError, ValueError) as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    except HomeMusicError as error:
+        current_app.logger.warning("HomeMusic artist search failed: %s", error)
+        return jsonify({"ok": False, "error": str(error)}), 502
+    return jsonify({"ok": True, "data": artists})
+
+
+@music_bp.route("/api/music/artists/<browse_id>")
+@login_required
+def artist_detail(browse_id):
+    limited = _enforce_rate_limit("artist-detail", 40)
+    if limited:
+        return limited
+    try:
+        artist = home_music_service.artist(browse_id)
+    except ValueError as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    except HomeMusicError as error:
+        current_app.logger.warning("HomeMusic artist details failed: %s", error)
+        return jsonify({"ok": False, "error": str(error)}), 502
+    return jsonify({"ok": True, "data": artist})
+
+
+@music_bp.route("/api/music/albums/<browse_id>")
+@login_required
+def album_detail(browse_id):
+    limited = _enforce_rate_limit("album-detail", 40)
+    if limited:
+        return limited
+    try:
+        album = home_music_service.album(browse_id)
+    except ValueError as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    except HomeMusicError as error:
+        current_app.logger.warning("HomeMusic album details failed: %s", error)
+        return jsonify({"ok": False, "error": str(error)}), 502
+    return jsonify({"ok": True, "data": album})
+
+
+@music_bp.route("/search")
+@login_required
+def legacy_search():
+    return _search_response(legacy=True)
+
+
+@music_bp.route("/api/music/playback-url")
+@login_required
+def playback_url():
+    limited = _enforce_rate_limit("ticket", 240)
+    if limited:
+        return limited
+    try:
+        video_id = home_music_service.validate_video_id(request.args.get("id", ""))
+        stream = home_music_service.stream_details(video_id)
+    except ValueError as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    except HomeMusicError as error:
+        current_app.logger.warning("HomeMusic playback preparation failed: %s", error)
+        return jsonify({"ok": False, "error": str(error)}), 502
+    ticket = _create_playback_ticket(video_id)
+    path = url_for(
+        "music.proxy_stream",
+        id=video_id,
+        ticket=ticket,
+    )
+    direct_url = stream.url if request.args.get("direct") == "1" else None
+    return jsonify({
+        "ok": True,
+        "data": {
+            "path": path,
+            "direct_url": direct_url,
+            "expires_in": PLAYBACK_TICKET_MAX_AGE,
+            "duration_seconds": stream.duration_seconds,
+        },
+    })
+
+
+def _clean_track_payload(data):
+    video_id = home_music_service.validate_video_id(data.get("id", ""))
+    title = " ".join(str(data.get("title") or "").split())[:300]
+    artist = " ".join(str(data.get("artist") or "").split())[:300]
+    thumbnail = str(data.get("thumbnail") or "")[:2048]
+    if not title or not artist:
+        raise ValueError("Track title and artist are required")
+    duration = data.get("duration_seconds")
+    if duration in (None, ""):
+        duration = None
+    else:
+        duration = max(0, min(int(duration), 24 * 60 * 60))
+    played_seconds = max(0, min(int(data.get("played_seconds") or 0), 24 * 60 * 60))
+    return video_id, title, artist, thumbnail, duration, played_seconds
+
+
+@music_bp.route("/api/music/history")
+@login_required
+def history():
+    listens = (
+        MusicListen.query
+        .filter_by(user_id=current_user.id)
+        .order_by(MusicListen.last_played_at.desc())
+        .limit(50)
+        .all()
+    )
+    return jsonify({"ok": True, "data": [listen.to_track_dict() for listen in listens]})
+
+
+@music_bp.route("/api/music/library")
+@login_required
+def library():
+    listens = (
+        MusicListen.query
+        .filter_by(user_id=current_user.id, liked=True)
+        .order_by(MusicListen.last_played_at.desc())
+        .limit(200)
+        .all()
+    )
+    return jsonify({"ok": True, "data": [listen.to_track_dict() for listen in listens]})
+
+
+@music_bp.route("/api/music/history", methods=["POST"])
+@login_required
+def record_history():
+    from datetime import datetime, timezone
+
+    data = request.get_json(silent=True) or {}
+    try:
+        video_id, title, artist, thumbnail, duration, played_seconds = _clean_track_payload(data)
+    except (TypeError, ValueError) as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+
+    listen = MusicListen.query.filter_by(
+        user_id=current_user.id,
+        track_id=video_id,
+    ).first()
+    now = datetime.now(timezone.utc)
+    if listen is None:
+        listen = MusicListen(
+            user_id=current_user.id,
+            track_id=video_id,
+            play_count=1,
+            total_play_seconds=0,
+            completed_count=0,
+        )
+        db.session.add(listen)
+    else:
+        listen.play_count += 1
+    listen.title = title
+    listen.artist = artist
+    listen.thumbnail = thumbnail
+    listen.duration_seconds = duration
+    listen.total_play_seconds = (listen.total_play_seconds or 0) + played_seconds
+    listen.completed_count = (listen.completed_count or 0) + int(bool(data.get("completed")))
+    listen.last_played_at = now
+    db.session.commit()
+    return jsonify({"ok": True, "data": listen.to_track_dict()})
+
+
+@music_bp.route("/api/music/library/<video_id>", methods=["PUT"])
+@login_required
+def update_library(video_id):
+    try:
+        video_id = home_music_service.validate_video_id(video_id)
+    except ValueError as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    listen = MusicListen.query.filter_by(
+        user_id=current_user.id,
+        track_id=video_id,
+    ).first()
+    data = request.get_json(silent=True) or {}
+    if listen is None:
+        try:
+            _, title, artist, thumbnail, duration, _ = _clean_track_payload({
+                **data,
+                "id": video_id,
+            })
+        except (TypeError, ValueError) as error:
+            return jsonify({"ok": False, "error": str(error)}), 400
+        listen = MusicListen(
+            user_id=current_user.id,
+            track_id=video_id,
+            title=title,
+            artist=artist,
+            thumbnail=thumbnail,
+            duration_seconds=duration,
+            play_count=0,
+            total_play_seconds=0,
+            completed_count=0,
+        )
+        db.session.add(listen)
+    listen.liked = bool(data.get("liked"))
+    db.session.commit()
+    return jsonify({"ok": True, "data": listen.to_track_dict()})
+
+
+def _playlist_for_current_user(playlist_id):
+    return MusicPlaylist.query.filter_by(id=playlist_id, user_id=current_user.id).first()
+
+
+def _clean_playlist_payload(data, require_name=True):
+    name = " ".join(str(data.get("name") or "").split())[:120]
+    description = " ".join(str(data.get("description") or "").split())[:500]
+    if require_name and not name:
+        raise ValueError("Playlist name is required")
+    return name, description
+
+
+@music_bp.route("/api/music/playlists", methods=["GET", "POST"])
+@login_required
+def playlists():
+    if request.method == "GET":
+        records = (
+            MusicPlaylist.query
+            .filter_by(user_id=current_user.id)
+            .order_by(MusicPlaylist.updated_at.desc(), MusicPlaylist.id.desc())
+            .all()
+        )
+        return jsonify({"ok": True, "data": [item.to_dict() for item in records]})
+
+    data = request.get_json(silent=True) or {}
+    try:
+        name, description = _clean_playlist_payload(data)
+    except ValueError as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    playlist = MusicPlaylist(
+        user_id=current_user.id,
+        name=name,
+        description=description,
+    )
+    db.session.add(playlist)
+    db.session.commit()
+    return jsonify({"ok": True, "data": playlist.to_dict()}), 201
+
+
+@music_bp.route("/api/music/playlists/<int:playlist_id>", methods=["GET", "PATCH", "DELETE"])
+@login_required
+def playlist_detail(playlist_id):
+    playlist = _playlist_for_current_user(playlist_id)
+    if playlist is None:
+        return jsonify({"ok": False, "error": "Playlist not found"}), 404
+    if request.method == "GET":
+        return jsonify({"ok": True, "data": playlist.to_dict()})
+    if request.method == "DELETE":
+        db.session.delete(playlist)
+        db.session.commit()
+        return jsonify({"ok": True, "data": {"deleted": True}})
+
+    data = request.get_json(silent=True) or {}
+    try:
+        name, description = _clean_playlist_payload(data, require_name=False)
+    except ValueError as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    if "name" in data:
+        if not name:
+            return jsonify({"ok": False, "error": "Playlist name is required"}), 400
+        playlist.name = name
+    if "description" in data:
+        playlist.description = description
+    db.session.commit()
+    return jsonify({"ok": True, "data": playlist.to_dict()})
+
+
+@music_bp.route("/api/music/playlists/<int:playlist_id>/tracks", methods=["POST"])
+@login_required
+def add_playlist_track(playlist_id):
+    playlist = _playlist_for_current_user(playlist_id)
+    if playlist is None:
+        return jsonify({"ok": False, "error": "Playlist not found"}), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        video_id, title, artist, thumbnail, duration, _ = _clean_track_payload(data)
+    except (TypeError, ValueError) as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    existing = MusicPlaylistTrack.query.filter_by(
+        playlist_id=playlist.id,
+        track_id=video_id,
+    ).first()
+    if existing is None:
+        existing = MusicPlaylistTrack(
+            playlist_id=playlist.id,
+            track_id=video_id,
+            title=title,
+            artist=artist,
+            thumbnail=thumbnail,
+            duration_seconds=duration,
+            position=len(playlist.tracks),
+        )
+        db.session.add(existing)
+    else:
+        existing.title = title
+        existing.artist = artist
+        existing.thumbnail = thumbnail
+        existing.duration_seconds = duration
+    db.session.commit()
+    return jsonify({"ok": True, "data": playlist.to_dict()})
+
+
+@music_bp.route(
+    "/api/music/playlists/<int:playlist_id>/tracks/<video_id>",
+    methods=["DELETE"],
+)
+@login_required
+def remove_playlist_track(playlist_id, video_id):
+    playlist = _playlist_for_current_user(playlist_id)
+    if playlist is None:
+        return jsonify({"ok": False, "error": "Playlist not found"}), 404
+    try:
+        video_id = home_music_service.validate_video_id(video_id)
+    except ValueError as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    track = MusicPlaylistTrack.query.filter_by(
+        playlist_id=playlist.id,
+        track_id=video_id,
+    ).first()
+    if track is None:
+        return jsonify({"ok": False, "error": "Track not found in playlist"}), 404
+    db.session.delete(track)
+    db.session.commit()
+    return jsonify({"ok": True, "data": playlist.to_dict()})
+
+
+@music_bp.route("/api/music/recommendations")
+@login_required
+def recommendations():
+    limited = _enforce_rate_limit("recommendations", 20)
+    if limited:
+        return limited
+    listens = (
+        MusicListen.query
+        .filter_by(user_id=current_user.id)
+        .order_by(
+            MusicListen.liked.desc(),
+            MusicListen.play_count.desc(),
+            MusicListen.last_played_at.desc(),
+        )
+        .limit(20)
+        .all()
+    )
+    if not listens:
+        return jsonify({"ok": True, "data": [], "message": "Play a few songs to build your recommendations."})
+    try:
+        tracks = home_music_service.recommendations(
+            [listen.track_id for listen in listens[:3]],
+            exclude_ids=[listen.track_id for listen in listens],
+            limit=request.args.get("limit", 20),
+        )
+    except (TypeError, ValueError) as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    except HomeMusicError as error:
+        current_app.logger.warning("HomeMusic recommendations failed: %s", error)
+        return jsonify({"ok": False, "error": str(error)}), 502
+    return jsonify({"ok": True, "data": tracks})
+
+
+def _contextual_recommendations(seed_ids, exclude_ids, limit):
+    limited = _enforce_rate_limit("contextual-recommendations", 60)
+    if limited:
+        return limited
+    try:
+        tracks = home_music_service.recommendations(
+            seed_ids,
+            exclude_ids=exclude_ids,
+            limit=limit,
+        )
+    except (TypeError, ValueError) as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    except HomeMusicError as error:
+        current_app.logger.warning("HomeMusic contextual recommendations failed: %s", error)
+        return jsonify({"ok": False, "error": str(error)}), 502
+    return jsonify({"ok": True, "data": tracks})
+
+
+@music_bp.route("/api/music/recommendations/context", methods=["POST"])
+@login_required
+def contextual_recommendations():
+    data = request.get_json(silent=True) or {}
+    seed_ids = data.get("seed_ids") or []
+    exclude_ids = data.get("exclude_ids") or []
+    if not isinstance(seed_ids, list) or not isinstance(exclude_ids, list):
+        return jsonify({"ok": False, "error": "Recommendation identifiers must be lists"}), 400
+    return _contextual_recommendations(
+        seed_ids[-3:],
+        exclude_ids[:250],
+        data.get("limit", 15),
+    )
+
+
+@music_bp.route("/api/music/playlists/<int:playlist_id>/suggestions")
+@login_required
+def playlist_suggestions(playlist_id):
+    playlist = _playlist_for_current_user(playlist_id)
+    if playlist is None:
+        return jsonify({"ok": False, "error": "Playlist not found"}), 404
+    track_ids = [track.track_id for track in playlist.tracks]
+    if not track_ids:
+        return jsonify({"ok": True, "data": []})
+    if len(track_ids) <= 3:
+        seeds = track_ids
+    else:
+        seeds = [track_ids[0], track_ids[len(track_ids) // 2], track_ids[-1]]
+    return _contextual_recommendations(
+        seeds,
+        track_ids,
+        request.args.get("limit", 12),
+    )
+
+
+@music_bp.route("/api/music/radio/stations")
+@login_required
+def radio_stations():
+    limited = _enforce_rate_limit("radio-directory", 40)
+    if limited:
+        return limited
+    try:
+        query = request.args.get("q", "").strip()
+        if query:
+            stations = live_radio_service.search(query, limit=request.args.get("limit", 40))
+        else:
+            stations = live_radio_service.featured(limit=request.args.get("limit", 40))
+    except (TypeError, ValueError) as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    except LiveRadioError as error:
+        current_app.logger.warning("HomeMusic radio directory failed: %s", error)
+        return jsonify({"ok": False, "error": str(error)}), 502
+    return jsonify({"ok": True, "data": stations})
+
+
+@music_bp.route("/api/music/stream")
+@music_bp.route("/proxy-stream")
+@playback_access_required
+def proxy_stream():
+    limited = _enforce_rate_limit("stream", 180)
+    if limited:
+        return limited
+    try:
+        video_id = home_music_service.validate_video_id(request.args.get("id", ""))
+        stream_url = home_music_service.stream_url(video_id)
+    except ValueError as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    except HomeMusicError as error:
+        current_app.logger.warning("HomeMusic stream extraction failed: %s", error)
+        return jsonify({"ok": False, "error": str(error)}), 502
+
+    upstream_headers = {}
+    if request.headers.get("Range"):
+        upstream_headers["Range"] = request.headers["Range"]
+    client = httpx.Client(follow_redirects=True, timeout=httpx.Timeout(30, read=60))
+    try:
+        upstream = client.send(
+            client.build_request("GET", stream_url, headers=upstream_headers),
+            stream=True,
+        )
+    except httpx.HTTPError as error:
+        client.close()
+        current_app.logger.warning("HomeMusic upstream stream failed: %s", error)
+        return jsonify({"ok": False, "error": "Audio stream is temporarily unavailable"}), 502
+
+    if upstream.status_code not in (200, 206):
+        upstream.close()
+        client.close()
+        return jsonify({"ok": False, "error": "Audio provider rejected the stream"}), 502
+
+    def generate():
+        try:
+            yield from upstream.iter_bytes(chunk_size=64 * 1024)
+        finally:
+            upstream.close()
+            client.close()
+
+    response_headers = {
+        "Accept-Ranges": upstream.headers.get("Accept-Ranges", "bytes"),
+        "Cache-Control": "private, no-store",
+        "Content-Type": upstream.headers.get("Content-Type", "audio/mp4"),
+    }
+    for name in ("Content-Length", "Content-Range", "ETag", "Last-Modified"):
+        if upstream.headers.get(name):
+            response_headers[name] = upstream.headers[name]
+    return Response(
+        stream_with_context(generate()),
+        status=upstream.status_code,
+        headers=response_headers,
+        direct_passthrough=True,
+    )

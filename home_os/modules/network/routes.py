@@ -1,12 +1,15 @@
 import os
+import re
 import socket
 import subprocess
+import tempfile
 
+import httpx
 import psutil
-from flask import current_app, jsonify, render_template, request
+from flask import Response, current_app, jsonify, render_template, request
 from flask_login import login_required
 
-from home_os.modules.auth.routes import admin_required
+from home_os.modules.auth.routes import admin_required, fresh_session_required
 from home_os.modules.network import network_bp
 
 
@@ -20,6 +23,7 @@ def network_view():
 @admin_required
 def network_status():
     interfaces = []
+    primary_interface = _get_default_interface()
     addrs = psutil.net_if_addrs()
     stats = psutil.net_if_stats()
     io = psutil.net_io_counters(pernic=True)
@@ -30,6 +34,8 @@ def network_status():
 
         iface = {
             "name": name,
+            "kind": _interface_kind(name),
+            "primary": name == primary_interface,
             "is_up": stats.get(name, None) and stats[name].isup,
             "speed": stats[name].speed if name in stats else 0,
             "mtu": stats[name].mtu if name in stats else 0,
@@ -58,6 +64,14 @@ def network_status():
     # Connected devices (ARP table)
     devices = _get_arp_table()
 
+    active_interfaces = sum(
+        1
+        for interface in interfaces
+        if interface["is_up"] and any(
+            address["type"] == "IPv4" for address in interface["addresses"]
+        )
+    )
+
     # DNS / gateway
     gateway = _get_default_gateway()
 
@@ -65,6 +79,7 @@ def network_status():
         "ok": True,
         "data": {
             "interfaces": interfaces,
+            "active_interfaces": active_interfaces,
             "total": {
                 "bytes_sent": total_io.bytes_sent,
                 "bytes_recv": total_io.bytes_recv,
@@ -75,6 +90,32 @@ def network_status():
             "gateway": gateway,
             "hostname": socket.gethostname(),
         }
+    })
+
+
+@network_bp.route("/api/network/connection-info")
+@login_required
+def connection_info():
+    port = current_app.config.get("PORT", 4443)
+    hostname = socket.gethostname()
+    hosts = []
+
+    if _is_safe_hostname(hostname):
+        hosts.append(f"{hostname}.local" if "." not in hostname else hostname)
+
+    hosts.extend(_local_ipv4_addresses())
+
+    local_urls = []
+    for host in _dedupe(hosts):
+        local_urls.append(f"https://{host}:{port}")
+
+    return jsonify({
+        "ok": True,
+        "data": {
+            "hostname": hostname,
+            "port": port,
+            "local_urls": _dedupe(local_urls),
+        },
     })
 
 
@@ -127,6 +168,41 @@ def _get_arp_table():
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
     return devices
+
+
+def _local_ipv4_addresses():
+    addresses = []
+    for addr_list in psutil.net_if_addrs().values():
+        for addr in addr_list:
+            if addr.family == socket.AF_INET and _is_local_ipv4(addr.address):
+                addresses.append(addr.address)
+    return _dedupe(addresses)
+
+
+def _is_local_ipv4(address):
+    import ipaddress
+
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    return (
+        ip.version == 4
+        and ip.is_private
+        and not ip.is_loopback
+        and not ip.is_link_local
+    )
+
+
+def _dedupe(items):
+    return list(dict.fromkeys(item for item in items if item))
+
+
+def _is_safe_hostname(hostname):
+    if not hostname:
+        return False
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-.")
+    return all(char in allowed for char in hostname)
 
 
 @network_bp.route("/api/network/settings")
@@ -191,7 +267,7 @@ def _adguard_web_port():
 
 
 @network_bp.route("/api/network/adguard/install", methods=["POST"])
-@admin_required
+@fresh_session_required
 def install_adguard():
     """One-click AdGuard Home installer (runs with sudo)."""
     try:
@@ -231,7 +307,96 @@ def adguard_installed():
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
-    return jsonify({"ok": True, "data": {"installed": installed, "running": running, "port": port}})
+    return jsonify({
+        "ok": True,
+        "data": {
+            "installed": installed,
+            "running": running,
+            "port": port,
+            "web_url": "/network/adguard/",
+        },
+    })
+
+
+@network_bp.route(
+    "/network/adguard/",
+    defaults={"subpath": ""},
+    methods=["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+)
+@network_bp.route(
+    "/network/adguard/<path:subpath>",
+    methods=["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+)
+@admin_required
+def adguard_proxy(subpath):
+    """Expose AdGuard Home through the authenticated Home OS domain."""
+    port = _adguard_web_port()
+    target = f"http://127.0.0.1:{port}/{subpath}"
+    if request.query_string:
+        target += "?" + request.query_string.decode("utf-8", errors="ignore")
+
+    excluded_request_headers = {
+        "accept-encoding", "connection", "content-length", "cookie", "host",
+        "origin", "referer", "transfer-encoding",
+    }
+    headers = {
+        key: value for key, value in request.headers
+        if key.lower() not in excluded_request_headers
+    }
+    adguard_session = request.cookies.get("agh_session")
+    if adguard_session:
+        headers["Cookie"] = f"agh_session={adguard_session}"
+
+    try:
+        with httpx.Client(timeout=30, follow_redirects=False) as client:
+            upstream = client.request(
+                method=request.method,
+                url=target,
+                headers=headers,
+                content=request.get_data(),
+            )
+    except (httpx.ConnectError, httpx.TimeoutException):
+        return "AdGuard Home is not responding", 502
+
+    prefix = "/network/adguard"
+    excluded_response_headers = {
+        "connection", "content-encoding", "content-length", "transfer-encoding",
+    }
+    response_headers = []
+    for key, value in upstream.headers.multi_items():
+        lower_key = key.lower()
+        if lower_key in excluded_response_headers:
+            continue
+        if lower_key == "location" and value.startswith("/"):
+            value = prefix + value
+        elif lower_key == "set-cookie":
+            value = re.sub(r"(?i)path=/($|;)", rf"Path={prefix}/\1", value)
+        response_headers.append((key, value))
+
+    content = upstream.content
+    content_type = upstream.headers.get("content-type", "")
+    if any(kind in content_type for kind in ("text/html", "javascript", "text/css")):
+        byte_prefix = prefix.encode()
+        content = content.replace(b"://", b":\x00//")
+        content = re.sub(
+            rb'((?:href|src|action)\s*=\s*["\'])/(?!/)',
+            lambda match: match.group(1) + byte_prefix + b"/",
+            content,
+        )
+        content = re.sub(
+            rb'(fetch\(\s*["\'])/(?!/)',
+            lambda match: match.group(1) + byte_prefix + b"/",
+            content,
+        )
+        content = re.sub(
+            rb'(["\'])/(control|login|install|assets|static)(?=[/\.])',
+            lambda match: match.group(1) + byte_prefix + b"/" + match.group(2),
+            content,
+        )
+        content = content.replace(b"url(/", b"url(" + byte_prefix + b"/")
+        content = content.replace(b":\x00//", b"://")
+
+    return Response(content, status=upstream.status_code, headers=response_headers)
 
 
 # --- Cloudflare Tunnel API ---
@@ -249,6 +414,41 @@ def _cloudflared_binary():
         if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
     return None
+
+
+def _systemd_service_loaded(service_name):
+    """Return whether systemd has a unit loaded for the tunnel service."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "show", service_name, "--property=LoadState", "--value"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.returncode == 0 and result.stdout.strip() == "loaded"
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def _request_public_domain():
+    """Infer a public domain when the admin is using Home OS remotely."""
+    host_header = request.host.lower()
+    if host_header.startswith("["):
+        host = host_header.split("]", 1)[0][1:]
+    else:
+        host = host_header.split(":", 1)[0]
+    if not host or host == "localhost" or "." not in host:
+        return ""
+
+    try:
+        socket.inet_pton(socket.AF_INET, host)
+        return ""
+    except OSError:
+        pass
+
+    try:
+        socket.inet_pton(socket.AF_INET6, host)
+        return ""
+    except OSError:
+        return host
 
 
 def _tunnel_uptime(service_name="cloudflared"):
@@ -291,9 +491,16 @@ def tunnel_status():
     from home_os.models.settings import Setting
 
     installed = _cloudflared_binary() is not None
+    permanent_configured = _systemd_service_loaded("cloudflared")
+    quick_configured = _systemd_service_loaded("cloudflared-quick")
     running = False
     uptime = None
     mode = Setting.get("cloudflare_tunnel_mode", "token")
+
+    if quick_configured and not permanent_configured:
+        mode = "quick"
+    elif permanent_configured:
+        mode = "token"
 
     if installed:
         service_name = "cloudflared-quick" if mode == "quick" else "cloudflared"
@@ -308,9 +515,22 @@ def tunnel_status():
         if running:
             uptime = _tunnel_uptime(service_name)
 
-    configured = Setting.get("cloudflare_configured", "false") == "true"
+    configured = (
+        Setting.get("cloudflare_configured", "false") == "true"
+        or permanent_configured
+        or quick_configured
+    )
     domain = Setting.get("cloudflare_domain", "")
     url = Setting.get("cloudflare_tunnel_url", "")
+
+    if configured and mode == "token" and not domain:
+        domain = _request_public_domain()
+        if domain:
+            url = f"https://{domain}"
+            Setting.set("cloudflare_domain", domain)
+            Setting.set("cloudflare_tunnel_url", url)
+            Setting.set("cloudflare_configured", "true")
+            Setting.set("cloudflare_tunnel_mode", mode)
 
     return jsonify({
         "ok": True,
@@ -327,7 +547,7 @@ def tunnel_status():
 
 
 @network_bp.route("/api/network/tunnel/install", methods=["POST"])
-@admin_required
+@fresh_session_required
 def tunnel_install():
     if _cloudflared_binary():
         return jsonify({"ok": True, "data": {"message": "cloudflared already installed"}})
@@ -342,7 +562,8 @@ def tunnel_install():
         return jsonify({"ok": False, "error": f"Unsupported architecture: {arch}"}), 400
 
     url = f"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-{deb_arch}.deb"
-    deb_path = "/tmp/cloudflared.deb"
+    deb_descriptor, deb_path = tempfile.mkstemp(prefix="homeos-cloudflared-", suffix=".deb")
+    os.close(deb_descriptor)
 
     try:
         dl = subprocess.run(
@@ -371,7 +592,7 @@ def tunnel_install():
 
 
 @network_bp.route("/api/network/tunnel/connect", methods=["POST"])
-@admin_required
+@fresh_session_required
 def tunnel_connect():
     import re
     data = request.get_json() or {}
@@ -433,7 +654,7 @@ def tunnel_connect():
 
 
 @network_bp.route("/api/network/tunnel/control", methods=["POST"])
-@admin_required
+@fresh_session_required
 def tunnel_control():
     from home_os.models.settings import Setting
 
@@ -466,7 +687,7 @@ def tunnel_control():
 
 
 @network_bp.route("/api/network/tunnel/configure", methods=["POST"])
-@admin_required
+@fresh_session_required
 def tunnel_configure():
     from home_os.models.settings import Setting
 
@@ -485,7 +706,7 @@ def tunnel_configure():
 
 
 @network_bp.route("/api/network/tunnel/reset", methods=["POST"])
-@admin_required
+@fresh_session_required
 def tunnel_reset():
     from home_os.models.settings import Setting
 
@@ -545,7 +766,7 @@ WantedBy=multi-user.target
 
 
 @network_bp.route("/api/network/tunnel/quick", methods=["POST"])
-@admin_required
+@fresh_session_required
 def tunnel_quick_start():
     from home_os.models.settings import Setting
 
@@ -556,8 +777,8 @@ def tunnel_quick_start():
     service_path = "/etc/systemd/system/cloudflared-quick.service"
     try:
         unit_content = _QUICK_TUNNEL_SERVICE.format(binary=binary)
-        tmp_path = "/tmp/cloudflared-quick.service"
-        with open(tmp_path, "w") as f:
+        tmp_descriptor, tmp_path = tempfile.mkstemp(prefix="homeos-cloudflared-", suffix=".service")
+        with os.fdopen(tmp_descriptor, "w") as f:
             f.write(unit_content)
         subprocess.run(
             ["sudo", "cp", tmp_path, service_path],
@@ -631,10 +852,37 @@ def tunnel_quick_status():
     return jsonify({"ok": True, "data": {"running": running, "url": url}})
 
 
+def _get_default_interface():
+    try:
+        result = subprocess.run(
+            ["ip", "route", "show", "default"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        parts = result.stdout.split()
+        if "dev" in parts:
+            return parts[parts.index("dev") + 1]
+    except (subprocess.TimeoutExpired, FileNotFoundError, IndexError):
+        pass
+    return None
+
+
+def _interface_kind(name):
+    if name.startswith(("en", "eth")):
+        return "Ethernet"
+    if name.startswith(("wl", "wlan")):
+        return "Wi-Fi"
+    if name.startswith("tailscale"):
+        return "Tailscale"
+    if name.startswith(("br-", "docker", "veth")):
+        return "Virtual"
+    return "Network"
+
+
 def _get_default_gateway():
     """Get default gateway IP."""
     try:
-        gateways = psutil.net_if_addrs()
         result = subprocess.run(
             ["ip", "route", "show", "default"],
             capture_output=True,

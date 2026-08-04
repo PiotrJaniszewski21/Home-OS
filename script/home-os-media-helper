@@ -1,0 +1,445 @@
+#!/usr/bin/env python3
+import hashlib
+import json
+import os
+import re
+import secrets
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import urllib.request
+import xml.etree.ElementTree as ET
+import zipfile
+from pathlib import Path
+from urllib.parse import urlsplit
+
+
+JELLYFIN_INSTALLER = "https://repo.jellyfin.org/install-debuntu.sh"
+JELLYFIN_NETWORK_CONFIG = Path("/etc/jellyfin/network.xml")
+JELLYFIN_WEB_CONFIG = Path("/usr/share/jellyfin/web/config.json")
+MEDIA_ROOT = Path("/opt/home-os/storage/HomeOS")
+MEDIA_GROUP = "homeos-media"
+HOME_OS_CONFIG = Path("/opt/home-os/config/config.yaml")
+HOME_OS_PYTHON = Path("/opt/home-os/app/venv/bin/python")
+QBITTORRENT_MEDIA_DROP_IN = Path(
+    "/etc/systemd/system/qbittorrent-nox@homeos.service.d/homeos-media.conf"
+)
+TORRSERVER_VERSION = "MatriX.142.1"
+TORRSERVER_URL = (
+    f"https://github.com/YouROK/TorrServer/releases/download/{TORRSERVER_VERSION}/"
+    "TorrServer-gst-linux-amd64"
+)
+TORRSERVER_SHA256 = "fbab9e56e3f6c94807e4c5178f1c4f210acdc211209d5af4e651604685583cbd"
+TORRSERVER_BINARY = Path("/usr/local/bin/torrserver")
+INSTANT_STREAM_STATE_DIR = Path("/opt/home-os/data/instant-stream")
+INSTANT_STREAM_TOKEN = INSTANT_STREAM_STATE_DIR / "access-token"
+DYNAMIC_LIBRARY_VERSION = "1.4.0"
+DYNAMIC_LIBRARY_URL = (
+    "https://github.com/pythcon/jellyfin-dynamic-library/releases/download/"
+    f"v{DYNAMIC_LIBRARY_VERSION}/dynamic-library-{DYNAMIC_LIBRARY_VERSION}.zip"
+)
+DYNAMIC_LIBRARY_SHA256 = "6c63d9f254e443bf52ec30f245f49326c2b242d312541824c9057c24cace7bad"
+DYNAMIC_LIBRARY_DIR = Path("/var/lib/jellyfin/plugins/DynamicLibrary")
+DYNAMIC_LIBRARY_CONFIG = Path(
+    "/var/lib/jellyfin/plugins/configurations/Jellyfin.Plugin.DynamicLibrary.xml"
+)
+
+
+def run(command, **kwargs):
+    subprocess.run(command, check=True, **kwargs)
+
+
+def install_jellyfin():
+    os.environ["DEBIAN_FRONTEND"] = "noninteractive"
+    run(["apt-get", "install", "-y", "-qq", "curl", "ca-certificates"])
+    with tempfile.NamedTemporaryFile(prefix="install-jellyfin-", suffix=".sh", delete=False) as installer:
+        installer_path = Path(installer.name)
+    try:
+        urllib.request.urlretrieve(JELLYFIN_INSTALLER, installer_path)
+        run(["bash", str(installer_path)])
+    finally:
+        installer_path.unlink(missing_ok=True)
+    run(["systemctl", "enable", "jellyfin"])
+    run(["systemctl", "start", "jellyfin"])
+    configure_jellyfin_access()
+    run(["systemctl", "restart", "jellyfin"])
+
+
+def configure_jellyfin_access():
+    run(["groupadd", "--force", MEDIA_GROUP])
+    run(["usermod", "-aG", MEDIA_GROUP, "homeos"])
+    run(["usermod", "-aG", MEDIA_GROUP, "jellyfin"])
+    MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
+    run(["chown", f"root:{MEDIA_GROUP}", str(MEDIA_ROOT.parent)])
+    run(["chmod", "2750", str(MEDIA_ROOT.parent)])
+    run(["chown", f"root:{MEDIA_GROUP}", str(MEDIA_ROOT)])
+    run(["chmod", "2770", str(MEDIA_ROOT)])
+    for folder_name in ("Movies", "Series"):
+        media_path = MEDIA_ROOT / folder_name
+        media_path.mkdir(parents=True, exist_ok=True)
+        run(["chgrp", "-R", MEDIA_GROUP, str(media_path)])
+        run(["chmod", "-R", "g+rwX,o-rwx", str(media_path)])
+        run(["find", str(media_path), "-type", "d", "-exec", "chmod", "g+s", "{}", "+"])
+    configure_jellyfin_base_url()
+    configure_jellyfin_request_link()
+
+
+def configure_jellyfin_request_link():
+    if not JELLYFIN_WEB_CONFIG.exists():
+        return
+    config = json.loads(JELLYFIN_WEB_CONFIG.read_text(encoding="utf-8"))
+    links = config.get("menuLinks")
+    if not isinstance(links, list):
+        links = []
+    links = [
+        link for link in links
+        if not (
+            isinstance(link, dict)
+            and (
+                link.get("name") == "Request Media"
+                or str(link.get("url", "")).rstrip("/") == "/svc/seerr"
+            )
+        )
+    ]
+    links.append({"name": "Request Media", "icon": "add_circle", "url": "/svc/seerr/"})
+    config["menuLinks"] = links
+
+    temporary_path = JELLYFIN_WEB_CONFIG.with_suffix(".json.tmp")
+    temporary_path.write_text(json.dumps(config, indent=4) + "\n", encoding="utf-8")
+    shutil.copymode(JELLYFIN_WEB_CONFIG, temporary_path)
+    shutil.chown(
+        temporary_path,
+        user=JELLYFIN_WEB_CONFIG.stat().st_uid,
+        group=JELLYFIN_WEB_CONFIG.stat().st_gid,
+    )
+    temporary_path.replace(JELLYFIN_WEB_CONFIG)
+
+
+def _download_to_temporary_file(url, expected_sha256):
+    with tempfile.NamedTemporaryFile(prefix="home-os-media-", delete=False) as download:
+        temporary_path = Path(download.name)
+    urllib.request.urlretrieve(url, temporary_path)
+    digest = hashlib.sha256(temporary_path.read_bytes()).hexdigest()
+    if digest != expected_sha256:
+        temporary_path.unlink(missing_ok=True)
+        raise RuntimeError("Media component download checksum did not match")
+    return temporary_path
+
+
+def _download_verified(url, expected_sha256, destination):
+    temporary_path = _download_to_temporary_file(url, expected_sha256)
+    try:
+        run(["install", "-o", "root", "-g", "root", "-m", "0755", str(temporary_path), str(destination)])
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def ensure_instant_stream_token():
+    INSTANT_STREAM_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    if INSTANT_STREAM_TOKEN.exists() and INSTANT_STREAM_TOKEN.read_text(encoding="utf-8").strip():
+        return INSTANT_STREAM_TOKEN.read_text(encoding="utf-8").strip()
+    INSTANT_STREAM_TOKEN.unlink(missing_ok=True)
+    token = secrets.token_urlsafe(32)
+    descriptor = os.open(INSTANT_STREAM_TOKEN, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as token_file:
+        token_file.write(token + "\n")
+        token_file.flush()
+        os.fsync(token_file.fileno())
+    shutil.chown(INSTANT_STREAM_TOKEN, user="root", group=MEDIA_GROUP)
+    return token
+
+
+def _configured_public_url():
+    override = os.environ.get("HOME_OS_INSTANT_STREAM_PUBLIC_URL", "").strip()
+    candidates = [override]
+    database_path = Path("/opt/home-os/app/data/home_os.db")
+    if HOME_OS_CONFIG.is_file():
+        match = re.search(
+            r"(?ms)^database:\s*\n(?:(?:[ \t]+.*)\n)*?[ \t]+path:\s*([^\n#]+)",
+            HOME_OS_CONFIG.read_text(encoding="utf-8"),
+        )
+        if match:
+            configured_path = Path(match.group(1).strip().strip("\"'"))
+            database_path = (
+                configured_path
+                if configured_path.is_absolute()
+                else Path("/opt/home-os/app") / configured_path
+            )
+    if database_path.is_file():
+        try:
+            with sqlite3.connect(database_path) as database:
+                row = database.execute(
+                    "SELECT value FROM settings WHERE key = 'cloudflare_tunnel_url'"
+                ).fetchone()
+                if row:
+                    candidates.append(str(row[0] or "").strip())
+        except sqlite3.Error:
+            pass
+    cloudflare_config = Path("/etc/cloudflared/config.yml")
+    if cloudflare_config.is_file():
+        match = re.search(
+            r"^\s*hostname:\s*([A-Za-z0-9.-]+)\s*$",
+            cloudflare_config.read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+        if match:
+            candidates.append(f"https://{match.group(1)}")
+    for candidate in candidates:
+        parsed = urlsplit(candidate)
+        if parsed.scheme in {"http", "https"} and parsed.hostname and not parsed.username:
+            return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+    return ""
+
+
+def _set_xml_value(root, name, value):
+    element = root.find(name)
+    if element is None:
+        element = ET.SubElement(root, name)
+    element.text = str(value)
+
+
+def configure_dynamic_library(token):
+    if DYNAMIC_LIBRARY_CONFIG.exists():
+        tree = ET.parse(DYNAMIC_LIBRARY_CONFIG)
+        root = tree.getroot()
+    else:
+        root = ET.Element(
+            "PluginConfiguration",
+            {
+                "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+                "xmlns:xsd": "http://www.w3.org/2001/XMLSchema",
+            },
+        )
+        tree = ET.ElementTree(root)
+
+    public_url = _configured_public_url()
+    if not public_url:
+        raise RuntimeError(
+            "A configured Home OS public URL is required for Jellyfin instant playback"
+        )
+    _set_xml_value(root, "Enabled", "true")
+    _set_xml_value(root, "CatalogProvider", "StremioAddon")
+    _set_xml_value(root, "StremioCatalogUrl", "https://v3-cinemeta.strem.io")
+    _set_xml_value(root, "StreamProvider", "Embedarr")
+    _set_xml_value(
+        root,
+        "EmbedarrUrl",
+        public_url + "/api/media/instant-play/embedarr",
+    )
+    _set_xml_value(root, "EmbedarrApiKey", token)
+    _set_xml_value(root, "CreateMediaOnView", "true")
+    _set_xml_value(root, "DirectMovieUrlTemplate", "")
+    _set_xml_value(root, "MoviePreferredId", "Imdb")
+    _set_xml_value(root, "ShowUnreleasedStreams", "false")
+    _set_xml_value(root, "MaxMovieResults", "20")
+
+    DYNAMIC_LIBRARY_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = DYNAMIC_LIBRARY_CONFIG.with_suffix(".xml.tmp")
+    tree.write(temporary_path, encoding="utf-8", xml_declaration=True)
+    temporary_path.chmod(0o640)
+    shutil.chown(temporary_path, user="jellyfin", group="adm")
+    temporary_path.replace(DYNAMIC_LIBRARY_CONFIG)
+
+
+def install_dynamic_library(token):
+    archive_path = _download_to_temporary_file(DYNAMIC_LIBRARY_URL, DYNAMIC_LIBRARY_SHA256)
+    extraction_root = Path(tempfile.mkdtemp(prefix="dynamic-library-"))
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            for member in archive.infolist():
+                destination = (extraction_root / member.filename).resolve()
+                if extraction_root.resolve() not in destination.parents and destination != extraction_root.resolve():
+                    raise RuntimeError("Dynamic Library archive contains an unsafe path")
+            archive.extractall(extraction_root)
+        extracted = extraction_root / "DynamicLibrary"
+        if not (extracted / "Jellyfin.Plugin.DynamicLibrary.dll").is_file():
+            raise RuntimeError("Dynamic Library archive is incomplete")
+        shutil.rmtree(DYNAMIC_LIBRARY_DIR, ignore_errors=True)
+        shutil.copytree(extracted, DYNAMIC_LIBRARY_DIR)
+        for path in [DYNAMIC_LIBRARY_DIR, *DYNAMIC_LIBRARY_DIR.rglob("*")]:
+            shutil.chown(path, user="jellyfin", group="adm")
+        configure_dynamic_library(token)
+    finally:
+        archive_path.unlink(missing_ok=True)
+        shutil.rmtree(extraction_root, ignore_errors=True)
+
+
+def configure_qbittorrent_media_access():
+    QBITTORRENT_MEDIA_DROP_IN.parent.mkdir(parents=True, exist_ok=True)
+    QBITTORRENT_MEDIA_DROP_IN.write_text(
+        "[Service]\n"
+        f"SupplementaryGroups={MEDIA_GROUP}\n"
+        "UMask=0007\n",
+        encoding="utf-8",
+    )
+    QBITTORRENT_MEDIA_DROP_IN.chmod(0o644)
+    run(["systemctl", "daemon-reload"])
+    if subprocess.run(
+        ["systemctl", "is-active", "--quiet", "qbittorrent-nox@homeos.service"],
+        check=False,
+    ).returncode == 0:
+        run(["systemctl", "restart", "qbittorrent-nox@homeos.service"])
+
+
+def install_torrserver():
+    run(["groupadd", "--force", MEDIA_GROUP])
+    run(["usermod", "-aG", MEDIA_GROUP, "homeos"])
+    configure_qbittorrent_media_access()
+    run([
+        "apt-get", "install", "-y", "-qq",
+        "gstreamer1.0-tools",
+        "gstreamer1.0-plugins-base",
+        "gstreamer1.0-plugins-base-apps",
+        "gstreamer1.0-plugins-good",
+        "gstreamer1.0-plugins-bad",
+        "gstreamer1.0-plugins-ugly",
+        "gstreamer1.0-libav",
+    ])
+    _download_verified(TORRSERVER_URL, TORRSERVER_SHA256, TORRSERVER_BINARY)
+    data_root = INSTANT_STREAM_STATE_DIR.parent
+    run(["chgrp", MEDIA_GROUP, str(data_root)])
+    run(["chmod", "g+x", str(data_root)])
+    INSTANT_STREAM_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.chown(INSTANT_STREAM_STATE_DIR, user="homeos", group=MEDIA_GROUP)
+    INSTANT_STREAM_STATE_DIR.chmod(0o2770)
+    torrserver_data = INSTANT_STREAM_STATE_DIR / "torrserver"
+    torrserver_data.mkdir(parents=True, exist_ok=True)
+    shutil.chown(torrserver_data, user="homeos", group=MEDIA_GROUP)
+    torrserver_data.chmod(0o2770)
+    token = ensure_instant_stream_token()
+    install_dynamic_library(token)
+    configure_jellyfin_request_link()
+    run(["systemctl", "daemon-reload"])
+    run(["systemctl", "enable", "torrserver.service"])
+    run(["systemctl", "restart", "torrserver.service"])
+    run(["systemctl", "enable", "--now", "home-os-instant-stream.timer"])
+    run(["systemctl", "restart", "jellyfin"])
+
+
+def cleanup_instant_streams():
+    if HOME_OS_PYTHON.exists():
+        subprocess.run(
+            [str(HOME_OS_PYTHON), "-m", "home_os.services.instant_stream", "--cleanup-all"],
+            cwd="/opt/home-os/app",
+            check=False,
+        )
+
+
+def stop_instant_streaming():
+    run(["systemctl", "disable", "--now", "home-os-instant-stream.timer"])
+    cleanup_instant_streams()
+    subprocess.run(["systemctl", "stop", "torrserver.service"], check=False)
+
+
+def uninstall_torrserver():
+    stop_instant_streaming()
+    subprocess.run(["systemctl", "disable", "torrserver.service"], check=False)
+    TORRSERVER_BINARY.unlink(missing_ok=True)
+    shutil.rmtree(DYNAMIC_LIBRARY_DIR, ignore_errors=True)
+    DYNAMIC_LIBRARY_CONFIG.unlink(missing_ok=True)
+    shutil.rmtree(INSTANT_STREAM_STATE_DIR, ignore_errors=True)
+    run(["systemctl", "daemon-reload"])
+    subprocess.run(["systemctl", "restart", "jellyfin"], check=False)
+
+
+def jellyfin_network_tree():
+    if JELLYFIN_NETWORK_CONFIG.exists():
+        return ET.parse(JELLYFIN_NETWORK_CONFIG)
+    return ET.ElementTree(ET.Element("NetworkConfiguration"))
+
+
+def write_jellyfin_network_tree(tree):
+    temporary_path = JELLYFIN_NETWORK_CONFIG.with_suffix(".xml.tmp")
+    tree.write(temporary_path, encoding="utf-8", xml_declaration=True)
+    if JELLYFIN_NETWORK_CONFIG.exists():
+        shutil.copymode(JELLYFIN_NETWORK_CONFIG, temporary_path)
+    else:
+        temporary_path.chmod(0o664)
+    shutil.chown(temporary_path, user="jellyfin", group="adm")
+    temporary_path.replace(JELLYFIN_NETWORK_CONFIG)
+
+
+def configure_jellyfin_base_url():
+    tree = jellyfin_network_tree()
+    root = tree.getroot()
+    base_url_element = root.find("BaseUrl")
+    if base_url_element is None:
+        base_url_element = ET.SubElement(root, "BaseUrl")
+    base_url_element.text = "/svc/jellyfin"
+    write_jellyfin_network_tree(tree)
+
+
+def uninstall_jellyfin():
+    subprocess.run(["systemctl", "stop", "jellyfin"], check=False)
+    subprocess.run(["systemctl", "disable", "jellyfin"], check=False)
+    run(["apt-get", "purge", "-y", "jellyfin", "jellyfin-server", "jellyfin-web"])
+    run(["apt-get", "autoremove", "-y"])
+    run(["systemctl", "daemon-reload"])
+
+
+def configured_jellyfin_port():
+    match = re.search(r"^\s*jellyfin_port:\s*([0-9]+)\s*$", HOME_OS_CONFIG.read_text(), re.MULTILINE)
+    if not match:
+        return 8096
+    return int(match.group(1))
+
+
+def set_jellyfin_port():
+    port = configured_jellyfin_port()
+    if not 1 <= port <= 65535:
+        raise ValueError("port must be between 1 and 65535")
+    tree = jellyfin_network_tree()
+    root = tree.getroot()
+    port_element = root.find("InternalHttpPort")
+    if port_element is None:
+        port_element = ET.SubElement(root, "InternalHttpPort")
+    port_element.text = str(port)
+    write_jellyfin_network_tree(tree)
+    run(["systemctl", "restart", "jellyfin"])
+
+
+def main():
+    if os.geteuid() != 0:
+        raise PermissionError("this helper must run as root")
+    if len(sys.argv) != 2:
+        raise ValueError("an action is required")
+
+    action = sys.argv[1]
+    if action == "install-jellyfin":
+        install_jellyfin()
+    elif action == "configure-jellyfin-access":
+        configure_jellyfin_access()
+    elif action == "start-jellyfin":
+        run(["systemctl", "start", "jellyfin"])
+    elif action == "stop-jellyfin":
+        run(["systemctl", "stop", "jellyfin"])
+    elif action == "uninstall-jellyfin":
+        uninstall_jellyfin()
+    elif action == "set-jellyfin-port":
+        set_jellyfin_port()
+    elif action == "configure-jellyfin-base-url":
+        configure_jellyfin_base_url()
+        run(["systemctl", "restart", "jellyfin"])
+    elif action == "configure-jellyfin-request-link":
+        configure_jellyfin_request_link()
+    elif action == "install-torrserver":
+        install_torrserver()
+    elif action == "start-instant-streaming":
+        run(["systemctl", "start", "torrserver.service"])
+        run(["systemctl", "enable", "--now", "home-os-instant-stream.timer"])
+    elif action == "stop-instant-streaming":
+        stop_instant_streaming()
+    elif action == "uninstall-torrserver":
+        uninstall_torrserver()
+    else:
+        raise ValueError("unsupported action or arguments")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        print(f"home-os-media-helper: {error}", file=sys.stderr)
+        raise SystemExit(1)

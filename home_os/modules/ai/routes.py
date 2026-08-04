@@ -1,12 +1,11 @@
 import json
 from pathlib import Path
 
-import yaml
 from flask import current_app, flash, jsonify, redirect, render_template, request, url_for
-from flask_login import login_required
+from flask_login import current_user, login_required
 
-from home_os.config import ROOT_DIR
 from home_os.modules.ai import ai_bp
+from home_os.modules.auth.routes import admin_required
 
 SYSTEM_PROMPT = """You are Home OS Assistant, an AI helper for a personal NAS (Network Attached Storage) system. You help the user find files, understand their storage usage, and manage their system.
 
@@ -43,7 +42,7 @@ def chat():
 
 
 @ai_bp.route("/ai/settings")
-@login_required
+@admin_required
 def settings():
     config = current_app.config["_raw_config"]
     ai = config["ai"]
@@ -53,7 +52,7 @@ def settings():
 
 
 @ai_bp.route("/ai/settings", methods=["POST"])
-@login_required
+@admin_required
 def save_settings():
     config = current_app.config["_raw_config"]
 
@@ -82,9 +81,8 @@ def save_settings():
     config["ai"]["bedrock"]["region"] = request.form.get("bedrock_region", "us-east-1")
     config["ai"]["bedrock"]["model"] = request.form.get("bedrock_model", "anthropic.claude-sonnet-4-6-20250514-v1:0")
 
-    config_path = ROOT_DIR / "config.yaml"
-    with open(config_path, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+    from home_os.modules.settings.routes import _save_config
+    _save_config(config)
 
     flash("AI settings saved.", "success")
     return redirect(url_for("ai.settings"))
@@ -96,10 +94,16 @@ def chat_api():
     from home_os.services.ai_service import create_provider
     from home_os.services.ai_tools import TOOL_DEFINITIONS, AIToolExecutor
     from home_os.services.rate_limiter import RateLimiter
+    from home_os.modules.files.routes import get_file_service
 
     _ai_limiter = getattr(chat_api, '_limiter', None)
-    if not _ai_limiter:
-        _ai_limiter = RateLimiter(max_attempts=20, window_seconds=60)
+    limiter_path = Path(current_app.instance_path) / "ai_rate_limit.db"
+    if not _ai_limiter or _ai_limiter.db_path != limiter_path:
+        _ai_limiter = RateLimiter(
+            db_path=limiter_path,
+            max_attempts=20,
+            window_seconds=60,
+        )
         chat_api._limiter = _ai_limiter
 
     user_key = f"ai_{current_user.id}"
@@ -108,19 +112,30 @@ def chat_api():
     _ai_limiter.record(user_key)
 
     config = current_app.config["_raw_config"]
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     user_message = data.get("message", "").strip()
-    history = data.get("history", [])
+    raw_history = data.get("history", [])
 
     if not user_message:
         return jsonify({"ok": False, "error": "Message required"}), 400
+    if len(user_message) > 20_000:
+        return jsonify({"ok": False, "error": "Message is too long"}), 413
+    if not isinstance(raw_history, list):
+        return jsonify({"ok": False, "error": "History must be a list"}), 400
+    history = []
+    for item in raw_history[-50:]:
+        if not isinstance(item, dict) or item.get("role") not in ("user", "assistant"):
+            continue
+        content = item.get("content")
+        if isinstance(content, str):
+            history.append({"role": item["role"], "content": content[:20_000]})
 
     try:
         provider = create_provider(config)
     except (ValueError, KeyError) as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-    executor = AIToolExecutor(config["storage"]["root"])
+    executor = AIToolExecutor(str(get_file_service().storage_root))
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(history)

@@ -1,5 +1,4 @@
-from flask import current_app, flash, jsonify, redirect, render_template, request, url_for
-from flask_login import login_required
+from flask import current_app, flash, redirect, render_template, request, url_for
 
 from home_os.modules.auth.routes import admin_required
 from home_os.modules.sharing import sharing_bp

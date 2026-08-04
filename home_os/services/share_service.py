@@ -80,11 +80,11 @@ class ShareService:
             lines.extend([
                 f"[{share.name}]",
                 f"   path = {share.path}",
-                f"   browseable = yes",
+                "   browseable = yes",
                 f"   read only = {'yes' if share.read_only else 'no'}",
                 f"   guest ok = {'yes' if share.guest_access else 'no'}",
-                f"   create mask = 0664",
-                f"   directory mask = 0775",
+                "   create mask = 0664",
+                "   directory mask = 0775",
                 "",
             ])
 

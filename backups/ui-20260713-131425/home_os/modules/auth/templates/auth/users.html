@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Users — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+        <h1>Users</h1>
+        <a href="{{ url_for('auth.create_user') }}" class="btn btn-ghost">+ New User</a>
+    </div>
+
+    <div class="glass-panel" style="padding: 0; overflow: hidden;">
+        <table class="glass-table">
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Last Login</th>
+                    <th style="width: 120px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td>
+                        <span class="font-medium">{{ user.username }}</span>
+                        {% if user.email %}
+                        <span class="text-tertiary text-xs" style="margin-left: 0.5rem;">{{ user.email }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if user.role == 'admin' %}
+                        <span class="badge badge-accent">admin</span>
+                        {% elif user.role == 'guest' %}
+                        <span class="badge badge-ghost">guest</span>
+                        {% else %}
+                        <span class="badge badge-success">user</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if user.is_active %}
+                        <span class="badge badge-success">Active</span>
+                        {% else %}
+                        <span class="badge badge-danger">Disabled</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-secondary text-xs">
+                        {{ user.last_login.strftime('%Y-%m-%d %H:%M') if user.last_login else 'Never' }}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('auth.edit_user', user_id=user.id) }}" class="action-link mr-3">Edit</a>
+                    {% if user.id != current_user.id %}
+                        <form action="{{ url_for('auth.toggle_user', user_id=user.id) }}" method="POST" class="inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="action-link mr-3">{{ 'Disable' if user.is_active else 'Enable' }}</button>
+                        </form>
+                        <form action="{{ url_for('auth.delete_user', user_id=user.id) }}" method="POST" class="inline" onsubmit="return confirm('Delete user {{ user.username }}?')">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="action-link danger">Delete</button>
+                        </form>
+                        {% else %}
+                        <span class="text-tertiary text-xs">(you)</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

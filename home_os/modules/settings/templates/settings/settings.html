@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Settings — Home OS{% endblock %}
 {% block content %}
-<div class="max-w-3xl mx-auto">
-    <h1 class="mb-6">Settings</h1>
+<div class="max-w-3xl mx-auto settings-page">
+    <div class="settings-heading mb-6"><div class="settings-mark">⚙</div><div><h1>Settings</h1><p>Personalise Home OS and manage your server</p></div></div>
 
     <!-- Profile -->
     <div class="glass-card mb-4">
@@ -21,9 +21,15 @@
             </div>
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">New Password</label>
-                    <input type="password" name="new_password" class="glass-input" placeholder="Leave blank to keep">
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Current Password</label>
+                    <input type="password" name="current_password" class="glass-input" autocomplete="current-password" placeholder="Required to change password">
                 </div>
+                <div>
+                    <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">New Password</label>
+                    <input type="password" name="new_password" class="glass-input" autocomplete="new-password" placeholder="Leave blank to keep">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
                 <div>
                     <label class="text-secondary text-xs font-medium" style="display:block; margin-bottom:0.35rem;">Default Page</label>
                     <select name="default_page" class="glass-input">
@@ -57,7 +63,6 @@
                     ('calendar', 'Calendar', '📅'),
                     ('budget', 'Budget', '💰'),
                     ('network', 'Network', '📡'),
-                    ('terminal', 'Terminal', '⌨'),
                     ('settings', 'Settings', '⚙'),
                 ] %}
                 {% for key, label, icon in all_tabs %}
@@ -175,6 +180,11 @@
 </div>
 
 <style>
+.settings-heading { display:flex; align-items:center; gap:1rem; }
+.settings-heading p { margin-top:0.25rem; color:var(--text-tertiary); font-size:13px; }
+.settings-mark { display:flex; align-items:center; justify-content:center; width:56px; height:56px; border-radius:18px; background:var(--page-gradient); box-shadow:0 12px 25px rgba(var(--page-accent-rgb),0.2); color:#fff; font-size:24px; }
+.settings-page > .glass-card { position:relative; overflow:hidden; }
+.settings-page > .glass-card::before { content:""; position:absolute; inset:0 auto 0 0; width:3px; background:var(--page-gradient); opacity:0.72; }
 .dock-picker {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));

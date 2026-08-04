@@ -1,6 +1,8 @@
+import os
 import sqlite3
 import time
 import threading
+from pathlib import Path
 
 
 class RateLimiter:
@@ -12,19 +14,31 @@ class RateLimiter:
 
     _cleanup_interval = 60  # seconds between cleanup runs
 
-    def __init__(self, db_path="/tmp/home_os_rate_limit.db",
+    def __init__(self, db_path=None,
                  max_attempts=5, window_seconds=900, per_account_max=10):
-        self.db_path = db_path
+        self.db_path = Path(db_path) if db_path else None
         self.max_attempts = max_attempts
         self.window = window_seconds
         self.per_account_max = per_account_max
         self._last_cleanup = 0
         self._lock = threading.Lock()
+        if self.db_path:
+            self._init_db()
+
+    def configure(self, db_path):
+        self.db_path = Path(db_path)
         self._init_db()
 
     def _get_conn(self):
         """Get a new connection with WAL mode for concurrent access."""
+        if self.db_path is None:
+            raise RuntimeError("Rate limiter database is not configured")
+        self.db_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.db_path.parent.chmod(0o700)
+        if self.db_path.is_symlink():
+            raise RuntimeError("Rate limiter database cannot be a symlink")
         conn = sqlite3.connect(self.db_path, timeout=5)
+        os.chmod(self.db_path, 0o600)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=3000")
         return conn
@@ -116,8 +130,13 @@ class RateLimiter:
 
 
 login_limiter = RateLimiter(
-    db_path="/tmp/home_os_rate_limit.db",
     max_attempts=5,
     window_seconds=900,
     per_account_max=10,
+)
+
+music_limiter = RateLimiter(
+    max_attempts=60,
+    window_seconds=60,
+    per_account_max=60,
 )

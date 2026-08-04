@@ -56,19 +56,18 @@ apt-get install -y -qq \
     openssl \
     curl
 
-# Create system user with passwordless sudo
+# Create an unprivileged system user. Privileged package/service management is
+# intentionally not delegated to the web application.
 echo "[2/7] Creating system user..."
 if ! id "$USER" &>/dev/null; then
     useradd --system --no-create-home --shell /bin/bash "$USER"
 fi
 
-# Grant passwordless sudo to homeos user
-echo "$USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/homeos
-chmod 440 /etc/sudoers.d/homeos
+rm -f /etc/sudoers.d/homeos
 
 # Create directory structure
 echo "[3/7] Creating directory structure..."
-mkdir -p "$INSTALL_DIR"/{app,config/tls,data/trash,storage,logs}
+mkdir -p "$INSTALL_DIR"/{app,app/data,config/tls,data/trash,storage,logs}
 
 # Get application code
 echo "[4/7] Installing application..."
@@ -161,8 +160,10 @@ Group=$GROUP
 WorkingDirectory=$INSTALL_DIR/app
 Environment=HOME_OS_CONFIG=$INSTALL_DIR/config/config.yaml
 ExecStart=$INSTALL_DIR/app/venv/bin/gunicorn \\
-    --bind 0.0.0.0:443 \\
+    --bind 0.0.0.0:4443 \\
     --workers 3 \\
+    --worker-class gevent \\
+    --no-control-socket \\
     --certfile $INSTALL_DIR/config/tls/cert.pem \\
     --keyfile $INSTALL_DIR/config/tls/key.pem \\
     --access-logfile $INSTALL_DIR/logs/access.log \\
@@ -170,6 +171,21 @@ ExecStart=$INSTALL_DIR/app/venv/bin/gunicorn \\
     "home_os.app:create_app()"
 Restart=always
 RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+ReadWritePaths=$INSTALL_DIR/config $INSTALL_DIR/data $INSTALL_DIR/storage $INSTALL_DIR/logs $INSTALL_DIR/app/data -/media -/mnt -/run/media
 
 [Install]
 WantedBy=multi-user.target
@@ -178,6 +194,9 @@ EOF
 # Set permissions
 chown -R "$USER:$GROUP" "$INSTALL_DIR"
 chmod 700 "$INSTALL_DIR/config"
+chmod 700 "$INSTALL_DIR/data" "$INSTALL_DIR/logs" "$INSTALL_DIR/app/data"
+chmod 751 "$INSTALL_DIR/storage"
+chmod 600 "$INSTALL_DIR/config/config.yaml"
 chmod 600 "$INSTALL_DIR/config/secret.key"
 chmod 600 "$INSTALL_DIR/config/tls/key.pem"
 

@@ -20,6 +20,7 @@ class User(UserMixin, db.Model):
     quota_bytes = db.Column(db.BigInteger, nullable=True)
     home_directory = db.Column(db.String(512), nullable=False, default="")
     is_active = db.Column(db.Boolean, nullable=False, default=True)
+    auth_version = db.Column(db.Integer, nullable=False, default=1)
     api_token_hash = db.Column(db.String(64), nullable=True)
     monthly_income = db.Column(db.Float, nullable=True, default=0)
     default_page = db.Column(db.String(30), nullable=False, default="dashboard")
@@ -39,6 +40,9 @@ class User(UserMixin, db.Model):
         except VerifyMismatchError:
             return False
 
+    def get_id(self):
+        return f"{self.id}:{self.auth_version}"
+
     @property
     def is_admin(self):
         return self.role == "admin"
@@ -46,8 +50,12 @@ class User(UserMixin, db.Model):
     @property
     def allowed_pages(self):
         if self.is_admin:
-            return ["dashboard", "files", "storage", "media", "ai", "calendar", "budget", "network", "sharing", "users", "terminal", "settings"]
-        return [p.strip() for p in (self.permissions or "").split(",") if p.strip()]
+            return ["dashboard", "files", "storage", "media", "ai", "calendar", "budget", "network", "sharing", "users", "settings"]
+        return [
+            page
+            for page in (p.strip() for p in (self.permissions or "").split(","))
+            if page and page != "terminal"
+        ]
 
     def has_permission(self, page):
         if self.is_admin:
@@ -68,3 +76,24 @@ class User(UserMixin, db.Model):
 
     def __repr__(self):
         return f"<User {self.username}>"
+
+
+class APIToken(db.Model):
+    __tablename__ = "api_tokens"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(80), nullable=False, default="native-app")
+    user_agent = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(
+        db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    last_used_at = db.Column(db.DateTime, nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    revoked_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship(
+        "User",
+        backref=db.backref("api_tokens", cascade="all, delete-orphan", lazy="dynamic"),
+    )

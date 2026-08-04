@@ -1,6 +1,4 @@
 from flask import current_app, jsonify, render_template, request
-from flask_login import login_required
-
 from home_os.modules.auth.routes import admin_required
 from home_os.modules.dns import dns_bp
 
@@ -31,7 +29,7 @@ def dns_status():
         status = ag.get_status()
         stats = ag.get_top_clients()
         return jsonify({"ok": True, "data": {**status, **stats}})
-    except Exception as e:
+    except Exception:
         return jsonify({"ok": False, "error": "Cannot connect to AdGuard Home. Is it running?"}), 503
 
 

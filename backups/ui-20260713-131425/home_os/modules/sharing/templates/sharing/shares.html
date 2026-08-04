@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Sharing — Home OS{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+        <h1>Network Shares</h1>
+        <button onclick="document.getElementById('create-modal').classList.remove('hidden')" class="btn btn-ghost">+ New Share</button>
+    </div>
+
+    <!-- Shares list -->
+    <div class="glass-panel" style="padding: 0; overflow: hidden;">
+        <table class="glass-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Path</th>
+                    <th>Access</th>
+                    <th>Status</th>
+                    <th style="width: 120px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for share in shares %}
+                <tr>
+                    <td class="font-medium">{{ share.name }}</td>
+                    <td class="text-secondary text-xs">{{ share.path }}</td>
+                    <td>
+                        {% if share.guest_access %}
+                        <span class="badge badge-warning">Guest</span>
+                        {% elif share.read_only %}
+                        <span class="badge badge-ghost">Read-only</span>
+                        {% else %}
+                        <span class="badge badge-success">Read/Write</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if share.is_active %}
+                        <span class="badge badge-success">Active</span>
+                        {% else %}
+                        <span class="badge badge-ghost">Disabled</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <form action="{{ url_for('sharing.toggle_share', share_id=share.id) }}" method="POST" class="inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="action-link mr-3">{{ 'Disable' if share.is_active else 'Enable' }}</button>
+                        </form>
+                        <form action="{{ url_for('sharing.delete_share', share_id=share.id) }}" method="POST" class="inline" onsubmit="return confirm('Delete share {{ share.name }}?')">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="action-link danger">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not shares %}
+                <tr>
+                    <td colspan="5" style="text-align: center; padding: 3rem; color: var(--text-tertiary);">
+                        No shares configured
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <p class="text-tertiary text-xs mt-4">
+        Shares are accessible via SMB at <code style="color: var(--text-secondary);">\\your-server-ip\share-name</code>
+    </p>
+</div>
+
+<!-- Create Share Modal -->
+<div id="create-modal" class="modal-backdrop hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal-content">
+        <h3 style="margin-bottom: 1rem;">New Share</h3>
+        <form action="{{ url_for('sharing.create_share') }}" method="POST" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div>
+                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Share Name</label>
+                <input type="text" name="name" placeholder="e.g. Media" required class="glass-input">
+            </div>
+            <div>
+                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Path (relative to storage)</label>
+                <input type="text" name="path" placeholder="e.g. /photos or /" required class="glass-input">
+            </div>
+            <div class="flex items-center gap-4">
+                <label class="flex items-center gap-2 text-sm text-secondary" style="cursor:pointer;">
+                    <input type="checkbox" name="read_only">
+                    Read-only
+                </label>
+                <label class="flex items-center gap-2 text-sm text-secondary" style="cursor:pointer;">
+                    <input type="checkbox" name="guest_access">
+                    Guest access
+                </label>
+            </div>
+            <div class="flex justify-end gap-3" style="padding-top: 0.5rem;">
+                <button type="button" onclick="document.getElementById('create-modal').classList.add('hidden')" class="btn btn-ghost">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

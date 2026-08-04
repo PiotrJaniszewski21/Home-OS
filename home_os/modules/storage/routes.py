@@ -1,10 +1,10 @@
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import current_app, jsonify, render_template, request, send_file
 from flask_login import login_required
 
+from home_os.modules.auth.routes import admin_required
 from home_os.modules.storage import storage_bp
 
 
@@ -37,7 +37,7 @@ def overview():
 
 @storage_bp.route("/files/drive/<name>")
 @storage_bp.route("/files/drive/<name>/<path:filepath>")
-@login_required
+@admin_required
 def browse_drive(name, filepath=""):
     svc = get_storage_service()
     drive = svc.get_drive_by_name(name)

@@ -1,6 +1,10 @@
 import os
+import errno
 import shutil
+import stat
 import time
+import tempfile
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -9,7 +13,16 @@ from home_os.models.trash import TrashEntry
 
 
 class FileService:
-    def __init__(self, storage_root, trash_path, trash_retention_days=30):
+    def __init__(
+        self,
+        storage_root,
+        trash_path,
+        trash_retention_days=30,
+        owner_id=None,
+        manage_all_trash=False,
+        quota_bytes=None,
+        allow_external_symlinks=True,
+    ):
         from home_os.config import ROOT_DIR
 
         self.storage_root = Path(storage_root)
@@ -22,6 +35,37 @@ class FileService:
             self.trash_path = ROOT_DIR / self.trash_path
         self.trash_path.mkdir(parents=True, exist_ok=True)
         self.trash_retention_days = trash_retention_days
+        self.owner_id = owner_id
+        self.manage_all_trash = manage_all_trash
+        self.quota_bytes = quota_bytes
+        self.allow_external_symlinks = allow_external_symlinks
+
+    def _path_size(self, path):
+        if path.is_file():
+            return path.stat().st_size
+        total = 0
+        for root, dirs, files in os.walk(path, followlinks=False):
+            dirs[:] = [name for name in dirs if not (Path(root) / name).is_symlink()]
+            for name in files:
+                candidate = Path(root) / name
+                if candidate.is_symlink():
+                    continue
+                try:
+                    total += candidate.stat().st_size
+                except OSError:
+                    continue
+        return total
+
+    def used_bytes(self):
+        return self._path_size(self.storage_root)
+
+    def _ensure_capacity(self, additional_bytes):
+        if self.quota_bytes is None:
+            return
+        if additional_bytes < 0:
+            raise ValueError("Invalid file size")
+        if self.used_bytes() + additional_bytes > self.quota_bytes:
+            raise OSError(errno.EDQUOT, "Storage quota exceeded")
 
     def _resolve_and_validate(self, relative_path, user=None):
         """Resolve a relative path to an absolute path within storage root."""
@@ -41,6 +85,8 @@ class FileService:
         for i, part in enumerate(parts):
             check = check / part
             if check.is_symlink():
+                if not self.allow_external_symlinks:
+                    raise PermissionError("Access denied: symlinks not allowed")
                 if i == 0:
                     top_level_symlink = check.resolve()
                 else:
@@ -70,6 +116,20 @@ class FileService:
                 raise PermissionError("Access denied: path outside storage root")
 
         return resolved
+
+    def _ensure_not_storage_root(self, path):
+        if path == self.storage_root.resolve():
+            raise PermissionError("The storage root cannot be modified")
+
+    @staticmethod
+    def _ensure_not_nested_destination(src, dest):
+        if not src.is_dir():
+            return
+        try:
+            dest.resolve(strict=False).relative_to(src.resolve())
+        except ValueError:
+            return
+        raise ValueError("A directory cannot be copied or moved into itself")
 
     def list_directory(self, relative_path="/", sort_by="name", reverse=False):
         """List contents of a directory."""
@@ -109,7 +169,6 @@ class FileService:
 
         if not resolved.exists():
             raise FileNotFoundError(f"Not found: {relative_path}")
-
         stat = resolved.stat()
         return {
             "name": resolved.name,
@@ -140,6 +199,7 @@ class FileService:
             raise FileExistsError(f"Already exists: {relative_path}")
 
         resolved.mkdir(parents=True)
+        self._inherit_shared_path_mode(resolved)
         return self.get_file_info(relative_path)
 
     def rename(self, relative_path, new_name):
@@ -148,6 +208,7 @@ class FileService:
 
         if not resolved.exists():
             raise FileNotFoundError(f"Not found: {relative_path}")
+        self._ensure_not_storage_root(resolved)
 
         if "/" in new_name or "\\" in new_name:
             raise ValueError("Invalid name")
@@ -167,14 +228,17 @@ class FileService:
 
         if not src.exists():
             raise FileNotFoundError(f"Not found: {src_relative}")
+        self._ensure_not_storage_root(src)
         if not dest_dir.is_dir():
             raise NotADirectoryError(f"Destination is not a directory: {dest_relative}")
 
         dest = dest_dir / src.name
+        self._ensure_not_nested_destination(src, dest)
         if dest.exists():
             raise FileExistsError(f"Already exists at destination: {src.name}")
 
         shutil.move(str(src), str(dest))
+        self._inherit_shared_path_mode(dest)
         return str(Path(dest_relative) / src.name)
 
     def copy(self, src_relative, dest_relative):
@@ -184,18 +248,23 @@ class FileService:
 
         if not src.exists():
             raise FileNotFoundError(f"Not found: {src_relative}")
+        self._ensure_not_storage_root(src)
         if not dest_dir.is_dir():
             raise NotADirectoryError(f"Destination is not a directory: {dest_relative}")
 
         dest = dest_dir / src.name
+        self._ensure_not_nested_destination(src, dest)
         if dest.exists():
             raise FileExistsError(f"Already exists at destination: {src.name}")
+
+        self._ensure_capacity(self._path_size(src))
 
         if src.is_dir():
             shutil.copytree(str(src), str(dest))
         else:
             shutil.copy2(str(src), str(dest))
 
+        self._inherit_shared_path_mode(dest)
         return str(Path(dest_relative) / src.name)
 
     def delete(self, relative_path):
@@ -204,16 +273,18 @@ class FileService:
 
         if not resolved.exists():
             raise FileNotFoundError(f"Not found: {relative_path}")
+        self._ensure_not_storage_root(resolved)
 
-        trash_name = f"{int(time.time())}_{resolved.name}"
+        trash_name = f"{int(time.time())}_{uuid.uuid4().hex}_{resolved.name}"
         trash_dest = self.trash_path / trash_name
 
-        size = resolved.stat().st_size if resolved.is_file() else self._dir_size(resolved)
+        size = self._path_size(resolved)
 
         shutil.move(str(resolved), str(trash_dest))
 
         expires = datetime.now(timezone.utc).timestamp() + (self.trash_retention_days * 86400)
         entry = TrashEntry(
+            user_id=self.owner_id,
             original_path=relative_path,
             trash_path=str(trash_dest),
             size_bytes=size,
@@ -225,23 +296,45 @@ class FileService:
 
     def list_trash(self):
         """List items in trash."""
-        return TrashEntry.query.filter_by(restored=False).order_by(
+        query = TrashEntry.query.filter_by(restored=False)
+        if not self.manage_all_trash:
+            query = query.filter_by(user_id=self.owner_id)
+        return query.order_by(
             TrashEntry.deleted_at.desc()
         ).all()
 
+    def _get_trash_entry(self, trash_id):
+        query = TrashEntry.query.filter_by(id=trash_id)
+        if not self.manage_all_trash:
+            query = query.filter_by(user_id=self.owner_id)
+        entry = query.first()
+        if not entry:
+            raise FileNotFoundError("Trash entry not found")
+        return entry
+
+    def _resolve_trash_path(self, entry):
+        trash_path = Path(entry.trash_path).resolve()
+        try:
+            trash_path.relative_to(self.trash_path.resolve())
+        except ValueError as error:
+            raise PermissionError("Trash entry is outside the trash directory") from error
+        return trash_path
+
     def restore_from_trash(self, trash_id):
         """Restore a file from trash to its original location."""
-        entry = TrashEntry.query.get(trash_id)
-        if not entry or entry.restored:
+        entry = self._get_trash_entry(trash_id)
+        if entry.restored:
             raise FileNotFoundError("Trash entry not found")
 
-        trash_path = Path(entry.trash_path)
+        trash_path = self._resolve_trash_path(entry)
         if not trash_path.exists():
             raise FileNotFoundError("Trashed file no longer exists on disk")
 
         original = self._resolve_and_validate(entry.original_path)
         if original.exists():
             raise FileExistsError(f"Original path already occupied: {entry.original_path}")
+
+        self._ensure_capacity(entry.size_bytes)
 
         original.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(trash_path), str(original))
@@ -252,11 +345,9 @@ class FileService:
 
     def permanent_delete(self, trash_id):
         """Permanently delete a file from trash."""
-        entry = TrashEntry.query.get(trash_id)
-        if not entry:
-            raise FileNotFoundError("Trash entry not found")
+        entry = self._get_trash_entry(trash_id)
 
-        trash_path = Path(entry.trash_path)
+        trash_path = self._resolve_trash_path(entry)
         if trash_path.exists():
             if trash_path.is_dir():
                 shutil.rmtree(str(trash_path))
@@ -268,9 +359,9 @@ class FileService:
 
     def empty_trash(self):
         """Permanently delete all items in trash."""
-        entries = TrashEntry.query.filter_by(restored=False).all()
+        entries = self.list_trash()
         for entry in entries:
-            trash_path = Path(entry.trash_path)
+            trash_path = self._resolve_trash_path(entry)
             if trash_path.exists():
                 if trash_path.is_dir():
                     shutil.rmtree(str(trash_path))
@@ -286,7 +377,10 @@ class FileService:
         results = []
 
         for root, dirs, files in os.walk(resolved):
+            dirs[:] = [name for name in dirs if not (Path(root) / name).is_symlink()]
             for name in dirs + files:
+                if (Path(root) / name).is_symlink():
+                    continue
                 if query_lower in name.lower():
                     full = Path(root) / name
                     rel = str(full.relative_to(self.storage_root))
@@ -314,7 +408,7 @@ class FileService:
 
         return results
 
-    def save_upload(self, relative_dir, file_storage):
+    def save_upload(self, relative_dir, file_storage, max_bytes=None):
         """Save an uploaded file."""
         from werkzeug.utils import secure_filename
 
@@ -340,6 +434,54 @@ class FileService:
                 dest = dest_dir / f"{stem}_{counter}{suffix}"
                 counter += 1
 
-        file_storage.save(str(dest))
+        available_quota = None
+        if self.quota_bytes is not None:
+            available_quota = max(0, self.quota_bytes - self.used_bytes())
+        limits = [limit for limit in (max_bytes, available_quota) if limit is not None]
+        effective_limit = min(limits) if limits else None
+
+        file_descriptor, temporary_name = tempfile.mkstemp(
+            dir=dest_dir,
+            prefix=".homeos-upload-",
+        )
+        bytes_written = 0
+        try:
+            with os.fdopen(file_descriptor, "wb") as temporary_file:
+                while True:
+                    chunk = file_storage.stream.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    bytes_written += len(chunk)
+                    if effective_limit is not None and bytes_written > effective_limit:
+                        raise OSError(errno.EDQUOT, "Upload exceeds storage limit")
+                    temporary_file.write(chunk)
+                temporary_file.flush()
+                os.fsync(temporary_file.fileno())
+            os.replace(temporary_name, dest)
+            self._inherit_shared_path_mode(dest)
+        except Exception:
+            try:
+                os.unlink(temporary_name)
+            except FileNotFoundError:
+                pass
+            raise
         rel_path = str(Path(relative_dir) / dest.name)
         return self.get_file_info(rel_path)
+
+    @staticmethod
+    def _inherit_shared_path_mode(path):
+        parent_stat = path.parent.stat()
+        if not parent_stat.st_mode & stat.S_ISGID:
+            return
+
+        group_id = parent_stat.st_gid
+        paths = [path]
+        if path.is_dir() and not path.is_symlink():
+            paths.extend(
+                child
+                for child in path.rglob("*")
+                if not child.is_symlink()
+            )
+        for child in paths:
+            os.chown(child, -1, group_id, follow_symlinks=False)
+            child.chmod(0o2770 if child.is_dir() else 0o660)

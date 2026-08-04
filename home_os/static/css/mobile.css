@@ -658,3 +658,60 @@ h3 {
 }
 
 } /* end @media (display-mode: standalone), (max-width: 767px) */
+
+@media (max-width: 767px) {
+    .app-surface .main-content {
+        padding-top: 1.2rem;
+    }
+
+    .app-surface .main-content > :not(.finder-window):not(.media-page) h1,
+    .app-surface .main-content > h1 {
+        font-size: 28px;
+    }
+
+    .app-surface .glass-card,
+    .app-surface .glass-panel,
+    .app-surface .metric-card {
+        border-radius: 19px;
+    }
+
+    .app-surface .ios-tab-bar {
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: 0 -10px 34px rgba(35, 70, 110, 0.08), inset 0 0.5px 0 rgba(255, 255, 255, 0.9);
+    }
+
+    .app-surface .ios-tab-item.active .ios-tab-icon {
+        color: #fff;
+        background: var(--page-gradient);
+        box-shadow: 0 6px 14px rgba(var(--page-accent-rgb), 0.22);
+    }
+
+    .app-surface .ios-tab-item.active {
+        color: var(--page-accent);
+    }
+
+    .page-titlebar {
+        align-items: flex-end;
+        gap: 0.75rem;
+    }
+
+    .page-titlebar .btn {
+        flex-shrink: 0;
+        min-height: 40px;
+        font-size: 13px;
+    }
+
+    .settings-heading {
+        align-items: flex-start;
+    }
+
+    .settings-mark {
+        width: 48px;
+        height: 48px;
+        border-radius: 15px;
+    }
+
+    .dashboard-hero {
+        border-radius: 24px;
+    }
+}

@@ -7,6 +7,12 @@ class TrashEntry(db.Model):
     __tablename__ = "trash"
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     original_path = db.Column(db.String(1024), nullable=False)
     trash_path = db.Column(db.String(1024), nullable=False)
     size_bytes = db.Column(db.BigInteger, nullable=False, default=0)

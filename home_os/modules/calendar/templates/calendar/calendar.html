@@ -1,514 +1,106 @@
 {% extends "base.html" %}
 {% block title %}Calendar — Home OS{% endblock %}
 {% block content %}
-<div class="max-w-5xl">
-    <div class="flex items-center justify-between mb-6">
-        <h1>Calendar</h1>
-        <button onclick="openNewEvent()" class="btn btn-ghost">+ New Event</button>
-    </div>
+<main class="calendar-shell" aria-busy="true">
+    <header class="calendar-header">
+        <div><p class="calendar-eyebrow">Household planner</p><h1>Calendar</h1><p class="calendar-subtitle">Plan events, bills, payments and household income together.</p></div>
+        <div class="header-actions"><a href="{{ url_for('budget.budget_view') }}" class="btn btn-ghost">View Budget</a><button id="new-event" class="btn btn-primary">New entry</button></div>
+    </header>
 
-    <!-- Month navigation -->
-    <div class="flex items-center justify-between mb-4">
-        <button onclick="changeMonth(-1)" class="btn btn-ghost" style="padding:0.4rem 0.75rem;">
-            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-        </button>
-        <h2 id="month-title" style="font-size:1.125rem;"></h2>
-        <button onclick="changeMonth(1)" class="btn btn-ghost" style="padding:0.4rem 0.75rem;">
-            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-        </button>
-    </div>
-
-    <!-- Calendar grid -->
-    <div class="glass-panel" style="padding:0; overflow:hidden;">
-        <div class="cal-header">
-            <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+    <section class="calendar-toolbar glass-panel">
+        <div class="month-nav"><button id="previous-month" class="icon-button" aria-label="Previous month">‹</button><button id="month-title" class="month-title" title="Return to current month"></button><button id="next-month" class="icon-button" aria-label="Next month">›</button></div>
+        <div class="quick-actions" aria-label="Quick add">
+            <button data-quick-type="bill" class="quick-button bill">+ Bill</button>
+            <button data-quick-type="payment" class="quick-button payment">+ Payment</button>
+            <button data-quick-type="income" class="quick-button income">+ Income</button>
         </div>
-        <div class="cal-grid" id="cal-grid"></div>
+    </section>
+
+    <div id="calendar-alert" class="calendar-alert hidden" role="alert"></div>
+    <section id="month-summary" class="summary-grid hidden">
+        <article class="glass-card summary-card"><p class="summary-label">Bills due</p><strong id="summary-bills">£0.00</strong><span id="summary-bills-count"></span></article>
+        <article class="glass-card summary-card"><p class="summary-label">One-off payments</p><strong id="summary-payments">£0.00</strong><span id="summary-payments-count"></span></article>
+        <article class="glass-card summary-card"><p class="summary-label">One-off income</p><strong id="summary-income" class="positive">£0.00</strong><span id="summary-income-count"></span></article>
+        <article class="glass-card summary-card"><p class="summary-label">Upcoming entries</p><strong id="summary-events">0</strong><span>in this month</span></article>
+    </section>
+
+    <div class="calendar-layout">
+        <section class="glass-panel calendar-card">
+            <div class="filter-row" aria-label="Event filters">
+                <button class="filter-chip active" data-filter="all">All</button>
+                <button class="filter-chip" data-filter="finance">Finance</button>
+                <button class="filter-chip" data-filter="event">Events</button>
+                <button class="filter-chip" data-filter="work">Work</button>
+                <button class="filter-chip" data-filter="holiday">Holidays</button>
+            </div>
+            <div class="cal-header"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+            <div class="cal-grid" id="cal-grid"></div>
+        </section>
+
+        <aside class="glass-card agenda-card">
+            <div class="agenda-heading"><div><p class="calendar-eyebrow">This month</p><h2>Agenda</h2></div><span id="agenda-count" class="count-badge"></span></div>
+            <div id="agenda-list" class="agenda-list"></div>
+        </aside>
     </div>
+</main>
 
-    <!-- Upcoming bills summary -->
-    <div class="glass-card mt-6" id="bills-summary" style="display:none;">
-        <h3 class="mb-3 text-secondary text-xs" style="text-transform:uppercase; letter-spacing:0.06em;">Upcoming Bills</h3>
-        <div id="bills-list"></div>
-    </div>
-</div>
-
-<!-- New/Edit Event Modal -->
-<div id="event-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeModal()">
-    <div class="modal-content" style="max-width:28rem;">
-        <h3 id="modal-title" style="margin-bottom:1rem;">New Event</h3>
-        <form id="event-form" class="space-y-4">
-            <input type="hidden" id="event-id">
-
-            <div>
-                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Title</label>
-                <input type="text" id="ev-title" class="glass-input" required>
-            </div>
-
-            <div class="flex gap-3">
-                <div style="flex:1;">
-                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Type</label>
-                    <select id="ev-type" class="glass-input" onchange="toggleTypeFields()">
-                        <option value="event">Event</option>
-                        <option value="bill">Bill (recurring)</option>
-                        <option value="payment">Payment (one-off)</option>
-                        <option value="income">Income (one-off)</option>
-                        <option value="work">Work Hours</option>
-                        <option value="holiday">Holiday</option>
-                    </select>
-                </div>
-                <div style="flex:1;" id="date-field">
-                    <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Date</label>
-                    <input type="date" id="ev-date" class="glass-input" required>
-                </div>
-            </div>
-
-            <!-- Holiday date range -->
-            <div id="holiday-fields" style="display:none;">
-                <div class="flex gap-3">
-                    <div style="flex:1;">
-                        <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">From</label>
-                        <input type="date" id="ev-holiday-from" class="glass-input">
-                    </div>
-                    <div style="flex:0 0 auto; display:flex; align-items:flex-end; padding-bottom:0.5rem;">
-                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="opacity:0.4;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
-                    </div>
-                    <div style="flex:1;">
-                        <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">To</label>
-                        <input type="date" id="ev-holiday-to" class="glass-input">
-                    </div>
-                </div>
-            </div>
-
-            <div id="time-field">
-                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Time (optional)</label>
-                <input type="time" id="ev-time" class="glass-input">
-            </div>
-            <input type="hidden" id="ev-color" value="#0a84ff">
-
-            <!-- Bill fields -->
-            <div id="bill-fields" class="space-y-4" style="display:none;">
-                <div class="flex gap-3">
-                    <div style="flex:1;">
-                        <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Amount</label>
-                        <input type="number" id="ev-amount" class="glass-input" step="0.01" placeholder="0.00">
-                    </div>
-                    <div style="flex:1;">
-                        <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Currency</label>
-                        <select id="ev-currency" class="glass-input">
-                            <option value="GBP">£ GBP</option>
-                            <option value="USD">$ USD</option>
-                            <option value="EUR">€ EUR</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Work fields -->
-            <div id="work-fields" style="display:none;">
-                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Hours</label>
-                <input type="number" id="ev-hours" class="glass-input" step="0.5" placeholder="8">
-            </div>
-
-            <!-- Recurring (hidden for bills — they're always recurring) -->
-            <div id="recurring-section" class="flex items-center gap-3">
-                <label class="flex items-center gap-2 text-sm text-secondary" style="cursor:pointer;">
-                    <input type="checkbox" id="ev-recurring" onchange="toggleRecurrence()">
-                    Recurring
-                </label>
-                <select id="ev-recurrence" class="glass-input" style="display:none; width:auto;">
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                    <option value="yearly">Yearly</option>
-                </select>
-            </div>
-
-            <!-- Bill frequency (shown instead of recurring checkbox for bills) -->
-            <div id="bill-frequency" style="display:none;">
-                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Frequency</label>
-                <select id="ev-bill-freq" class="glass-input">
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly" selected>Monthly</option>
-                    <option value="yearly">Yearly</option>
-                </select>
-            </div>
-
-            <div>
-                <label class="text-secondary text-xs" style="display:block; margin-bottom:0.25rem;">Notes</label>
-                <input type="text" id="ev-desc" class="glass-input" placeholder="Optional">
-            </div>
-
-            <div class="flex justify-between" style="padding-top:0.5rem;">
-                <button type="button" id="delete-btn" onclick="deleteEvent()" class="btn btn-danger" style="display:none;">Delete</button>
-                <div class="flex gap-3 ml-auto">
-                    <button type="button" onclick="closeModal()" class="btn btn-ghost">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save</button>
-                </div>
-            </div>
+<div id="event-modal" class="modal-backdrop hidden">
+    <div class="modal-content event-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-heading"><div><p id="modal-kicker" class="calendar-eyebrow">Calendar entry</p><h2 id="modal-title">New entry</h2></div><button id="close-modal" class="modal-close" aria-label="Close">×</button></div>
+        <form id="event-form">
+            <input type="hidden" id="event-id"><input type="hidden" id="event-series-date">
+            <div id="form-alert" class="calendar-alert hidden" role="alert"></div>
+            <fieldset class="type-picker"><legend class="field-label">Type</legend>
+                <label><input type="radio" name="event-type" value="event" checked><span>Event</span></label>
+                <label><input type="radio" name="event-type" value="bill"><span>Bill</span></label>
+                <label><input type="radio" name="event-type" value="payment"><span>Payment</span></label>
+                <label><input type="radio" name="event-type" value="income"><span>Income</span></label>
+                <label><input type="radio" name="event-type" value="work"><span>Work</span></label>
+                <label><input type="radio" name="event-type" value="holiday"><span>Holiday</span></label>
+            </fieldset>
+            <label class="field-group"><span class="field-label">Title</span><input id="ev-title" class="glass-input" maxlength="200" required placeholder="What is happening?"></label>
+            <div class="field-grid date-fields"><label class="field-group"><span class="field-label" id="date-label">Date</span><input type="date" id="ev-date" class="glass-input" required></label><label id="end-date-group" class="field-group hidden"><span class="field-label">End date</span><input type="date" id="ev-end-date" class="glass-input"></label><label id="time-group" class="field-group"><span class="field-label">Time</span><input type="time" id="ev-time" class="glass-input"></label></div>
+            <div id="finance-fields" class="field-grid hidden"><label class="field-group"><span class="field-label">Amount</span><input type="number" id="ev-amount" class="glass-input" min="0" max="99999999" step="0.01" placeholder="0.00"></label><label class="field-group"><span class="field-label">Currency</span><select id="ev-currency" class="glass-input"><option value="GBP">GBP (£)</option><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option></select></label></div>
+            <label id="work-fields" class="field-group hidden"><span class="field-label">Hours</span><input type="number" id="ev-hours" class="glass-input" min="0.5" max="24" step="0.5" placeholder="8"></label>
+            <div id="recurring-fields" class="recurring-fields"><label class="check-label"><input type="checkbox" id="ev-recurring"><span>Repeat this entry</span></label><select id="ev-recurrence" class="glass-input hidden"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></div>
+            <label id="bill-frequency" class="field-group hidden"><span class="field-label">Bill frequency</span><select id="ev-bill-frequency" class="glass-input"><option value="weekly">Weekly</option><option value="monthly" selected>Monthly</option><option value="yearly">Yearly</option></select></label>
+            <label class="field-group"><span class="field-label">Notes</span><textarea id="ev-description" class="glass-input" rows="3" maxlength="2000" placeholder="Optional details"></textarea></label>
+            <div class="modal-actions"><button type="button" id="delete-event" class="btn btn-danger hidden">Delete</button><div><button type="button" id="cancel-event" class="btn btn-ghost">Cancel</button><button type="submit" id="save-event" class="btn btn-primary">Save entry</button></div></div>
         </form>
     </div>
 </div>
 
 <style>
-.cal-header {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    text-align: center;
-    padding: 0.6rem 0;
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    border-bottom: 0.5px solid var(--border-divider);
-}
-
-.cal-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    min-height: 480px;
-}
-
-.cal-day {
-    min-height: 72px;
-    padding: 4px;
-    border-right: 0.5px solid rgba(0, 60, 140, 0.04);
-    border-bottom: 0.5px solid rgba(0, 60, 140, 0.04);
-    cursor: pointer;
-    transition: background var(--duration-fast) var(--ease-out);
-}
-.cal-day:nth-child(7n) { border-right: none; }
-.cal-day:hover { background: var(--accent-light); }
-.cal-day.today { background: rgba(0, 122, 255, 0.04); }
-.cal-day.other-month { opacity: 0.3; }
-
-.cal-day-num {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-primary);
-    padding: 2px 4px;
-}
-.cal-day.today .cal-day-num {
-    background: var(--accent);
-    color: white;
-    border-radius: 50%;
-    width: 22px;
-    height: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.cal-event {
-    font-size: 10px;
-    padding: 1px 5px;
-    margin-top: 2px;
-    border-radius: 3px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: pointer;
-    color: white;
-    font-weight: 500;
-    letter-spacing: -0.01em;
-}
-
-.cal-event.type-bill { background: #ef4444; }
-.cal-event.type-payment { background: #ef4444; }
-.cal-event.type-income { background: #10b981; }
-.cal-event.type-event { background: #0a84ff; }
-.cal-event.type-work { background: #0a84ff; }
-.cal-event.type-holiday { background: #06b6d4; }
-.cal-event.paid { opacity: 0.5; text-decoration: line-through; }
-
-.bill-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0;
-    border-bottom: 0.5px solid rgba(0, 60, 140, 0.04);
-    font-size: 13px;
-}
-.bill-row:last-child { border-bottom: none; }
+.calendar-shell{max-width:1280px;margin:0 auto;padding-bottom:3rem}.calendar-header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1.4rem}.calendar-header h1{margin:.1rem 0 .25rem;font-size:2rem;letter-spacing:-.03em}.calendar-eyebrow,.summary-label,.field-label{margin:0;color:var(--text-tertiary);font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase}.calendar-subtitle{margin:0;color:var(--text-secondary);font-size:.83rem}.header-actions{display:flex;gap:.55rem}.calendar-toolbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.65rem;margin-bottom:.85rem}.month-nav{display:flex;align-items:center}.icon-button,.month-title{border:0;background:transparent;color:var(--text-primary);cursor:pointer}.icon-button{width:2.1rem;height:2.1rem;border-radius:50%;font-size:1.55rem;line-height:1}.icon-button:hover{background:rgba(0,60,120,.06)}.month-title{min-width:160px;font-size:.92rem;font-weight:750}.quick-actions{display:flex;gap:.4rem}.quick-button{border:0;border-radius:8px;padding:.45rem .65rem;cursor:pointer;font:inherit;font-size:.73rem;font-weight:700}.quick-button.bill{color:#c16700;background:rgba(245,158,11,.11)}.quick-button.payment{color:var(--danger);background:rgba(255,59,48,.09)}.quick-button.income{color:var(--success);background:rgba(40,205,65,.1)}.calendar-alert{padding:.75rem 1rem;margin-bottom:.85rem;border:1px solid rgba(255,59,48,.18);border-radius:11px;color:var(--danger);background:rgba(255,59,48,.06);font-size:.8rem}.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:.85rem}.summary-card{padding:.9rem 1rem}.summary-card strong{display:block;margin:.22rem 0 .12rem;font-size:1.2rem;font-variant-numeric:tabular-nums}.summary-card span{color:var(--text-tertiary);font-size:.7rem}.positive{color:var(--success)}.calendar-layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:.85rem;align-items:start}.calendar-card{padding:0;overflow:hidden}.filter-row{display:flex;gap:.35rem;padding:.75rem;border-bottom:1px solid rgba(0,60,120,.06);overflow-x:auto}.filter-chip{border:1px solid transparent;border-radius:100px;padding:.34rem .65rem;background:rgba(0,60,120,.04);color:var(--text-secondary);cursor:pointer;font:inherit;font-size:.7rem;font-weight:650;white-space:nowrap}.filter-chip.active{border-color:rgba(10,132,255,.16);background:rgba(10,132,255,.09);color:var(--accent)}.cal-header,.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}.cal-header{padding:.6rem 0;border-bottom:1px solid rgba(0,60,120,.06);text-align:center;color:var(--text-tertiary);font-size:.65rem;font-weight:700;text-transform:uppercase}.cal-grid{min-height:620px}.cal-day{min-width:0;min-height:102px;padding:.38rem;border-right:1px solid rgba(0,60,120,.045);border-bottom:1px solid rgba(0,60,120,.045);cursor:pointer;transition:background .12s}.cal-day:nth-child(7n){border-right:0}.cal-day:hover{background:rgba(10,132,255,.035)}.cal-day.other-month{background:rgba(0,60,120,.014)}.cal-day.other-month .cal-day-number{opacity:.35}.cal-day.today{background:rgba(10,132,255,.035)}.cal-day-number{display:grid;place-items:center;width:24px;height:24px;margin-bottom:.15rem;border-radius:50%;font-size:.7rem;font-weight:650}.cal-day.today .cal-day-number{background:var(--accent);color:white}.cal-event{display:flex;width:100%;border:0;text-align:left;align-items:center;gap:.25rem;min-width:0;margin-top:.22rem;padding:.23rem .32rem;border-radius:5px;font-size:.62rem;font-weight:650;cursor:pointer}.cal-event-dot{width:5px;height:5px;flex:0 0 auto;border-radius:50%;background:currentColor}.cal-event-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cal-event.type-event{color:#1674d1;background:rgba(10,132,255,.1)}.cal-event.type-bill{color:#b86d00;background:rgba(245,158,11,.12)}.cal-event.type-payment{color:#d83a32;background:rgba(255,59,48,.1)}.cal-event.type-income{color:#168a34;background:rgba(40,205,65,.11)}.cal-event.type-work{color:#7651c4;background:rgba(88,86,214,.1)}.cal-event.type-holiday{color:#087f92;background:rgba(48,176,199,.11)}.cal-event.paid{opacity:.55;text-decoration:line-through}.agenda-card{padding:1rem;position:sticky;top:1rem;max-height:750px;overflow:auto}.agenda-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem}.agenda-heading h2{margin:.12rem 0 0;font-size:1rem}.count-badge{padding:.25rem .5rem;border-radius:100px;color:var(--accent);background:rgba(10,132,255,.09);font-size:.68rem;font-weight:700}.agenda-list{display:grid;gap:.4rem}.agenda-day{margin-top:.6rem;padding:.25rem 0;color:var(--text-tertiary);font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em}.agenda-item{display:grid;grid-template-columns:8px minmax(0,1fr) auto;gap:.55rem;align-items:center;padding:.55rem;border-radius:9px;cursor:pointer}.agenda-item:hover{background:rgba(0,60,120,.035)}.agenda-marker{width:7px;height:30px;border-radius:100px;background:var(--accent)}.agenda-marker.bill{background:#f59e0b}.agenda-marker.payment{background:var(--danger)}.agenda-marker.income{background:var(--success)}.agenda-marker.work{background:#5856d6}.agenda-marker.holiday{background:#30b0c7}.agenda-title{font-size:.76rem;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.agenda-meta{margin-top:.12rem;color:var(--text-tertiary);font-size:.66rem}.agenda-amount{font-size:.72rem;font-weight:700;font-variant-numeric:tabular-nums}.agenda-status{border:0;border-radius:100px;padding:.22rem .42rem;cursor:pointer;font:inherit;font-size:.62rem;font-weight:700}.agenda-status.due{color:#b86d00;background:rgba(245,158,11,.11)}.agenda-status.paid{color:var(--success);background:rgba(40,205,65,.1)}.empty-agenda{padding:2rem .5rem;text-align:center;color:var(--text-tertiary);font-size:.76rem}.event-modal{max-width:590px;max-height:90vh;overflow-y:auto}.modal-heading{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1rem}.modal-heading h2{margin:.1rem 0 0;font-size:1.2rem}.modal-close{border:0;background:none;color:var(--text-tertiary);cursor:pointer;font-size:1.5rem}.type-picker{display:grid;grid-template-columns:repeat(6,1fr);gap:.3rem;margin:0 0 1rem;padding:0;border:0}.type-picker legend{margin-bottom:.4rem}.type-picker input{position:absolute;opacity:0;pointer-events:none}.type-picker span{display:block;padding:.43rem .2rem;border:1px solid rgba(0,60,120,.08);border-radius:7px;text-align:center;color:var(--text-secondary);cursor:pointer;font-size:.7rem;font-weight:650}.type-picker input:checked+span{border-color:rgba(10,132,255,.25);background:rgba(10,132,255,.09);color:var(--accent)}.field-group{display:block;margin-bottom:.85rem}.field-label{display:block;margin-bottom:.3rem}.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}.date-fields{grid-template-columns:1fr 1fr}.glass-input{width:100%;box-sizing:border-box}.recurring-fields{display:flex;align-items:center;gap:.7rem;margin-bottom:.85rem}.recurring-fields select{width:auto}.check-label{display:flex;align-items:center;gap:.45rem;color:var(--text-secondary);font-size:.8rem}.modal-actions{display:flex;align-items:center;justify-content:space-between;margin-top:1rem}.modal-actions>div{display:flex;gap:.5rem;margin-left:auto}.hidden{display:none!important}@media(max-width:980px){.calendar-layout{grid-template-columns:1fr}.agenda-card{position:static;max-height:none}.summary-grid{grid-template-columns:1fr 1fr}}@media(max-width:650px){.calendar-header{align-items:center}.calendar-subtitle,.header-actions .btn-ghost{display:none}.calendar-toolbar{align-items:stretch;flex-direction:column}.month-nav{justify-content:center}.quick-actions{justify-content:center}.summary-grid{grid-template-columns:1fr 1fr}.cal-header{display:none}.cal-grid{display:block;min-height:0}.cal-day{display:none;min-height:0}.cal-day.has-events,.cal-day.today{display:block;border:0;border-bottom:1px solid rgba(0,60,120,.05);padding:.65rem}.cal-day.has-events:before,.cal-day.today:before{content:attr(data-label);display:block;margin-bottom:.3rem;color:var(--text-tertiary);font-size:.67rem;font-weight:700}.cal-day-number{display:none}.cal-event{padding:.42rem .5rem;font-size:.73rem}.type-picker{grid-template-columns:repeat(3,1fr)}.field-grid,.date-fields{grid-template-columns:1fr}.event-modal{max-height:94vh}}
 </style>
 
 <script nonce="{{ g.csp_nonce }}">
-const CSRF = "{{ csrf_token() }}";
-let currentYear = {{ year }};
-let currentMonth = {{ month }};
-let events = [];
-
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-
-function init() {
-    renderCalendar();
-    loadEvents();
-}
-
-function changeMonth(dir) {
-    currentMonth += dir;
-    if (currentMonth > 12) { currentMonth = 1; currentYear++; }
-    if (currentMonth < 1) { currentMonth = 12; currentYear--; }
-    renderCalendar();
-    loadEvents();
-}
-
-function renderCalendar() {
-    document.getElementById("month-title").textContent = `${MONTHS[currentMonth-1]} ${currentYear}`;
-
-    const grid = document.getElementById("cal-grid");
-    grid.innerHTML = "";
-
-    const firstDay = new Date(currentYear, currentMonth - 1, 1);
-    let startDay = firstDay.getDay() - 1;
-    if (startDay < 0) startDay = 6;
-
-    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
-    const daysInPrev = new Date(currentYear, currentMonth - 1, 0).getDate();
-
-    const today = new Date();
-    const todayStr = today.toISOString().split("T")[0];
-
-    // Previous month days
-    for (let i = startDay - 1; i >= 0; i--) {
-        const day = daysInPrev - i;
-        const d = makeDay(day, true);
-        grid.appendChild(d);
-    }
-
-    // Current month days
-    for (let i = 1; i <= daysInMonth; i++) {
-        const dateStr = `${currentYear}-${String(currentMonth).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
-        const d = makeDay(i, false, dateStr === todayStr, dateStr);
-        grid.appendChild(d);
-    }
-
-    // Next month fill
-    const totalCells = grid.children.length;
-    const remaining = 42 - totalCells;
-    for (let i = 1; i <= remaining; i++) {
-        const d = makeDay(i, true);
-        grid.appendChild(d);
-    }
-}
-
-function makeDay(num, otherMonth, isToday, dateStr) {
-    const div = document.createElement("div");
-    div.className = "cal-day" + (otherMonth ? " other-month" : "") + (isToday ? " today" : "");
-    if (dateStr) {
-        div.dataset.date = dateStr;
-        div.onclick = () => openNewEvent(dateStr);
-    }
-
-    const numEl = document.createElement("div");
-    numEl.className = "cal-day-num";
-    numEl.textContent = num;
-    div.appendChild(numEl);
-
-    return div;
-}
-
-function loadEvents() {
-    const start = `${currentYear}-${String(currentMonth).padStart(2,'0')}-01`;
-    const lastDay = new Date(currentYear, currentMonth, 0).getDate();
-    const end = `${currentYear}-${String(currentMonth).padStart(2,'0')}-${lastDay}`;
-
-    fetch(`/api/calendar/events?start=${start}&end=${end}`, {headers:{"X-CSRFToken": CSRF}})
-        .then(r => r.json())
-        .then(r => {
-            if (r.ok) {
-                events = r.data;
-                placeEvents();
-                loadBills();
-            }
-        });
-}
-
-function placeEvents() {
-    document.querySelectorAll(".cal-event").forEach(e => e.remove());
-    events.forEach(ev => {
-        // Holidays span multiple days
-        if (ev.event_type === "holiday" && ev.end_date) {
-            const from = new Date(ev.date + "T00:00:00");
-            const to = new Date(ev.end_date + "T00:00:00");
-            for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
-                const dateStr = d.toISOString().split("T")[0];
-                const cell = document.querySelector(`.cal-day[data-date="${dateStr}"]`);
-                if (!cell) continue;
-                const el = document.createElement("div");
-                el.className = "cal-event type-holiday";
-                el.textContent = ev.title;
-                el.onclick = (e) => { e.stopPropagation(); openEditEvent(ev); };
-                cell.appendChild(el);
-            }
-            return;
-        }
-
-        const cell = document.querySelector(`.cal-day[data-date="${ev.date}"]`);
-        if (!cell) return;
-
-        const el = document.createElement("div");
-        el.className = `cal-event type-${ev.event_type}` + (ev.is_paid ? " paid" : "");
-        el.textContent = ev.event_type === "bill" || ev.event_type === "payment" ? `${getCurrencySymbol(ev.currency)}${ev.amount || ''} ${ev.title}` : ev.title;
-        el.onclick = (e) => { e.stopPropagation(); openEditEvent(ev); };
-        cell.appendChild(el);
-    });
-}
-
-function loadBills() {
-    const start = `${currentYear}-${String(currentMonth).padStart(2,'0')}-01`;
-    const lastDay = new Date(currentYear, currentMonth, 0).getDate();
-    const end = `${currentYear}-${String(currentMonth).padStart(2,'0')}-${lastDay}`;
-
-    fetch(`/api/calendar/bills?start=${start}&end=${end}`, {headers:{"X-CSRFToken": CSRF}})
-        .then(r => r.json())
-        .then(r => {
-            const container = document.getElementById("bills-summary");
-            const list = document.getElementById("bills-list");
-            const unpaid = r.ok ? r.data.filter(b => !b.is_paid) : [];
-            if (unpaid.length > 0) {
-                container.style.display = "block";
-                list.innerHTML = unpaid.slice(0, 5).map(b => `
-                    <div class="bill-row">
-                        <div>
-                            <span style="font-weight:500;">${b.title}</span>
-                            <span class="text-tertiary text-xs" style="margin-left:0.5rem;">${b.date}</span>
-                        </div>
-                        <div style="font-weight:600;">${getCurrencySymbol(b.currency)}${b.amount ? b.amount.toFixed(2) : '—'}</div>
-                    </div>
-                `).join("");
-            } else {
-                container.style.display = "none";
-            }
-        });
-}
-
-function getCurrencySymbol(code) {
-    return {GBP:'£', USD:'$', EUR:'€'}[code] || code + ' ';
-}
-
-// Modal
-function openNewEvent(dateStr) {
-    document.getElementById("modal-title").textContent = "New Event";
-    document.getElementById("event-id").value = "";
-    document.getElementById("ev-title").value = "";
-    document.getElementById("ev-type").value = "event";
-    document.getElementById("ev-date").value = dateStr || new Date().toISOString().split("T")[0];
-    document.getElementById("ev-holiday-from").value = dateStr || new Date().toISOString().split("T")[0];
-    document.getElementById("ev-holiday-to").value = "";
-    document.getElementById("ev-time").value = "";
-    document.getElementById("ev-color").value = "#0a84ff";
-    document.getElementById("ev-amount").value = "";
-    document.getElementById("ev-currency").value = "GBP";
-    document.getElementById("ev-hours").value = "";
-    document.getElementById("ev-recurring").checked = false;
-    document.getElementById("ev-recurrence").style.display = "none";
-    document.getElementById("ev-desc").value = "";
-    document.getElementById("delete-btn").style.display = "none";
-    toggleTypeFields();
-    document.getElementById("event-modal").classList.remove("hidden");
-}
-
-function openEditEvent(ev) {
-    const isInstance = String(ev.id).includes("_r_");
-    const realId = isInstance ? ev.id.split("_r_")[0] : ev.id;
-
-    document.getElementById("modal-title").textContent = "Edit Event";
-    document.getElementById("event-id").value = realId;
-    document.getElementById("ev-title").value = ev.title;
-    document.getElementById("ev-type").value = ev.event_type;
-    document.getElementById("ev-date").value = ev.date;
-    document.getElementById("ev-holiday-from").value = ev.date;
-    document.getElementById("ev-holiday-to").value = ev.end_date || "";
-    document.getElementById("ev-time").value = ev.time || "";
-    document.getElementById("ev-color").value = ev.color || "#0a84ff";
-    document.getElementById("ev-amount").value = ev.amount || "";
-    document.getElementById("ev-currency").value = ev.currency || "GBP";
-    document.getElementById("ev-hours").value = ev.hours || "";
-    document.getElementById("ev-recurring").checked = ev.is_recurring;
-    document.getElementById("ev-recurrence").value = ev.recurrence || "monthly";
-    document.getElementById("ev-recurrence").style.display = ev.is_recurring ? "" : "none";
-    document.getElementById("ev-desc").value = ev.description || "";
-    document.getElementById("delete-btn").style.display = isInstance ? "none" : "";
-    toggleTypeFields();
-    document.getElementById("event-modal").classList.remove("hidden");
-}
-
-function closeModal() {
-    document.getElementById("event-modal").classList.add("hidden");
-}
-
-function toggleTypeFields() {
-    const type = document.getElementById("ev-type").value;
-    const isHoliday = type === "holiday";
-    const hasAmount = ["bill", "payment", "income"].includes(type);
-    document.getElementById("bill-fields").style.display = hasAmount ? "" : "none";
-    document.getElementById("work-fields").style.display = type === "work" ? "" : "none";
-    document.getElementById("recurring-section").style.display = (type === "bill" || type === "payment" || type === "income" || isHoliday) ? "none" : "";
-    document.getElementById("bill-frequency").style.display = type === "bill" ? "" : "none";
-    document.getElementById("holiday-fields").style.display = isHoliday ? "" : "none";
-    document.getElementById("date-field").style.display = isHoliday ? "none" : "";
-    document.getElementById("time-field").style.display = isHoliday ? "none" : "";
-    document.getElementById("ev-date").required = !isHoliday;
-}
-
-function toggleRecurrence() {
-    document.getElementById("ev-recurrence").style.display = document.getElementById("ev-recurring").checked ? "" : "none";
-}
-
-function deleteEvent() {
-    const id = document.getElementById("event-id").value;
-    if (!id || !confirm("Delete this event?")) return;
-    fetch(`/api/calendar/events/${id}`, {method:"DELETE", headers:{"X-CSRFToken":CSRF}})
-        .then(r => r.json())
-        .then(r => { if(r.ok) { closeModal(); loadEvents(); }});
-}
-
-document.getElementById("event-form").onsubmit = function(e) {
-    e.preventDefault();
-    const id = document.getElementById("event-id").value;
-    const evType = document.getElementById("ev-type").value;
-    const isBill = evType === "bill";
-    const isHoliday = evType === "holiday";
-
-    const eventDate = isHoliday
-        ? document.getElementById("ev-holiday-from").value
-        : document.getElementById("ev-date").value;
-    const endDate = isHoliday
-        ? (document.getElementById("ev-holiday-to").value || null)
-        : null;
-
-    const body = {
-        title: document.getElementById("ev-title").value,
-        event_type: evType,
-        date: eventDate,
-        end_date: endDate,
-        time: isHoliday ? null : (document.getElementById("ev-time").value || null),
-        color: document.getElementById("ev-color").value,
-        amount: parseFloat(document.getElementById("ev-amount").value) || null,
-        currency: document.getElementById("ev-currency").value,
-        hours: parseFloat(document.getElementById("ev-hours").value) || null,
-        is_recurring: isBill ? true : document.getElementById("ev-recurring").checked,
-        recurrence: isBill ? document.getElementById("ev-bill-freq").value : (document.getElementById("ev-recurring").checked ? document.getElementById("ev-recurrence").value : null),
-        description: document.getElementById("ev-desc").value || null,
-        all_day: isHoliday ? true : !document.getElementById("ev-time").value,
-    };
-
-    const url = id ? `/api/calendar/events/${id}` : "/api/calendar/events";
-    const method = id ? "PUT" : "POST";
-
-    fetch(url, {
-        method,
-        headers: {"Content-Type":"application/json", "X-CSRFToken": CSRF},
-        body: JSON.stringify(body)
-    }).then(r => r.json()).then(r => {
-        if(r.ok) { closeModal(); loadEvents(); }
-        else alert(r.error || "Error");
-    });
-};
-
-init();
+const CSRF="{{ csrf_token() }}";const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];const money=new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP'});const dayFormat=new Intl.DateTimeFormat('en-GB',{weekday:'short',day:'numeric',month:'short'});let currentYear={{ year }};let currentMonth={{ month }};let events=[];let activeFilter='all';
+const byId=id=>document.getElementById(id);const escapeHtml=value=>String(value??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));const localDate=value=>new Date(`${value}T12:00:00`);const currency=(amount,code='GBP')=>code==='GBP'?money.format(amount||0):`${escapeHtml(code)} ${Number(amount||0).toFixed(2)}`;
+async function requestJSON(url,options={}){const response=await fetch(url,{cache:'no-store',...options});const payload=await response.json().catch(()=>({}));if(!response.ok||!payload.ok)throw new Error(payload.error||`Request failed (${response.status})`);return payload.data}
+function showError(message,target='calendar-alert'){const element=byId(target);element.textContent=message;element.classList.remove('hidden')}function clearError(target='calendar-alert'){byId(target).classList.add('hidden')}
+function monthBounds(){const month=String(currentMonth).padStart(2,'0');return{start:`${currentYear}-${month}-01`,end:`${currentYear}-${month}-${String(new Date(currentYear,currentMonth,0).getDate()).padStart(2,'0')}`}}
+function setMonthTitle(){byId('month-title').textContent=`${MONTHS[currentMonth-1]} ${currentYear}`}
+function renderGrid(){setMonthTitle();const grid=byId('cal-grid');grid.innerHTML='';const first=new Date(currentYear,currentMonth-1,1);const offset=(first.getDay()+6)%7;const daysCurrent=new Date(currentYear,currentMonth,0).getDate();const daysPrevious=new Date(currentYear,currentMonth-1,0).getDate();const today=new Date();const todayString=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;for(let index=0;index<42;index++){let day,monthOffset=0;if(index<offset){day=daysPrevious-offset+index+1;monthOffset=-1}else if(index>=offset+daysCurrent){day=index-offset-daysCurrent+1;monthOffset=1}else day=index-offset+1;const value=new Date(currentYear,currentMonth-1+monthOffset,day);const dateString=`${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;const cell=document.createElement('div');cell.className=`cal-day${monthOffset?' other-month':''}${dateString===todayString?' today':''}`;cell.dataset.date=dateString;cell.dataset.label=dayFormat.format(value);cell.innerHTML=`<span class="cal-day-number">${day}</span>`;cell.addEventListener('click',()=>openNewEvent(dateString));grid.appendChild(cell)}}
+function matchesFilter(event){if(activeFilter==='all')return true;if(activeFilter==='finance')return['bill','payment','income'].includes(event.event_type);return event.event_type===activeFilter}
+function visibleEvents(){return events.filter(matchesFilter)}
+function eventText(event){if(['bill','payment','income'].includes(event.event_type))return `${currency(event.amount,event.currency)} ${event.title}`;if(event.event_type==='work'&&event.hours)return `${event.hours}h ${event.title}`;return event.title}
+function placeEvents(){document.querySelectorAll('.cal-event').forEach(element=>element.remove());document.querySelectorAll('.cal-day').forEach(cell=>cell.classList.remove('has-events'));for(const event of visibleEvents()){const dates=[];if(event.event_type==='holiday'&&event.end_date){for(let current=localDate(event.date),end=localDate(event.end_date);current<=end;current.setDate(current.getDate()+1))dates.push(current.toISOString().slice(0,10))}else dates.push(event.date);for(const dateString of dates){const cell=document.querySelector(`.cal-day[data-date="${dateString}"]`);if(!cell)continue;cell.classList.add('has-events');const item=document.createElement('button');item.type='button';item.className=`cal-event type-${event.event_type}${event.is_paid?' paid':''}`;item.innerHTML=`<span class="cal-event-dot"></span><span class="cal-event-title">${escapeHtml(eventText(event))}</span>`;item.addEventListener('click',click=>{click.stopPropagation();openEditEvent(event)});cell.appendChild(item)}}renderAgenda();renderSummary()}
+function renderSummary(){const monthEvents=visibleEvents();const bills=monthEvents.filter(event=>event.event_type==='bill'&&!event.is_paid);const payments=monthEvents.filter(event=>event.event_type==='payment'&&!event.is_paid);const income=monthEvents.filter(event=>event.event_type==='income'&&!event.is_paid);byId('summary-bills').textContent=money.format(bills.reduce((sum,event)=>sum+(event.amount||0),0));byId('summary-bills-count').textContent=`${bills.length} outstanding`;byId('summary-payments').textContent=money.format(payments.reduce((sum,event)=>sum+(event.amount||0),0));byId('summary-payments-count').textContent=`${payments.length} due`;byId('summary-income').textContent=money.format(income.reduce((sum,event)=>sum+(event.amount||0),0));byId('summary-income-count').textContent=`${income.length} pending`;byId('summary-events').textContent=monthEvents.length;byId('month-summary').classList.remove('hidden')}
+function renderAgenda(){const sorted=[...visibleEvents()].sort((a,b)=>a.date.localeCompare(b.date)||(a.time||'').localeCompare(b.time||''));byId('agenda-count').textContent=`${sorted.length} entries`;let previousDate='';byId('agenda-list').innerHTML=sorted.length?sorted.map(event=>{const heading=event.date!==previousDate?`<div class="agenda-day">${dayFormat.format(localDate(event.date))}</div>`:'';previousDate=event.date;const amount=['bill','payment','income'].includes(event.event_type)?`<span class="agenda-amount${event.event_type==='income'?' positive':''}">${currency(event.amount,event.currency)}</span>`:'';const status=['bill','payment','income'].includes(event.event_type)?`<button class="agenda-status ${event.is_paid?'paid':'due'}" data-paid-id="${escapeHtml(event.id)}">${event.is_paid?(event.event_type==='income'?'Received':'Paid'):(event.event_type==='income'?'Pending':'Due')}</button>`:amount;return `${heading}<div class="agenda-item" data-event-key="${escapeHtml(event.id)}"><span class="agenda-marker ${event.event_type}"></span><div><div class="agenda-title">${escapeHtml(event.title)}</div><div class="agenda-meta">${escapeHtml(event.time||event.event_type)}${amount&&status!==amount?' · '+amount:''}</div></div>${status}</div>`}).join(''):'<div class="empty-agenda">No entries match this filter.</div>'}
+async function loadEvents(){clearError();document.querySelector('.calendar-shell').setAttribute('aria-busy','true');renderGrid();try{const{start,end}=monthBounds();events=await requestJSON(`/api/calendar/events?start=${start}&end=${end}`);placeEvents()}catch(error){showError(error.message)}finally{document.querySelector('.calendar-shell').setAttribute('aria-busy','false')}}
+function changeMonth(direction){currentMonth+=direction;if(currentMonth>12){currentMonth=1;currentYear++}if(currentMonth<1){currentMonth=12;currentYear--}loadEvents()}function currentMonthView(){const now=new Date();currentYear=now.getFullYear();currentMonth=now.getMonth()+1;loadEvents()}
+function setType(type){const input=document.querySelector(`input[name="event-type"][value="${type}"]`);if(input)input.checked=true;updateTypeFields()}
+function selectedType(){return document.querySelector('input[name="event-type"]:checked').value}
+function resetForm(dateString,type='event'){byId('event-form').reset();byId('event-id').value='';byId('event-series-date').value='';byId('ev-date').value=dateString||new Date().toISOString().slice(0,10);byId('ev-currency').value='GBP';byId('ev-bill-frequency').value='monthly';byId('delete-event').classList.add('hidden');byId('modal-title').textContent='New entry';byId('modal-kicker').textContent=type==='event'?'Calendar entry':'Financial entry';setType(type);clearError('form-alert')}
+function openNewEvent(dateString,type='event'){resetForm(dateString,type);byId('event-modal').classList.remove('hidden');byId('ev-title').focus()}
+function openEditEvent(event){resetForm(event.series_date||event.date,event.event_type);byId('event-id').value=event.series_id||event.id;byId('event-series-date').value=event.series_date||event.date;byId('ev-title').value=event.title;byId('ev-date').value=event.series_date||event.date;byId('ev-end-date').value=event.end_date||'';byId('ev-time').value=event.time||'';byId('ev-amount').value=event.amount??'';byId('ev-currency').value=event.currency||'GBP';byId('ev-hours').value=event.hours??'';byId('ev-recurring').checked=Boolean(event.is_recurring);byId('ev-recurrence').value=event.recurrence||'monthly';byId('ev-bill-frequency').value=event.recurrence||'monthly';byId('ev-description').value=event.description||'';byId('modal-title').textContent='Edit entry';byId('delete-event').classList.remove('hidden');updateTypeFields();byId('event-modal').classList.remove('hidden')}
+function closeModal(){byId('event-modal').classList.add('hidden')}
+function updateTypeFields(){const type=selectedType();const financial=['bill','payment','income'].includes(type);const holiday=type==='holiday';byId('finance-fields').classList.toggle('hidden',!financial);byId('work-fields').classList.toggle('hidden',type!=='work');byId('end-date-group').classList.toggle('hidden',!holiday);byId('time-group').classList.toggle('hidden',holiday);byId('recurring-fields').classList.toggle('hidden',financial||holiday);byId('bill-frequency').classList.toggle('hidden',type!=='bill');byId('ev-recurrence').classList.toggle('hidden',!byId('ev-recurring').checked);byId('ev-amount').required=financial;byId('ev-hours').required=type==='work'}
+function formPayload(){const type=selectedType();const bill=type==='bill';const recurring=bill||byId('ev-recurring').checked;return{title:byId('ev-title').value,event_type:type,date:byId('ev-date').value,end_date:type==='holiday'?(byId('ev-end-date').value||null):null,time:type==='holiday'?null:(byId('ev-time').value||null),amount:['bill','payment','income'].includes(type)?byId('ev-amount').value:null,currency:byId('ev-currency').value,hours:type==='work'?byId('ev-hours').value:null,is_recurring:recurring,recurrence:bill?byId('ev-bill-frequency').value:(recurring?byId('ev-recurrence').value:null),description:byId('ev-description').value||null}}
+async function saveEvent(submitEvent){submitEvent.preventDefault();clearError('form-alert');const button=byId('save-event');button.disabled=true;try{const id=byId('event-id').value;await requestJSON(id?`/api/calendar/events/${id}`:'/api/calendar/events',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},body:JSON.stringify(formPayload())});closeModal();await loadEvents()}catch(error){showError(error.message,'form-alert')}finally{button.disabled=false}}
+async function deleteEvent(){const id=byId('event-id').value;if(!id||!confirm('Delete this entry and its payment history?'))return;try{await requestJSON(`/api/calendar/events/${id}`,{method:'DELETE',headers:{'X-CSRFToken':CSRF}});closeModal();await loadEvents()}catch(error){showError(error.message,'form-alert')}}
+async function togglePaid(button){button.disabled=true;try{await requestJSON(`/api/calendar/events/${button.dataset.paidId}/toggle-paid`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},body:'{}'});await loadEvents()}catch(error){showError(error.message);button.disabled=false}}
+byId('previous-month').addEventListener('click',()=>changeMonth(-1));byId('next-month').addEventListener('click',()=>changeMonth(1));byId('month-title').addEventListener('click',currentMonthView);byId('new-event').addEventListener('click',()=>openNewEvent());document.querySelectorAll('[data-quick-type]').forEach(button=>button.addEventListener('click',()=>openNewEvent(null,button.dataset.quickType)));document.querySelectorAll('.filter-chip').forEach(button=>button.addEventListener('click',()=>{activeFilter=button.dataset.filter;document.querySelectorAll('.filter-chip').forEach(item=>item.classList.toggle('active',item===button));placeEvents()}));document.querySelectorAll('input[name="event-type"]').forEach(input=>input.addEventListener('change',updateTypeFields));byId('ev-recurring').addEventListener('change',updateTypeFields);byId('event-form').addEventListener('submit',saveEvent);byId('delete-event').addEventListener('click',deleteEvent);byId('close-modal').addEventListener('click',closeModal);byId('cancel-event').addEventListener('click',closeModal);byId('event-modal').addEventListener('click',event=>{if(event.target===byId('event-modal'))closeModal()});byId('agenda-list').addEventListener('click',event=>{const status=event.target.closest('[data-paid-id]');if(status){event.stopPropagation();togglePaid(status);return}const item=event.target.closest('[data-event-key]');if(item){const entry=events.find(candidate=>String(candidate.id)===item.dataset.eventKey);if(entry)openEditEvent(entry)}});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!byId('event-modal').classList.contains('hidden'))closeModal()});loadEvents();
 </script>
 {% endblock %}

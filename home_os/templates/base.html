@@ -10,10 +10,10 @@
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon.svg') }}">
     <title>{% block title %}Home OS{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=11">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile.css') }}?v=11">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=12">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile.css') }}?v=12">
 </head>
-<body>
+<body class="app-surface app-{{ request.blueprint or 'auth' }}">
     <div class="app-layout">
         {% if current_user.is_authenticated %}
         <main class="main-content">
@@ -63,6 +63,9 @@
             <a href="{{ url_for('media.media_view') }}" class="dock-item {% if request.endpoint and 'media' in request.endpoint %}active{% endif %}" data-tooltip="Media">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.91 11.672a.375.375 0 010 .656l-5.603 3.113a.375.375 0 01-.557-.328V8.887c0-.286.307-.466.557-.327l5.603 3.112z"/></svg>
             </a>
+            <a href="{{ url_for('music.music_view') }}" class="dock-item {% if request.endpoint and 'music' in request.endpoint %}active{% endif %}" data-tooltip="HomeMusic">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 18V5l11-2v13M9 9l11-2M6 20a3 3 0 100-6 3 3 0 000 6zm11-2a3 3 0 100-6 3 3 0 000 6z"/></svg>
+            </a>
             {% endif %}
             {% if current_user.has_permission('ai') %}
             <a href="{{ url_for('ai.chat') }}" class="dock-item {% if request.endpoint and 'ai' in request.endpoint %}active{% endif %}" data-tooltip="AI">
@@ -80,7 +83,7 @@
             </a>
             {% endif %}
 
-            {% if current_user.has_permission('network') or current_user.has_permission('terminal') %}
+            {% if current_user.has_permission('network') %}
             <div class="dock-separator"></div>
             {% endif %}
             {% if current_user.has_permission('network') %}
@@ -96,12 +99,6 @@
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>
             </a>
             {% endif %}
-            {% if current_user.has_permission('terminal') %}
-            <a href="{{ url_for('terminal.terminal_view') }}" class="dock-item {% if request.endpoint and 'terminal' in request.endpoint %}active{% endif %}" data-tooltip="Terminal">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"/></svg>
-            </a>
-            {% endif %}
-
             <div class="dock-separator"></div>
             <a href="{{ url_for('settings.settings_view') }}" class="dock-item {% if request.endpoint and 'settings' in request.endpoint %}active{% endif %}" data-tooltip="Settings">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
@@ -132,6 +129,10 @@
             <a href="{{ url_for('media.media_view') }}" class="ios-tab-item {% if request.endpoint and 'media' in request.endpoint %}active{% endif %}">
                 <span class="ios-tab-icon"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.91 11.672a.375.375 0 010 .656l-5.603 3.113a.375.375 0 01-.557-.328V8.887c0-.286.307-.466.557-.327l5.603 3.112z"/></svg></span>
                 <span class="ios-tab-label">Media</span>
+            </a>
+            <a href="{{ url_for('music.music_view') }}" class="ios-tab-item {% if request.endpoint and 'music' in request.endpoint %}active{% endif %}">
+                <span class="ios-tab-icon"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 18V5l11-2v13M9 9l11-2M6 20a3 3 0 100-6 3 3 0 000 6zm11-2a3 3 0 100-6 3 3 0 000 6z"/></svg></span>
+                <span class="ios-tab-label">Music</span>
             </a>
             {% endif %}
             {% if current_user.in_dock('ai') %}
@@ -262,12 +263,27 @@ function ppNavigate(path) {
                 list.innerHTML = '<div class="pp-empty">No subfolders</div>';
                 return;
             }
-            list.innerHTML = dirs.map(name => `
-                <div class="pp-folder" onclick="ppNavigate('${(path === '/' ? '/' : path + '/') + name}')">
-                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
-                    <span>${name}</span>
-                </div>
-            `).join("");
+            list.replaceChildren(...dirs.map(name => {
+                const folder = document.createElement("div");
+                folder.className = "pp-folder";
+                folder.addEventListener("click", () => ppNavigate((path === "/" ? "/" : path + "/") + name));
+                const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                icon.setAttribute("width", "16");
+                icon.setAttribute("height", "16");
+                icon.setAttribute("fill", "none");
+                icon.setAttribute("stroke", "currentColor");
+                icon.setAttribute("viewBox", "0 0 24 24");
+                const iconPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                iconPath.setAttribute("stroke-linecap", "round");
+                iconPath.setAttribute("stroke-linejoin", "round");
+                iconPath.setAttribute("stroke-width", "1.5");
+                iconPath.setAttribute("d", "M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z");
+                icon.appendChild(iconPath);
+                const label = document.createElement("span");
+                label.textContent = name;
+                folder.append(icon, label);
+                return folder;
+            }));
         })
         .catch(() => {
             list.innerHTML = '<div class="pp-empty">Error loading folders</div>';
@@ -277,15 +293,27 @@ function ppNavigate(path) {
 function ppRenderBreadcrumb(path) {
     const bc = document.getElementById("pp-breadcrumb");
     const parts = path.split("/").filter(Boolean);
-    let html = '<span class="pp-bc-item" onclick="ppNavigate(\'/\')" style="cursor:pointer; color:var(--accent); padding:2px 4px; border-radius:3px;">Root</span>';
+    const root = document.createElement("span");
+    root.className = "pp-bc-item";
+    root.style.cssText = "cursor:pointer;color:var(--accent);padding:2px 4px;border-radius:3px";
+    root.textContent = "Root";
+    root.addEventListener("click", () => ppNavigate("/"));
+    const nodes = [root];
     let cumulative = "";
     for (const part of parts) {
         cumulative += "/" + part;
         const p = cumulative;
-        html += '<svg width="7" height="10" viewBox="0 0 7 10" style="flex-shrink:0; color:var(--text-quaternary);"><path d="M1 1l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-        html += `<span class="pp-bc-item" onclick="ppNavigate('${p}')" style="cursor:pointer; color:var(--accent); padding:2px 4px; border-radius:3px;">${part}</span>`;
+        const separator = document.createElement("span");
+        separator.textContent = "›";
+        separator.style.color = "var(--text-quaternary)";
+        const item = document.createElement("span");
+        item.className = "pp-bc-item";
+        item.style.cssText = "cursor:pointer;color:var(--accent);padding:2px 4px;border-radius:3px";
+        item.textContent = part;
+        item.addEventListener("click", () => ppNavigate(p));
+        nodes.push(separator, item);
     }
-    bc.innerHTML = html;
+    bc.replaceChildren(...nodes);
 }
 </script>
 

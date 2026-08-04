@@ -8,14 +8,29 @@ import json
 import logging
 import os
 import re
+import stat
+import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from xml.etree import ElementTree
+
+import fcntl
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_STATE = {"watched": {}, "deleted": []}
+STATE_VERSION = 2
+DEFAULT_STATE = {"version": STATE_VERSION, "watched": {}, "deleted": [], "processed": {}}
+
+
+class CleanupStateError(RuntimeError):
+    pass
+
+
+class CleanupAlreadyRunning(RuntimeError):
+    pass
 
 
 # --- State Management ---
@@ -25,21 +40,64 @@ def _load_state(state_file: str) -> dict:
     path = Path(state_file)
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        return {"watched": {}, "deleted": []}
+        return {"version": STATE_VERSION, "watched": {}, "deleted": [], "processed": {}}
     try:
-        return json.loads(path.read_text())
+        state = json.loads(path.read_text())
     except (json.JSONDecodeError, OSError) as e:
-        logger.error("Failed to load state file %s: %s", state_file, e)
-        return {"watched": {}, "deleted": []}
+        raise CleanupStateError(f"Failed to load state file {state_file}: {e}") from e
+
+    if not isinstance(state, dict):
+        raise CleanupStateError(f"Invalid cleanup state in {state_file}")
+    if not isinstance(state.get("watched", {}), dict):
+        raise CleanupStateError(f"Invalid watched entries in {state_file}")
+    if not isinstance(state.get("deleted", []), list):
+        raise CleanupStateError(f"Invalid deletion history in {state_file}")
+    if not isinstance(state.get("processed", {}), dict):
+        raise CleanupStateError(f"Invalid processed entries in {state_file}")
+
+    state.setdefault("version", 1)
+    state.setdefault("watched", {})
+    state.setdefault("deleted", [])
+    state.setdefault("processed", {})
+    return state
 
 
 def _save_state(state: dict, state_file: str) -> None:
     path = Path(state_file)
     path.parent.mkdir(parents=True, exist_ok=True)
+    state["version"] = STATE_VERSION
     try:
-        path.write_text(json.dumps(state, indent=2))
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent,
+            prefix=f".{path.name}.", delete=False,
+        ) as temp_file:
+            json.dump(state, temp_file, indent=2)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+            temp_name = temp_file.name
+        os.chmod(temp_name, 0o600)
+        os.replace(temp_name, path)
     except OSError as e:
-        logger.error("Failed to save state file %s: %s", state_file, e)
+        try:
+            os.unlink(temp_name)
+        except (OSError, UnboundLocalError):
+            pass
+        raise CleanupStateError(f"Failed to save state file {state_file}: {e}") from e
+
+
+@contextmanager
+def _state_lock(state_file: str):
+    lock_path = Path(f"{state_file}.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+") as lock_file:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise CleanupAlreadyRunning("A media cleanup cycle is already running") from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 # --- Plex API ---
@@ -107,6 +165,20 @@ def _is_watched(item: dict, threshold: int) -> bool:
     return False
 
 
+def _get_plex_item(config: dict, rating_key: str) -> dict | None:
+    if not rating_key.isdigit():
+        logger.error("Rejected invalid Plex rating key: %r", rating_key)
+        return None
+    data = _plex_get(
+        config["plex_url"], config["plex_token"],
+        f"/library/metadata/{rating_key}",
+    )
+    if not data:
+        return None
+    items = data.get("MediaContainer", {}).get("Metadata", [])
+    return items[0] if len(items) == 1 else None
+
+
 def _poll_watched_items(config: dict) -> list[dict]:
     """Poll Plex for all watched items across configured libraries."""
     sections = _get_library_sections(config)
@@ -115,8 +187,10 @@ def _poll_watched_items(config: dict) -> list[dict]:
     for section in sections:
         sid = section["id"]
         if section["type"] == "movie":
-            # Movies: type=1, unwatched=0 returns watched movies
-            path = f"/library/sections/{sid}/all?type=1&unwatched=0"
+            path = (
+                f"/library/sections/{sid}/all?type=1"
+                "&X-Plex-Container-Start=0&X-Plex-Container-Size=10000"
+            )
             data = _plex_get(config["plex_url"], config["plex_token"], path)
             if not data:
                 continue
@@ -137,8 +211,10 @@ def _poll_watched_items(config: dict) -> list[dict]:
                 })
 
         elif section["type"] == "show":
-            # TV Episodes: type=4, unwatched=0 returns watched episodes
-            path = f"/library/sections/{sid}/all?type=4&unwatched=0"
+            path = (
+                f"/library/sections/{sid}/all?type=4"
+                "&X-Plex-Container-Start=0&X-Plex-Container-Size=10000"
+            )
             data = _plex_get(config["plex_url"], config["plex_token"], path)
             if not data:
                 continue
@@ -202,28 +278,25 @@ def _unmonitor_movie(config: dict, tmdb_id: str) -> int | None:
 
 def _unmonitor_episode(config: dict, series_title: str, season: int, episode: int) -> int | None:
     """Unmonitor episode in Sonarr. Returns series ID or None."""
-    if not config.get("sonarr_api_key"):
+    if not config.get("sonarr_api_key") or not series_title.strip():
         return None
     series_list = _arr_request("GET", config["sonarr_url"], config["sonarr_api_key"],
                                "/api/v3/series")
     if not series_list or not isinstance(series_list, list):
         return None
 
-    # Find matching series by title
-    series = None
-    for s in series_list:
-        if s.get("title", "").lower() == series_title.lower():
-            series = s
-            break
-    if not series:
-        # Try partial match
-        for s in series_list:
-            if series_title.lower() in s.get("title", "").lower():
-                series = s
-                break
-    if not series:
-        logger.warning("Series not found in Sonarr: %s", series_title)
+    normalized_title = series_title.casefold().strip()
+    matches = [
+        series for series in series_list
+        if series.get("title", "").casefold().strip() == normalized_title
+    ]
+    if len(matches) != 1:
+        logger.warning(
+            "Expected one exact Sonarr match for %s, found %d",
+            series_title, len(matches),
+        )
         return None
+    series = matches[0]
 
     # Get episodes for the series
     episodes = _arr_request("GET", config["sonarr_url"], config["sonarr_api_key"],
@@ -235,11 +308,17 @@ def _unmonitor_episode(config: dict, series_title: str, season: int, episode: in
     for ep in episodes:
         if ep.get("seasonNumber") == season and ep.get("episodeNumber") == episode:
             ep["monitored"] = False
-            _arr_request("PUT", config["sonarr_url"], config["sonarr_api_key"],
-                         f"/api/v3/episode/{ep['id']}", json_data=ep)
-            logger.info("Unmonitored episode in Sonarr: %s S%02dE%02d",
-                        series_title, season, episode)
-            return series["id"]
+            result = _arr_request(
+                "PUT", config["sonarr_url"], config["sonarr_api_key"],
+                f"/api/v3/episode/{ep['id']}", json_data=ep,
+            )
+            if result is not None:
+                logger.info(
+                    "Unmonitored episode in Sonarr: %s S%02dE%02d",
+                    series_title, season, episode,
+                )
+                return series["id"]
+            return None
 
     return None
 
@@ -254,21 +333,74 @@ def _rescan_series(config: dict, series_id: int) -> None:
                  "/api/v3/command", json_data={"name": "RescanSeries", "seriesId": series_id})
 
 
+def _read_arr_config_value(config_path: str, field: str) -> str:
+    try:
+        root = ElementTree.parse(config_path).getroot()
+        return (root.findtext(field) or "").strip()
+    except (ElementTree.ParseError, OSError):
+        return ""
+
+
+def _read_arr_api_key(config_path: str) -> str:
+    return _read_arr_config_value(config_path, "ApiKey")
+
+
+def _read_arr_url_base(config_path: str) -> str:
+    url_base = _read_arr_config_value(config_path, "UrlBase").strip("/")
+    return f"/{url_base}" if url_base else ""
+
+
 # --- File Deletion ---
 
 
-def _delete_file(file_path: str) -> bool:
-    """Delete a file and remove empty parent directory."""
+def _file_identity(file_path: str) -> dict | None:
     path = Path(file_path)
-    if not path.exists():
-        logger.warning("File already gone: %s", file_path)
-        return True
+    try:
+        file_stat = path.lstat()
+    except OSError:
+        return None
+    if stat.S_ISLNK(file_stat.st_mode) or not stat.S_ISREG(file_stat.st_mode):
+        return None
+    return {
+        "device": file_stat.st_dev,
+        "inode": file_stat.st_ino,
+        "size": file_stat.st_size,
+        "mtime_ns": file_stat.st_mtime_ns,
+    }
+
+
+def _path_within_roots(file_path: str, allowed_roots: list[str]) -> bool:
+    try:
+        resolved_path = Path(file_path).resolve(strict=True)
+    except OSError:
+        return False
+    for root in allowed_roots:
+        try:
+            resolved_path.relative_to(Path(root).resolve(strict=True))
+            return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+def _delete_file(file_path: str, allowed_roots: list[str], expected_identity: dict) -> bool:
+    """Delete one validated media file and optionally its empty directory."""
+    path = Path(file_path)
+    if not _path_within_roots(file_path, allowed_roots):
+        logger.error("Refusing to delete path outside configured media roots: %s", file_path)
+        return False
+
+    current_identity = _file_identity(file_path)
+    if current_identity != expected_identity:
+        logger.error("Refusing to delete changed or unsafe file: %s", file_path)
+        return False
+
     try:
         os.unlink(path)
         logger.info("Deleted file: %s", file_path)
-        # Remove empty parent directory
         parent = path.parent
-        if parent.exists() and not any(parent.iterdir()):
+        resolved_roots = {Path(root).resolve() for root in allowed_roots}
+        if parent.resolve() not in resolved_roots and parent.exists() and not any(parent.iterdir()):
             parent.rmdir()
             logger.info("Removed empty directory: %s", parent)
         return True
@@ -280,67 +412,174 @@ def _delete_file(file_path: str) -> bool:
 # --- Main Cleanup Logic ---
 
 
+def _validate_config(config: dict) -> None:
+    delay_hours = int(config.get("delay_hours", 24))
+    threshold = int(config.get("threshold", 85))
+    if not 1 <= delay_hours <= 8760:
+        raise ValueError("Cleanup delay must be between 1 and 8760 hours")
+    if not 50 <= threshold <= 100:
+        raise ValueError("Watched threshold must be between 50 and 100 percent")
+    if not config.get("media_roots"):
+        raise ValueError("At least one media root is required")
+
+
+def _revalidate_entry(config: dict, rating_key: str, entry: dict, now: datetime) -> str:
+    item = _get_plex_item(config, rating_key)
+    if item is None:
+        return "retry"
+    if not _is_watched(item, config.get("threshold", 85)):
+        return "cancel"
+
+    current_path = _get_file_path(item)
+    if not current_path or current_path != entry.get("file_path"):
+        logger.error("Plex path changed for %s; refusing deletion", entry.get("title"))
+        return "retry"
+    if not _path_within_roots(current_path, config["media_roots"]):
+        logger.error("Plex path is outside configured roots: %s", current_path)
+        return "retry"
+
+    identity = _file_identity(current_path)
+    if identity is None:
+        return "gone"
+    if not entry.get("file_identity"):
+        entry["file_identity"] = identity
+        entry["watched_at"] = now.isoformat()
+        entry["migrated_at"] = now.isoformat()
+        logger.info("Migrated legacy cleanup entry with a fresh safety delay: %s", entry.get("title"))
+        return "defer"
+    if identity != entry["file_identity"]:
+        logger.error("File changed after it was queued; refusing deletion: %s", current_path)
+        return "retry"
+
+    if entry.get("type") == "movie" and not entry.get("tmdb_id"):
+        entry["tmdb_id"] = _extract_tmdb_id(item.get("Guid", []))
+    return "ready"
+
+
+def _unmonitor_entry(config: dict, entry: dict) -> int | None:
+    if entry["type"] == "movie":
+        tmdb_id = entry.get("tmdb_id")
+        if not tmdb_id or not config.get("radarr_api_key"):
+            logger.error("Cannot safely delete movie without a TMDB ID and Radarr API key: %s", entry["title"])
+            return None
+        return _unmonitor_movie(config, tmdb_id)
+    if entry["type"] == "episode":
+        if not config.get("sonarr_api_key"):
+            logger.error("Cannot safely delete episode without a Sonarr API key: %s", entry["title"])
+            return None
+        return _unmonitor_episode(
+            config, entry.get("series_title", ""),
+            entry.get("season", 0), entry.get("episode", 0),
+        )
+    return None
+
+
 def run_cleanup(config: dict) -> dict:
-    """Run a single cleanup cycle. Returns summary of actions taken."""
+    """Run one fail-closed cleanup cycle."""
     if not config.get("enabled", False):
         return {"status": "disabled"}
 
+    try:
+        _validate_config(config)
+        with _state_lock(config["state_file"]):
+            return _run_cleanup_locked(config)
+    except CleanupAlreadyRunning as exc:
+        logger.warning("Media cleanup skipped: %s", exc)
+        return {"status": "busy", "message": str(exc)}
+    except (CleanupStateError, ValueError) as exc:
+        logger.error("Media cleanup stopped safely: %s", exc)
+        return {"status": "error", "message": str(exc)}
+
+
+def _run_cleanup_locked(config: dict) -> dict:
     state = _load_state(config["state_file"])
     now = datetime.now(timezone.utc)
-    delay_hours = config.get("delay_hours", 24)
-    summary = {"new_watched": 0, "deleted": 0, "errors": 0}
+    delay_hours = int(config.get("delay_hours", 24))
+    max_deletions = int(config.get("max_deletions_per_run", 3))
+    summary = {
+        "new_watched": 0, "deleted": 0, "cancelled": 0,
+        "deferred": 0, "errors": 0,
+    }
 
-    # Step 1: Poll Plex for watched items, add new ones to state
     watched_items = _poll_watched_items(config)
     for item in watched_items:
         key = item["rating_key"]
-        if key not in state["watched"]:
-            entry = {
-                "title": item["title"],
-                "file_path": item["file_path"],
-                "watched_at": now.isoformat(),
-                "type": item["type"],
-            }
-            if item["type"] == "episode":
-                entry["series_title"] = item.get("series_title", "")
-                entry["season"] = item.get("season", 0)
-                entry["episode"] = item.get("episode", 0)
-            elif item["type"] == "movie":
-                entry["tmdb_id"] = item.get("tmdb_id")
-            state["watched"][key] = entry
-            summary["new_watched"] += 1
-            logger.info("Tracking watched item: %s", item["title"])
+        if key in state["watched"] or key in state["processed"]:
+            continue
+        identity = _file_identity(item["file_path"])
+        if identity is None or not _path_within_roots(item["file_path"], config["media_roots"]):
+            logger.error("Rejected unsafe Plex media path: %s", item["file_path"])
+            summary["errors"] += 1
+            continue
+        entry = {
+            "title": item["title"],
+            "file_path": item["file_path"],
+            "file_identity": identity,
+            "watched_at": now.isoformat(),
+            "type": item["type"],
+        }
+        if item["type"] == "episode":
+            entry["series_title"] = item.get("series_title", "")
+            entry["season"] = item.get("season", 0)
+            entry["episode"] = item.get("episode", 0)
+        elif item["type"] == "movie":
+            entry["tmdb_id"] = item.get("tmdb_id")
+        state["watched"][key] = entry
+        summary["new_watched"] += 1
+        logger.info("Tracking watched item: %s", item["title"])
 
-    # Step 2: Process items past their delay
+    _save_state(state, config["state_file"])
+
     keys_to_delete = []
     for key, entry in list(state["watched"].items()):
-        watched_at = datetime.fromisoformat(entry["watched_at"])
+        if summary["deleted"] >= max_deletions:
+            summary["deferred"] += 1
+            continue
+        try:
+            watched_at = datetime.fromisoformat(entry["watched_at"])
+            if watched_at.tzinfo is None:
+                watched_at = watched_at.replace(tzinfo=timezone.utc)
+        except (KeyError, TypeError, ValueError):
+            logger.error("Invalid watched timestamp for cleanup entry %s", key)
+            summary["errors"] += 1
+            continue
         hours_elapsed = (now - watched_at).total_seconds() / 3600
         if hours_elapsed < delay_hours:
             continue
 
-        logger.info("Processing deletion for: %s (watched %.1fh ago)",
-                    entry["title"], hours_elapsed)
+        validation = _revalidate_entry(config, key, entry, now)
+        if validation == "cancel":
+            keys_to_delete.append(key)
+            summary["cancelled"] += 1
+            continue
+        if validation == "gone":
+            keys_to_delete.append(key)
+            state["processed"][key] = {"status": "gone", "processed_at": now.isoformat()}
+            summary["cancelled"] += 1
+            continue
+        if validation == "defer":
+            summary["deferred"] += 1
+            continue
+        if validation != "ready":
+            summary["errors"] += 1
+            continue
 
-        # Unmonitor in Sonarr/Radarr
-        if entry["type"] == "movie":
-            tmdb_id = entry.get("tmdb_id")
-            if tmdb_id:
-                movie_id = _unmonitor_movie(config, tmdb_id)
-                if movie_id:
-                    _rescan_movie(config, movie_id)
-            else:
-                logger.warning("No TMDB ID for movie: %s", entry["title"])
-        elif entry["type"] == "episode":
-            series_id = _unmonitor_episode(
-                config, entry.get("series_title", ""),
-                entry.get("season", 0), entry.get("episode", 0)
-            )
-            if series_id:
-                _rescan_series(config, series_id)
+        logger.info(
+            "Processing deletion for: %s (watched %.1fh ago)",
+            entry["title"], hours_elapsed,
+        )
+        arr_id = entry.get("arr_id")
+        if not arr_id:
+            arr_id = _unmonitor_entry(config, entry)
+            if not arr_id:
+                summary["errors"] += 1
+                continue
+            entry["arr_id"] = arr_id
+            _save_state(state, config["state_file"])
 
-        # Delete the file
-        if _delete_file(entry["file_path"]):
+        if _delete_file(
+            entry["file_path"], config["media_roots"], entry["file_identity"],
+        ):
             keys_to_delete.append(key)
             state["deleted"].append({
                 "title": entry["title"],
@@ -348,17 +587,22 @@ def run_cleanup(config: dict) -> dict:
                 "deleted_at": now.isoformat(),
                 "type": entry["type"],
             })
+            state["processed"][key] = {
+                "status": "deleted", "processed_at": now.isoformat(),
+            }
             summary["deleted"] += 1
+            if entry["type"] == "movie":
+                _rescan_movie(config, arr_id)
+            else:
+                _rescan_series(config, arr_id)
         else:
             summary["errors"] += 1
 
-    # Remove processed entries from watched
     for key in keys_to_delete:
         del state["watched"][key]
 
-    # Keep only last 20 deleted entries
     state["deleted"] = state["deleted"][-20:]
-
+    state["processed"] = dict(list(state["processed"].items())[-5000:])
     _save_state(state, config["state_file"])
     logger.info("Cleanup cycle complete: %s", summary)
     return summary
@@ -376,7 +620,13 @@ def get_cleanup_status(config: dict) -> dict:
 
     pending = []
     for key, entry in state["watched"].items():
-        watched_at = datetime.fromisoformat(entry["watched_at"])
+        try:
+            watched_at = datetime.fromisoformat(entry["watched_at"])
+            if watched_at.tzinfo is None:
+                watched_at = watched_at.replace(tzinfo=timezone.utc)
+        except (KeyError, TypeError, ValueError):
+            logger.error("Skipping invalid cleanup status entry: %s", key)
+            continue
         hours_elapsed = (now - watched_at).total_seconds() / 3600
         hours_remaining = max(0, delay_hours - hours_elapsed)
         pending.append({
@@ -435,10 +685,18 @@ def run_cleanup_cycle() -> dict:
 
 def _run_cleanup_inner() -> dict:
     try:
+        from flask import current_app
         from home_os.models.settings import Setting
         plex_port = Setting.get("plex_port", "32400")
         sonarr_port = Setting.get("sonarr_port", "8989")
         radarr_port = Setting.get("radarr_port", "7878")
+        raw_config = current_app.config.get("_raw_config", {})
+        storage_root = Path(raw_config.get("storage", {}).get("root", "/opt/home-os/storage"))
+        media_root = storage_root / "HomeOS"
+        sonarr_config = "/opt/Sonarr/data/config.xml"
+        radarr_config = "/opt/Radarr/data/config.xml"
+        sonarr_key = Setting.get("autodelete_sonarr_key", "") or _read_arr_api_key(sonarr_config)
+        radarr_key = Setting.get("autodelete_radarr_key", "") or _read_arr_api_key(radarr_config)
         config = {
             "enabled": Setting.get("autodelete_enabled", "false").lower() == "true",
             "plex_url": f"http://localhost:{plex_port}",
@@ -447,10 +705,15 @@ def _run_cleanup_inner() -> dict:
             "threshold": int(Setting.get("autodelete_threshold", "85")),
             "movies": Setting.get("autodelete_movies", "true").lower() == "true",
             "tv": Setting.get("autodelete_tv", "true").lower() == "true",
-            "sonarr_url": f"http://localhost:{sonarr_port}",
-            "sonarr_api_key": Setting.get("autodelete_sonarr_key", ""),
-            "radarr_url": f"http://localhost:{radarr_port}",
-            "radarr_api_key": Setting.get("autodelete_radarr_key", ""),
+            "sonarr_url": f"http://localhost:{sonarr_port}{_read_arr_url_base(sonarr_config)}",
+            "sonarr_api_key": sonarr_key,
+            "radarr_url": f"http://localhost:{radarr_port}{_read_arr_url_base(radarr_config)}",
+            "radarr_api_key": radarr_key,
+            "media_roots": [
+                str(media_root / "Movies"),
+                str(media_root / "Series"),
+            ],
+            "max_deletions_per_run": 3,
             "state_file": Setting.get(
                 "autodelete_state_file", "/opt/home-os/data/autodelete_state.json"
             ),

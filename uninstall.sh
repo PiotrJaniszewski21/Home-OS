@@ -23,7 +23,20 @@ fi
 echo "Stopping service..."
 systemctl stop home-os 2>/dev/null || true
 systemctl disable home-os 2>/dev/null || true
+systemctl disable --now home-os-instant-stream.timer 2>/dev/null || true
+systemctl disable --now torrserver.service 2>/dev/null || true
+if [ -f /etc/samba/smb.conf ]; then
+    sed -i "\|include = $INSTALL_DIR/config/smb_shares.conf|d" /etc/samba/smb.conf
+fi
 rm -f /etc/systemd/system/home-os.service
+rm -f /etc/systemd/system/home-os-media-helper@.service
+rm -f /etc/systemd/system/home-os-instant-stream.service
+rm -f /etc/systemd/system/home-os-instant-stream.timer
+rm -f /etc/systemd/system/torrserver.service
+rm -f /etc/polkit-1/rules.d/50-home-os-media.rules
+rm -f /etc/sudoers.d/homeos
+rm -f /usr/local/libexec/home-os-media-helper
+rm -f /usr/local/bin/torrserver
 systemctl daemon-reload
 
 read -p "Remove all data (storage files, database)? (y/N) " -n 1 -r
