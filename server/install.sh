@@ -81,6 +81,11 @@ if [ -d "home_os" ]; then
     # Running from project root
     cp -r home_os "$INSTALL_DIR/app/"
     cp requirements.txt "$INSTALL_DIR/app/"
+    mkdir -p "$INSTALL_DIR/app/config"
+    cp \
+        config/home-os-music-cache.service \
+        config/home-os-music-cache.timer \
+        "$INSTALL_DIR/app/config/"
     mkdir -p "$INSTALL_DIR/app/scripts"
     cp \
         scripts/home-os-media-helper \
@@ -94,6 +99,11 @@ else
     git clone --depth 1 "$REPO_URL" "$TMPDIR"
     cp -r "$TMPDIR/server/home_os" "$INSTALL_DIR/app/"
     cp "$TMPDIR/server/requirements.txt" "$INSTALL_DIR/app/"
+    mkdir -p "$INSTALL_DIR/app/config"
+    cp \
+        "$TMPDIR/server/config/home-os-music-cache.service" \
+        "$TMPDIR/server/config/home-os-music-cache.timer" \
+        "$INSTALL_DIR/app/config/"
     mkdir -p "$INSTALL_DIR/app/scripts"
     cp \
         "$TMPDIR/server/scripts/home-os-media-helper" \
@@ -164,10 +174,22 @@ User=root
 Group=root
 WorkingDirectory=$INSTALL_DIR/app
 Environment=HOME_OS_CONFIG=$INSTALL_DIR/config/config.yaml
+Environment=HOME_OS_MUSIC_CACHE_DIR=/run/home-os/music-streams
+Environment=HOME_OS_MUSIC_FEED_CACHE_DIR=/run/home-os/music-feeds
+Environment=HOME_OS_MUSIC_GENRE_CACHE_DIR=/var/cache/home-os/music-genres
+Environment=HOME_OS_MUSIC_METADATA_CACHE_DIR=/var/cache/home-os/music-metadata
+Environment=HOME_OS_YTDLP_CACHE_DIR=/var/cache/home-os/yt-dlp
+Environment=HOME_OS_MUSIC_AUDIO_CACHE_DIR=/var/cache/home-os/music-audio
+RuntimeDirectory=home-os
+RuntimeDirectoryMode=0700
+CacheDirectory=home-os
+CacheDirectoryMode=0700
 ExecStart=$INSTALL_DIR/app/venv/bin/gunicorn \\
     --bind [::]:443 \\
     --workers 3 \\
     --worker-class gevent \\
+    --timeout 120 \\
+    --graceful-timeout 30 \\
     --no-control-socket \\
     --certfile $INSTALL_DIR/config/tls/cert.pem \\
     --keyfile $INSTALL_DIR/config/tls/key.pem \\
@@ -220,6 +242,12 @@ RestrictAddressFamilies=AF_INET AF_INET6
 WantedBy=multi-user.target
 EOF
 
+sed "s|@INSTALL_DIR@|$INSTALL_DIR|g" \
+    "$INSTALL_DIR/app/config/home-os-music-cache.service" \
+    > /etc/systemd/system/home-os-music-cache.service
+cp "$INSTALL_DIR/app/config/home-os-music-cache.timer" \
+    /etc/systemd/system/home-os-music-cache.timer
+
 # Remove the retired media auto-delete feature from upgraded installations.
 systemctl stop home-os-autodelete.timer home-os-autodelete.service 2>/dev/null || true
 systemctl disable home-os-autodelete.timer 2>/dev/null || true
@@ -265,8 +293,9 @@ rm -f "$INSTALL_DIR/config/smb_shares.conf"
 
 # Enable and start
 systemctl daemon-reload
-systemctl enable home-os home-os-http-redirect
+systemctl enable home-os home-os-http-redirect home-os-music-cache.timer
 systemctl start home-os home-os-http-redirect
+systemctl start home-os-music-cache.timer
 
 echo ""
 echo "============================================"

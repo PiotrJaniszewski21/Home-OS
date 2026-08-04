@@ -25,6 +25,18 @@ final class ConnectionEndpointResolverTests: XCTestCase {
         XCTAssertEqual(candidates.map(\.kind), [.remote, .local])
     }
 
+    func testFileProviderCandidatesPreferDomainWithLocalFallback() {
+        let candidates = ConnectionEndpointResolver.fileProviderCandidates(
+            domainURL: "https://petershomenet.co.uk",
+            localURL: "https://192.168.1.20:4443"
+        )
+
+        XCTAssertEqual(candidates, [
+            ConnectionEndpoint(kind: .remote, url: "https://petershomenet.co.uk"),
+            ConnectionEndpoint(kind: .local, url: "https://192.168.1.20"),
+        ])
+    }
+
     func testCandidatesIncludeDiscoveredLocalURLsBeforeDomain() {
         let candidates = ConnectionEndpointResolver.candidates(
             domainURL: "https://petershomenet.co.uk",

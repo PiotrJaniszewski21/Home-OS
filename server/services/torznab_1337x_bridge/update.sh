@@ -9,7 +9,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/opt/home-os-1337x-bridge"
 SERVICE="home-os-1337x-bridge.service"
-FILES=(app.py core.py uindex_core.py tgx_core.py)
+FILES=(app.py browser_worker.py core.py uindex_core.py tgx_core.py)
 
 if [[ ! -x "$INSTALL_DIR/venv/bin/python" ]] ||
     ! systemctl cat "$SERVICE" >/dev/null 2>&1; then

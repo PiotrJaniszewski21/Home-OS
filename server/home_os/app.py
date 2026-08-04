@@ -165,7 +165,7 @@ def create_app(config_path=None):
     app.config["REMEMBER_COOKIE_HTTPONLY"] = True
     app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
     app.config["REMEMBER_COOKIE_SECURE"] = not app.debug
-    app.config["REMEMBER_COOKIE_DURATION"] = 86400  # 1 day
+    app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=90)
     app.config["PERMANENT_SESSION_LIFETIME"] = 3600  # 1 hour idle
 
     db.init_app(app)

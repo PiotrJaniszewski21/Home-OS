@@ -24,6 +24,8 @@ id -u home-os-1337x >/dev/null 2>&1 ||
 install -d -o root -g root -m 0755 "$INSTALL_DIR"
 install -d -o home-os-1337x -g home-os-1337x -m 0700 "$STATE_DIR" "$CACHE_DIR"
 install -o root -g root -m 0644 "$SCRIPT_DIR/app.py" "$INSTALL_DIR/app.py"
+install -o root -g root -m 0644 \
+    "$SCRIPT_DIR/browser_worker.py" "$INSTALL_DIR/browser_worker.py"
 install -o root -g root -m 0644 "$SCRIPT_DIR/core.py" "$INSTALL_DIR/core.py"
 install -o root -g root -m 0644 \
     "$SCRIPT_DIR/uindex_core.py" "$INSTALL_DIR/uindex_core.py"
@@ -80,6 +82,8 @@ Restart=on-failure
 RestartSec=5
 TimeoutStartSec=180
 TimeoutStopSec=30
+IOWeight=75
+MemoryHigh=1800M
 MemoryMax=2500M
 TasksMax=512
 NoNewPrivileges=true

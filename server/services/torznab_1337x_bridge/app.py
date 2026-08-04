@@ -23,6 +23,11 @@ from core import (
     parse_search_results,
     search_path,
 )
+from browser_worker import (
+    BROWSER_IDLE_SECONDS,
+    BROWSER_MAX_AGE_SECONDS,
+    BrowserWorker,
+)
 from fastapi import FastAPI, HTTPException, Query
 from fastapi import Request as FastAPIRequest
 from fastapi.responses import JSONResponse, Response
@@ -55,9 +60,11 @@ PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8787").rstrip("
 SEARCH_CACHE_SECONDS = int(os.getenv("SEARCH_CACHE_SECONDS", "900"))
 DETAIL_CACHE_SECONDS = int(os.getenv("DETAIL_CACHE_SECONDS", "86400"))
 NAVIGATION_TIMEOUT_SECONDS = int(os.getenv("NAVIGATION_TIMEOUT_SECONDS", "120"))
+UINDEX_NAVIGATION_TIMEOUT_SECONDS = int(
+    os.getenv("UINDEX_NAVIGATION_TIMEOUT_SECONDS", "40")
+)
 MAX_SEARCH_PAGES = int(os.getenv("MAX_SEARCH_PAGES", "3"))
 DEFAULT_BROWSE_QUERY = os.getenv("DEFAULT_BROWSE_QUERY", "ubuntu").strip()
-CHALLENGE_TITLES = {"Just a moment...", "Attention Required! | Cloudflare"}
 MAGNET_RE = re.compile(r'href=["\'](magnet:\?[^"\']+)', re.IGNORECASE)
 
 
@@ -67,135 +74,6 @@ class CacheEntry:
     value: object
 
 
-class BrowserWorker:
-    def __init__(self) -> None:
-        self._manager = None
-        self._browser = None
-        self._context = None
-        self._page = None
-        self._contexts: dict[str, object] = {}
-        self._pages: dict[str, object] = {}
-        self._lock = asyncio.Lock()
-
-    async def start(self) -> None:
-        if self._page is not None:
-            return
-        from invisible_playwright.async_api import InvisiblePlaywright
-
-        self._manager = InvisiblePlaywright(
-            headless=True,
-            humanize=True,
-            locale="en-GB",
-            timezone="Europe/London",
-            extra_prefs={"network.dns.disableIPv6": True},
-        )
-        self._browser = await self._manager.__aenter__()
-        self._context = await self._browser.new_context()
-        self._page = await self._context.new_page()
-        self._contexts["1337x"] = self._context
-        self._pages["1337x"] = self._page
-        LOG.info("Invisible Playwright browser started")
-
-    async def stop(self) -> None:
-        manager = self._manager
-        self._manager = None
-        self._browser = None
-        self._context = None
-        self._page = None
-        self._contexts = {}
-        self._pages = {}
-        if manager is not None:
-            await manager.__aexit__(None, None, None)
-
-    async def _page_for(self, key: str):
-        page = self._pages.get(key)
-        if page is not None:
-            return page
-        if self._browser is None:
-            await self.start()
-        if self._browser is None:
-            raise RuntimeError("browser failed to start")
-        context = await self._browser.new_context()
-        page = await context.new_page()
-        self._contexts[key] = context
-        self._pages[key] = page
-        return page
-
-    async def _restart_page(self, key: str):
-        context = self._contexts.pop(key, None)
-        self._pages.pop(key, None)
-        if key == "1337x":
-            self._context = None
-            self._page = None
-        if context is not None:
-            await context.close()
-        page = await self._page_for(key)
-        if key == "1337x":
-            self._context = self._contexts[key]
-            self._page = page
-        return page
-
-    @staticmethod
-    async def _is_challenge(page) -> bool:
-        title = await page.title()
-        if title in CHALLENGE_TITLES:
-            return True
-        content = (await page.content()).lower()
-        return "cf-chl-" in content or "verify you are human" in content
-
-    async def _solve_challenge(self, page) -> None:
-        from playwright_captcha import CaptchaType, ClickSolver, FrameworkType
-
-        LOG.info("Cloudflare challenge detected; starting browser solver")
-        async with ClickSolver(
-            framework=FrameworkType.PLAYWRIGHT,
-            page=page,
-            max_attempts=90,
-            attempt_delay=1,
-        ) as solver:
-            await asyncio.wait_for(
-                solver.solve_captcha(
-                    captcha_container=page,
-                    captcha_type=CaptchaType.CLOUDFLARE_INTERSTITIAL,
-                    wait_checkbox_attempts=1,
-                    wait_checkbox_delay=0.5,
-                ),
-                timeout=NAVIGATION_TIMEOUT_SECONDS,
-            )
-        if await self._is_challenge(page):
-            raise RuntimeError("Cloudflare challenge did not clear")
-        LOG.info("Cloudflare challenge solved")
-
-    async def _navigate(self, page, url: str) -> str:
-        response = await page.goto(
-            url,
-            wait_until="domcontentloaded",
-            timeout=NAVIGATION_TIMEOUT_SECONDS * 1000,
-        )
-        if response is not None and response.status >= 500:
-            raise RuntimeError(f"upstream returned HTTP {response.status}")
-        if await self._is_challenge(page):
-            await self._solve_challenge(page)
-        await page.wait_for_timeout(750)
-        return await page.content()
-
-    async def fetch(self, url: str, *, page_key: str = "1337x") -> str:
-        async with self._lock:
-            page = await self._page_for(page_key)
-            for attempt in range(2):
-                try:
-                    return await self._navigate(page, url)
-                except Exception:
-                    if attempt:
-                        raise
-                    LOG.exception(
-                        "Browser navigation failed for %s; restarting its context once",
-                        page_key,
-                    )
-                    page = await self._restart_page(page_key)
-            raise RuntimeError("browser navigation failed")
-
-
 class Bridge:
     def __init__(self) -> None:
         self.browser = BrowserWorker()
@@ -203,7 +81,7 @@ class Bridge:
         self.magnet_cache: dict[str, CacheEntry] = {}
 
     async def start(self) -> None:
-        await self.browser.start()
+        await self.browser.start_monitor()
 
     async def stop(self) -> None:
         await self.browser.stop()
@@ -299,6 +177,7 @@ class UindexBridge:
             document = await self.browser.fetch(
                 f"{UINDEX_UPSTREAM}{path}",
                 page_key="uindex",
+                timeout_seconds=UINDEX_NAVIGATION_TIMEOUT_SECONDS,
             )
             results = parse_uindex_results(document)
             if not results and "no result" not in document.casefold():
@@ -416,7 +295,9 @@ async def health() -> JSONResponse:
     return JSONResponse(
         {
             "ok": True,
-            "browserReady": BRIDGE.browser._page is not None,
+            "browserReady": BRIDGE.browser.ready,
+            "browserIdleSeconds": BROWSER_IDLE_SECONDS,
+            "browserMaxAgeSeconds": BROWSER_MAX_AGE_SECONDS,
             "upstream": UPSTREAM,
             "torrentGalaxyUpstream": TORRENTGALAXY_UPSTREAM,
         }

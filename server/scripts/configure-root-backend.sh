@@ -67,7 +67,7 @@ User=root
 Group=root
 WorkingDirectory=$INSTALL_DIR/app
 Environment=HOME_OS_CONFIG=$INSTALL_DIR/config/config.yaml
-ExecStart=$INSTALL_DIR/app/venv/bin/gunicorn --bind [::]:443 --workers 3 --worker-class gevent --no-control-socket --certfile $INSTALL_DIR/config/tls/cert.pem --keyfile $INSTALL_DIR/config/tls/key.pem --access-logfile $INSTALL_DIR/logs/access.log --error-logfile $INSTALL_DIR/logs/error.log home_os.app:create_app()
+ExecStart=$INSTALL_DIR/app/venv/bin/gunicorn --bind [::]:443 --workers 3 --worker-class gevent --timeout 120 --graceful-timeout 30 --no-control-socket --certfile $INSTALL_DIR/config/tls/cert.pem --keyfile $INSTALL_DIR/config/tls/key.pem --access-logfile $INSTALL_DIR/logs/access.log --error-logfile $INSTALL_DIR/logs/error.log home_os.app:create_app()
 Restart=always
 RestartSec=5
 UMask=0077

@@ -11,7 +11,7 @@
         <div class="dashboard-online"><span></span>Online</div>
     </div>
 
-    <div class="grid grid-cols-4 gap-4 mb-4">
+    <div class="grid dashboard-metrics gap-4 mb-4">
         <div class="metric-card dashboard-metric cpu" data-symbol="CPU">
             <p class="metric-label">CPU</p>
             <p class="metric-value" id="cpu-val">{{ metrics.cpu_percent }}<span class="metric-unit">%</span></p>
@@ -30,13 +30,22 @@
             <p class="metric-sub">{{ metrics.memory.percent }}% used</p>
         </div>
 
-        <div class="metric-card dashboard-metric disk" data-symbol="SSD">
-            <p class="metric-label">Disk</p>
+        <div class="metric-card dashboard-metric disk" data-symbol="HDD">
+            <p class="metric-label">Disk space</p>
             <p class="metric-value">{{ metrics.disk.used_gb }}<span class="metric-unit"> / {{ metrics.disk.total_gb }} GB</span></p>
             <div class="progress-bar mt-2">
                 <div class="progress-fill {% if metrics.disk.percent > 90 %}red{% elif metrics.disk.percent > 70 %}yellow{% else %}blue{% endif %}" style="width: {{ metrics.disk.percent }}%"></div>
             </div>
             <p class="metric-sub">{{ metrics.disk.percent }}% used</p>
+        </div>
+
+        <div class="metric-card dashboard-metric activity" data-symbol="I/O">
+            <p class="metric-label">HDD activity</p>
+            <p class="metric-value" id="disk-activity-val">{% if metrics.disk.activity_percent is not none %}{{ metrics.disk.activity_percent }}<span class="metric-unit">%</span>{% else %}—{% endif %}</p>
+            <div class="progress-bar mt-2">
+                <div id="disk-activity-bar" class="progress-fill" style="width: {{ metrics.disk.activity_percent or 0 }}%"></div>
+            </div>
+            <p class="metric-sub" id="disk-activity-sub">{% if metrics.disk.device %}/dev/{{ metrics.disk.device }} busy{% else %}Activity unavailable{% endif %}</p>
         </div>
 
         <div class="metric-card dashboard-metric uptime" data-symbol="UP">
@@ -76,6 +85,62 @@
         </div>
     </div>
 
+    <div class="glass-card mb-4 playback-monitor">
+        <div class="playback-monitor-header">
+            <div>
+                <p class="section-label">HomeMusic startup</p>
+                <p class="metric-sub">Last 7 days</p>
+            </div>
+            <span class="playback-sample-count" id="playback-samples">{{ music_playback.overall.samples }} plays</span>
+        </div>
+        <div class="playback-summary">
+            <div>
+                <span>Average to sound</span>
+                <strong id="playback-average">{{ music_playback.overall.avg_audible_ms if music_playback.overall.avg_audible_ms is not none else '—' }}{% if music_playback.overall.avg_audible_ms is not none %} ms{% endif %}</strong>
+            </div>
+            <div>
+                <span>95th percentile</span>
+                <strong id="playback-p95">{{ music_playback.overall.p95_audible_ms if music_playback.overall.p95_audible_ms is not none else '—' }}{% if music_playback.overall.p95_audible_ms is not none %} ms{% endif %}</strong>
+            </div>
+            <div>
+                <span>Source ready</span>
+                <strong id="playback-source-ready">{{ music_playback.overall.avg_source_ready_ms if music_playback.overall.avg_source_ready_ms is not none else '—' }}{% if music_playback.overall.avg_source_ready_ms is not none %} ms{% endif %}</strong>
+            </div>
+            <div>
+                <span>Failures</span>
+                <strong id="playback-failures">{{ music_playback.overall.failure_rate }}%</strong>
+            </div>
+        </div>
+        <div class="playback-breakdowns">
+            <div>
+                <p class="section-label">Navigation</p>
+                <div class="playback-table-wrap">
+                    <table class="playback-table">
+                        <thead><tr><th>Scenario</th><th>Plays</th><th>Average</th><th>P95</th><th>Failed</th></tr></thead>
+                        <tbody id="playback-scenario-rows">
+                        {% for row in music_playback.scenarios %}
+                            <tr><td>{{ row.name|replace('_', ' ')|title }}</td><td>{{ row.samples }}</td><td>{{ row.avg_audible_ms if row.avg_audible_ms is not none else '—' }}{% if row.avg_audible_ms is not none %} ms{% endif %}</td><td>{{ row.p95_audible_ms if row.p95_audible_ms is not none else '—' }}{% if row.p95_audible_ms is not none %} ms{% endif %}</td><td>{{ row.failure_rate }}%</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div>
+                <p class="section-label">Playback source</p>
+                <div class="playback-table-wrap">
+                    <table class="playback-table">
+                        <thead><tr><th>Source</th><th>Plays</th><th>Average</th><th>P95</th><th>Fallback</th></tr></thead>
+                        <tbody id="playback-source-rows">
+                        {% for row in music_playback.sources %}
+                            <tr><td>{{ row.name|replace('_', ' ')|title }}</td><td>{{ row.samples }}</td><td>{{ row.avg_audible_ms if row.avg_audible_ms is not none else '—' }}{% if row.avg_audible_ms is not none %} ms{% endif %}</td><td>{{ row.p95_audible_ms if row.p95_audible_ms is not none else '—' }}{% if row.p95_audible_ms is not none %} ms{% endif %}</td><td>{{ row.fallback_rate }}%</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="glass-card dashboard-system" style="margin-bottom: 1rem;">
         <p class="section-label">System</p>
         <div class="space-y-2 text-sm">
@@ -106,20 +171,44 @@
 .dashboard-online { display:flex; align-items:center; gap:7px; padding:7px 12px; border:1px solid rgba(255,255,255,0.25); border-radius:999px; background:rgba(255,255,255,0.15); backdrop-filter:blur(10px); font-size:12px; font-weight:650; }
 .dashboard-online span { width:7px; height:7px; border-radius:50%; background:#72f6a4; box-shadow:0 0 0 4px rgba(114,246,164,0.14); }
 .dashboard-metric { position:relative; min-height:172px; overflow:hidden; padding:1.35rem !important; }
+.dashboard-metrics { grid-template-columns:repeat(5, minmax(0, 1fr)); }
 .dashboard-metric::after { content:attr(data-symbol); position:absolute; top:15px; right:15px; padding:5px 7px; border-radius:8px; background:rgba(var(--metric-rgb),0.09); color:rgb(var(--metric-rgb)); font-size:9px; font-weight:750; letter-spacing:0.06em; }
 .dashboard-metric.cpu { --metric-rgb:22,119,232; }
 .dashboard-metric.memory { --metric-rgb:21,155,98; }
 .dashboard-metric.disk { --metric-rgb:154,63,224; }
+.dashboard-metric.activity { --metric-rgb:220,55,121; }
 .dashboard-metric.uptime { --metric-rgb:242,107,34; }
 .dashboard-metric .metric-value { margin-top:1.15rem; }
 .dashboard-metric .progress-fill { background:rgb(var(--metric-rgb)) !important; }
 .dashboard-network { position:relative; overflow:hidden; padding-top:1.5rem; }
 .dashboard-network::before, .dashboard-system::before { content:""; position:absolute; inset:0 auto 0 0; width:4px; background:var(--page-gradient); }
 .dashboard-system { position:relative; overflow:hidden; }
+.playback-monitor { padding:1.35rem !important; }
+.playback-monitor-header { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
+.playback-sample-count { color:var(--text-secondary); font-size:.78rem; font-variant-numeric:tabular-nums; }
+.playback-summary { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); margin:1rem 0 1.4rem; border:1px solid var(--border-divider); }
+.playback-summary > div { min-width:0; padding:.9rem 1rem; border-right:1px solid var(--border-divider); }
+.playback-summary > div:last-child { border-right:0; }
+.playback-summary span { display:block; color:var(--text-secondary); font-size:.72rem; }
+.playback-summary strong { display:block; margin-top:.35rem; font-size:1.05rem; font-variant-numeric:tabular-nums; }
+.playback-breakdowns { display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; }
+.playback-table-wrap { overflow-x:auto; }
+.playback-table { width:100%; border-collapse:collapse; font-size:.78rem; font-variant-numeric:tabular-nums; }
+.playback-table th,.playback-table td { padding:.58rem .45rem; border-bottom:1px solid var(--border-divider); text-align:right; white-space:nowrap; }
+.playback-table th:first-child,.playback-table td:first-child { text-align:left; }
+.playback-table th { color:var(--text-secondary); font-size:.68rem; font-weight:650; }
 @media (max-width: 760px) {
     .dashboard-hero { min-height:150px; padding:1.5rem; }
     .dashboard-hero h1 { font-size:30px !important; }
+    .dashboard-metrics { grid-template-columns:repeat(2, minmax(0, 1fr)); }
     .dashboard-metric { min-height:150px; }
+    .playback-summary { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+    .playback-summary > div:nth-child(2) { border-right:0; }
+    .playback-summary > div:nth-child(-n+2) { border-bottom:1px solid var(--border-divider); }
+    .playback-breakdowns { grid-template-columns:1fr; }
+}
+@media (min-width: 761px) and (max-width: 1050px) {
+    .dashboard-metrics { grid-template-columns:repeat(3, minmax(0, 1fr)); }
 }
 </style>
 
@@ -138,8 +227,63 @@ setInterval(() => {
             document.getElementById("cpu-bar").style.width = d.cpu_percent + "%";
             document.getElementById("mem-val").innerHTML = d.memory.used_gb + '<span class="metric-unit"> / ' + d.memory.total_gb + ' GB</span>';
             document.getElementById("mem-bar").style.width = d.memory.percent + "%";
+            const activity = d.disk.activity_percent;
+            document.getElementById("disk-activity-val").innerHTML = activity === null
+                ? "—"
+                : activity + '<span class="metric-unit">%</span>';
+            document.getElementById("disk-activity-bar").style.width = (activity || 0) + "%";
+            document.getElementById("disk-activity-sub").textContent = d.disk.device
+                ? "/dev/" + d.disk.device + " busy"
+                : "Activity unavailable";
         });
 }, 3000);
+
+function playbackDuration(value) {
+    return value === null ? "—" : value + " ms";
+}
+
+function playbackLabel(value) {
+    return value.replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+function renderPlaybackRows(targetID, rows, lastColumn) {
+    const body = document.getElementById(targetID);
+    body.replaceChildren(...rows.map(row => {
+        const tr = document.createElement("tr");
+        const values = [
+            playbackLabel(row.name),
+            row.samples,
+            playbackDuration(row.avg_audible_ms),
+            playbackDuration(row.p95_audible_ms),
+            row[lastColumn] + "%",
+        ];
+        for (const value of values) {
+            const cell = document.createElement("td");
+            cell.textContent = value;
+            tr.appendChild(cell);
+        }
+        return tr;
+    }));
+}
+
+function pollPlaybackMetrics() {
+    fetch("/api/monitor/music-playback", {headers: {"Accept": "application/json"}})
+        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) return;
+            const data = response.data;
+            const overall = data.overall;
+            document.getElementById("playback-samples").textContent = overall.samples + " plays";
+            document.getElementById("playback-average").textContent = playbackDuration(overall.avg_audible_ms);
+            document.getElementById("playback-p95").textContent = playbackDuration(overall.p95_audible_ms);
+            document.getElementById("playback-source-ready").textContent = playbackDuration(overall.avg_source_ready_ms);
+            document.getElementById("playback-failures").textContent = overall.failure_rate + "%";
+            renderPlaybackRows("playback-scenario-rows", data.scenarios, "failure_rate");
+            renderPlaybackRows("playback-source-rows", data.sources, "fallback_rate");
+        });
+}
+
+setInterval(pollPlaybackMetrics, 60000);
 
 function formatSpeed(bps) {
     const mbps = (bps * 8) / 1000000;

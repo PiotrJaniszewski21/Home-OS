@@ -59,6 +59,12 @@ struct ConnectionEndpointResolver: Sendable {
         deduplicated(urls.compactMap(normalizedURL).map { ConnectionEndpoint(kind: .local, url: $0) })
     }
 
+    static func fileProviderCandidates(domainURL: String, localURL: String) -> [ConnectionEndpoint] {
+        // File Provider extensions can temporarily lose direct LAN access even
+        // while the containing app retains it. Keep LAN as the fallback.
+        candidates(domainURL: domainURL, localURL: localURL, preferLocal: false)
+    }
+
     func resolve(candidates: [ConnectionEndpoint], probe: Probe) async -> EndpointResolutionResult {
         var failures: [EndpointResolutionFailure] = []
         for endpoint in candidates {

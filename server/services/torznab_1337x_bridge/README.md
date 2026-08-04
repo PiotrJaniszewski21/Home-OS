@@ -1,8 +1,10 @@
 # Home OS 1337x Torznab Bridge
 
-This localhost-only service uses a persistent Invisible Playwright browser to
+This localhost-only service uses an on-demand Invisible Playwright browser to
 fetch and parse 1337x pages. It exposes a Torznab API to Prowlarr and resolves
-torrent downloads lazily through the detail page.
+torrent downloads lazily through the detail page. Health and capabilities
+requests do not launch Firefox. The browser stops after 15 minutes without a
+real upstream request and is recycled after six hours.
 
 The same browser process also exposes a Uindex Torznab endpoint. Uindex results
 already contain magnet links, so the feed returns those directly.
@@ -47,3 +49,14 @@ update the TorrentGalaxy indexer and synchronize applications with:
 ```bash
 sudo python3 configure_prowlarr.py
 ```
+
+Browser lifecycle timings can be overridden with `BROWSER_IDLE_SECONDS`,
+`BROWSER_MAX_AGE_SECONDS`, and `BROWSER_REAPER_INTERVAL_SECONDS`. The bridge
+waits up to `CHALLENGE_AUTO_WAIT_SECONDS` for Cloudflare's automatic handoff
+before attempting an interactive challenge. Uindex uses a shorter
+`UINDEX_NAVIGATION_TIMEOUT_SECONDS` retry window so both browser attempts fit
+inside Prowlarr's request timeout.
+
+The systemd service applies a soft 1.8 GB memory threshold and a 2.5 GB hard
+limit. These leave enough headroom for Cloudflare challenges while allowing the
+kernel to reclaim browser cache before the rest of Home OS becomes constrained.

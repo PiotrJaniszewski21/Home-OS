@@ -96,6 +96,41 @@ class BackendHardeningTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], "/dashboard")
 
+    def test_remember_me_restores_login_after_browser_session_expires(self):
+        client = self.app.test_client()
+        login_page = client.get("/login")
+        csrf_token = re.search(
+            r'name="csrf_token"[^>]*value="([^"]+)"',
+            login_page.get_data(as_text=True),
+        ).group(1)
+
+        response = client.post(
+            "/login",
+            data={
+                "username": "Admin",
+                "password": "test-password",
+                "remember_me": "y",
+                "csrf_token": csrf_token,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            self.app.config["REMEMBER_COOKIE_DURATION"],
+            timedelta(days=90),
+        )
+        self.assertTrue(
+            any(
+                header.startswith("remember_token=")
+                for header in response.headers.getlist("Set-Cookie")
+            )
+        )
+
+        client.delete_cookie(self.app.config["SESSION_COOKIE_NAME"])
+        restored = client.get("/dashboard")
+
+        self.assertEqual(restored.status_code, 200)
+
     def test_media_policy_allows_jellyfin_blob_playback(self):
         response = self.app.test_client().get("/health")
 

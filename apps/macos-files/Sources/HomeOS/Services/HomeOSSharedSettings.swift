@@ -36,6 +36,7 @@ struct HomeOSSharedSettings: Codable, Equatable, Sendable {
         if let primaryDefaults {
             let settings = HomeOSSharedSettings(defaults: primaryDefaults)
             if settings.hasStoredValues {
+                settings.write(to: primaryDefaults)
                 SharedSettingsKeychain.save(settings)
                 removeLegacyToken(from: primaryDefaults)
                 logLoaded(settings, source: "provided defaults")

@@ -377,10 +377,9 @@ final class HomeOSFileProviderBackend: @unchecked Sendable {
             throw NSFileProviderError(.notAuthenticated)
         }
 
-        let candidates = ConnectionEndpointResolver.candidates(
+        let candidates = ConnectionEndpointResolver.fileProviderCandidates(
             domainURL: settings.serverURL,
-            localURL: settings.localServerURL,
-            preferLocal: settings.preferLocalServer
+            localURL: settings.localServerURL
         )
         guard !candidates.isEmpty else {
             logger.error("File Provider has no valid endpoint candidates")
