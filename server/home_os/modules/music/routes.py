@@ -449,7 +449,7 @@ def playback_url():
             )
             return jsonify({"ok": False, "error": str(error)}), 502
         duration_seconds = stream.duration_seconds
-        direct_url = stream.url if request.args.get("direct") == "1" else None
+        direct_url = stream.url
         source_expires_at = getattr(stream, "expires_at", None)
         home_music_service.schedule_audio_cache(video_id)
     if listen is not None and listen.duration_seconds is None and duration_seconds:

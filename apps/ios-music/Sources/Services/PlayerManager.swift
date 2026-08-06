@@ -127,7 +127,7 @@ final class PlayerManager: ObservableObject {
     private static let localPreparationLimit = 12
 
     init() {
-        player.automaticallyWaitsToMinimizeStalling = true
+        player.automaticallyWaitsToMinimizeStalling = false
         configureAudioSession()
         configureRemoteCommands()
         observeAudioRouteChanges()
@@ -258,7 +258,7 @@ final class PlayerManager: ObservableObject {
             playbackFallbackURL = source.fallbackURL
             isUsingPlaybackFallback = false
             let item = preparation.item
-            item.preferredForwardBufferDuration = 2
+            item.preferredForwardBufferDuration = 0.5
             completedItem = nil
             replacePlaybackItem(with: item)
             activeCachedAsset = preparation.cachedAsset

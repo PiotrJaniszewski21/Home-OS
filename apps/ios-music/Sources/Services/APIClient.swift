@@ -186,7 +186,10 @@ struct APIClient {
         for track: Track,
         prefetch: Bool = false
     ) async throws -> PlaybackSource {
-        var query = [URLQueryItem(name: "id", value: track.id)]
+        var query = [
+            URLQueryItem(name: "id", value: track.id),
+            URLQueryItem(name: "direct", value: "1")
+        ]
         if prefetch {
             query.append(URLQueryItem(name: "prefetch", value: "1"))
         }
