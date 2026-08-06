@@ -1662,14 +1662,26 @@ class HomeMusicService:
                 )
             details = StreamDetails(
                 url=stream_url,
-                duration_seconds=duration_seconds if duration_seconds and duration_seconds > 0 else None,
+                duration_seconds=duration_seconds,
                 expires_at=self._stream_expiry(stream_url),
             )
             self._store_stream_in_memory(video_id, details)
             self._write_shared_stream(video_id, details)
             self.clear_track_unavailable(video_id)
-            self._log_stream_resolution(video_id, "extracted", started_at)
+            self._log_stream_resolution(video_id, "yt-dlp", started_at)
             return details
+
+    def prefetch_stream_details(self, video_ids):
+        if not video_ids:
+            return
+        def _prefetch_job():
+            for vid in video_ids:
+                try:
+                    if self._get_cached(self._stream_cache, vid) is None and not self.is_track_unavailable(vid):
+                        self.stream_details(vid)
+                except Exception:
+                    pass
+        threading.Thread(target=_prefetch_job, daemon=True).start()
 
     def download_audio(self, video_id, output_directory):
         video_id = self.validate_video_id(video_id)

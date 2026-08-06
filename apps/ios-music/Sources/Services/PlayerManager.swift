@@ -456,31 +456,19 @@ final class PlayerManager: ObservableObject {
     }
 
     private func prepareNextPlaybackSource(_ track: Track?) {
-        guard let track,
-              offlineMusic?.localURL(for: track) == nil,
-              preparedSources[track.id]?.isUsable() != true,
-              recentPlaybackSources[track.id]?.isUsable() != true,
-              let client = session?.client else {
-            sourcePreparationTask?.cancel()
-            sourcePreparationTask = nil
-            sourcePreparationTrackID = nil
-            return
-        }
-        sourcePreparationTask?.cancel()
-        sourcePreparationTrackID = track.id
-        let generation = sourcePreparationGeneration
-        sourcePreparationTask = Task { @MainActor [weak self] in
-            guard let self,
-                  let source = try? await client.playback(
-                    for: track,
-                    prefetch: true
-                  ),
-                  !Task.isCancelled,
-                  self.sourcePreparationGeneration == generation else {
-                return nil
+        guard let client = session?.client else { return }
+        let upcomingTracks = queue.prefix(3)
+        for nextTrack in upcomingTracks {
+            guard offlineMusic?.localURL(for: nextTrack) == nil,
+                  preparedSources[nextTrack.id]?.isUsable() != true,
+                  recentPlaybackSources[nextTrack.id]?.isUsable() != true else {
+                continue
             }
-            self.preparedSources[track.id] = source
-            return source
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let source = try? await client.playback(for: nextTrack, prefetch: true) else { return }
+                self.preparedSources[nextTrack.id] = source
+            }
         }
     }
 
