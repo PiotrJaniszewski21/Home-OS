@@ -852,29 +852,34 @@ def personalized_home():
     limited = _enforce_rate_limit("personalized-home", 30)
     if limited:
         return limited
-    listens = (
+    recent_listens = (
         MusicListen.query
         .filter_by(user_id=current_user.id)
-        .order_by(
-            MusicListen.liked.desc(),
-            MusicListen.completed_count.desc(),
-            MusicListen.play_count.desc(),
-            MusicListen.last_played_at.desc(),
-        )
+        .order_by(MusicListen.last_played_at.desc())
         .limit(30)
         .all()
     )
-    if not listens:
+    if not recent_listens:
         return jsonify({
             "ok": True,
             "data": {"suggested_songs": [], "suggested_albums": [], "new_releases": []},
             "message": "Play a few songs to personalize Listen Now.",
         })
+    seed_ids = [listen.track_id for listen in recent_listens[:5]]
+    recent_artists = []
+    seen_artists = set()
+    for listen in recent_listens:
+        if listen.artist:
+            primary_artist = listen.artist.split(",")[0].strip()
+            if primary_artist and primary_artist.casefold() not in seen_artists:
+                seen_artists.add(primary_artist.casefold())
+                recent_artists.append(primary_artist)
+    exclude_ids = [listen.track_id for listen in recent_listens]
     try:
         payload = home_music_service.personalized_home(
-            [listen.track_id for listen in listens[:3]],
-            [listen.artist.split(",")[0] for listen in listens],
-            exclude_ids=[listen.track_id for listen in listens],
+            seed_ids,
+            recent_artists[:5],
+            exclude_ids=exclude_ids,
             cache_key=f"user:{current_user.id}",
             force_refresh=request.args.get("refresh") == "1",
         )
