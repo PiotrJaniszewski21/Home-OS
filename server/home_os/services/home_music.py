@@ -1348,7 +1348,7 @@ class HomeMusicService:
             ("releases", artist)
             for artist in artists
         ]
-        candidates = []
+        rec_lists = []
         release_groups = []
         try:
             with ThreadPoolExecutor(
@@ -1368,7 +1368,7 @@ class HomeMusicService:
                             ) from error
                         result = []
                     if kind == "recommendation":
-                        candidates.extend(result)
+                        rec_lists.append(result)
                     else:
                         release_groups.append(result)
         except HomeMusicError:
@@ -1376,14 +1376,21 @@ class HomeMusicService:
         except Exception as error:
             raise HomeMusicError("Music recommendations are unavailable") from error
 
+        candidates = []
+        max_len = max((len(lst) for lst in rec_lists), default=0)
+        for idx in range(max_len):
+            for lst in rec_lists:
+                if idx < len(lst):
+                    candidates.append(lst[idx])
+
         suggested_songs = [
             track
-            for track in self._normalize_tracks(candidates, limit=40)
+            for track in self._normalize_tracks(candidates, limit=60)
             if (
                 track["id"] not in excluded
                 and not self.is_track_unavailable(track["id"])
             )
-        ][:16]
+        ][:24]
         suggested_albums = self._albums_from_tracks(candidates, limit=10)
         new_releases = []
         for artist, releases in zip(artists, release_groups):

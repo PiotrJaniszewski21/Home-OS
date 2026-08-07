@@ -852,36 +852,96 @@ def personalized_home():
     limited = _enforce_rate_limit("personalized-home", 30)
     if limited:
         return limited
+
+    is_force_refresh = request.args.get("refresh") == "1"
+
+    # 1. Recent listens (ordered by last_played_at)
     recent_listens = (
         MusicListen.query
         .filter_by(user_id=current_user.id)
         .order_by(MusicListen.last_played_at.desc())
+        .limit(20)
+        .all()
+    )
+
+    # 2. User playlist tracks (ordered by playlist updated_at)
+    playlist_tracks = (
+        MusicPlaylistTrack.query
+        .join(MusicPlaylist, MusicPlaylistTrack.playlist_id == MusicPlaylist.id)
+        .filter(MusicPlaylist.user_id == current_user.id)
+        .order_by(MusicPlaylist.updated_at.desc(), MusicPlaylistTrack.id.desc())
         .limit(30)
         .all()
     )
-    if not recent_listens:
+
+    # 3. Liked tracks
+    liked_listens = (
+        MusicListen.query
+        .filter_by(user_id=current_user.id, liked=True)
+        .order_by(MusicListen.last_played_at.desc())
+        .limit(20)
+        .all()
+    )
+
+    if not recent_listens and not playlist_tracks and not liked_listens:
         return jsonify({
             "ok": True,
             "data": {"suggested_songs": [], "suggested_albums": [], "new_releases": []},
-            "message": "Play a few songs to personalize Listen Now.",
+            "message": "Play a few songs or create a playlist to personalize Listen Now.",
         })
-    seed_ids = [listen.track_id for listen in recent_listens[:5]]
+
+    # Assemble candidate seeds from all 3 sources
+    raw_seed_candidates = []
+    seen_seeds = set()
+
+    for item in recent_listens[:10]:
+        if item.track_id not in seen_seeds:
+            seen_seeds.add(item.track_id)
+            raw_seed_candidates.append(item.track_id)
+
+    for item in playlist_tracks:
+        if item.track_id not in seen_seeds:
+            seen_seeds.add(item.track_id)
+            raw_seed_candidates.append(item.track_id)
+
+    for item in liked_listens:
+        if item.track_id not in seen_seeds:
+            seen_seeds.add(item.track_id)
+            raw_seed_candidates.append(item.track_id)
+
+    if is_force_refresh and len(raw_seed_candidates) > 5:
+        import random
+        top_seed = raw_seed_candidates[0]
+        other_seeds = raw_seed_candidates[1:]
+        seed_ids = [top_seed] + random.sample(other_seeds, min(4, len(other_seeds)))
+    else:
+        seed_ids = raw_seed_candidates[:5]
+
+    # Collect artists across all sources
     recent_artists = []
     seen_artists = set()
-    for listen in recent_listens:
-        if listen.artist:
-            primary_artist = listen.artist.split(",")[0].strip()
+    all_sources = list(recent_listens) + list(playlist_tracks) + list(liked_listens)
+    if is_force_refresh:
+        import random
+        random.shuffle(all_sources)
+
+    for item in all_sources:
+        artist_name = getattr(item, "artist", None)
+        if artist_name:
+            primary_artist = artist_name.split(",")[0].strip()
             if primary_artist and primary_artist.casefold() not in seen_artists:
                 seen_artists.add(primary_artist.casefold())
                 recent_artists.append(primary_artist)
-    exclude_ids = [listen.track_id for listen in recent_listens]
+
+    exclude_ids = list(seen_seeds)
+
     try:
         payload = home_music_service.personalized_home(
             seed_ids,
             recent_artists[:5],
             exclude_ids=exclude_ids,
             cache_key=f"user:{current_user.id}",
-            force_refresh=request.args.get("refresh") == "1",
+            force_refresh=is_force_refresh,
         )
     except HomeMusicError as error:
         current_app.logger.warning("HomeMusic personalized home failed: %s", error)
