@@ -20,6 +20,22 @@ struct Track: Codable, Identifiable, Hashable {
         case playCount = "play_count"
         case lastPlayedAt = "last_played_at"
     }
+
+    var parsedDurationSeconds: Double? {
+        if let durationSeconds, durationSeconds > 0 {
+            return Double(durationSeconds)
+        }
+        guard let duration else { return nil }
+        let parts = duration.split(separator: ":").compactMap { Double($0) }
+        if parts.count == 1 {
+            return parts[0]
+        } else if parts.count == 2 {
+            return parts[0] * 60 + parts[1]
+        } else if parts.count == 3 {
+            return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        }
+        return nil
+    }
 }
 
 extension String {

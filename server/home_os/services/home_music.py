@@ -2676,20 +2676,40 @@ class HomeMusicService:
                     key=lambda item: int(item.get("width") or 0),
                 ).get("url", "")
                 thumbnail = self._high_resolution_thumbnail(thumbnail)
+            dur_str = result.get("duration")
+            dur_sec = self._parse_duration_seconds(dur_str, result.get("duration_seconds"))
             tracks.append({
                 "id": video_id,
                 "title": title,
                 "artist": ", ".join(artist_names),
                 "artist_id": artist_id,
                 "thumbnail": thumbnail,
-                "duration": result.get("duration"),
-                "duration_seconds": result.get("duration_seconds"),
+                "duration": dur_str,
+                "duration_seconds": dur_sec,
                 "explicit": bool(result.get("isExplicit")),
             })
             seen_ids.add(video_id)
             if len(tracks) >= limit:
                 break
         return tracks
+
+    @staticmethod
+    def _parse_duration_seconds(duration_str, duration_seconds_val):
+        if isinstance(duration_seconds_val, (int, float)) and duration_seconds_val > 0:
+            return int(duration_seconds_val)
+        if not duration_str or not isinstance(duration_str, str):
+            return None
+        try:
+            parts = [int(p) for p in duration_str.strip().split(":")]
+            if len(parts) == 1:
+                return parts[0]
+            elif len(parts) == 2:
+                return parts[0] * 60 + parts[1]
+            elif len(parts) == 3:
+                return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        except Exception:
+            pass
+        return None
 
     def _normalize_artist(self, result):
         try:

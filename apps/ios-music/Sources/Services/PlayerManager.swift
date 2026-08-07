@@ -251,7 +251,7 @@ final class PlayerManager: ObservableObject {
             elapsed = 0
             let reportedDuration = preferredDuration(
                 source: source.durationSeconds,
-                track: track.durationSeconds
+                track: track.parsedDurationSeconds.map(Int.init)
             )
             duration = reportedDuration
             fallbackDuration = validDuration(reportedDuration)
