@@ -1631,15 +1631,21 @@ class HomeMusicService:
 
             try:
                 from yt_dlp import YoutubeDL
+                from concurrent.futures import ThreadPoolExecutor
 
-                options = self._youtube_dl_options()
-                options["skip_download"] = True
-                with self._extraction_slot():
-                    with YoutubeDL(options) as downloader:
-                        info = downloader.extract_info(
-                            f"https://music.youtube.com/watch?v={video_id}",
-                            download=False,
-                        )
+                def _do_ytdlp_extraction():
+                    options = self._youtube_dl_options()
+                    options["skip_download"] = True
+                    with self._extraction_slot():
+                        with YoutubeDL(options) as downloader:
+                            return downloader.extract_info(
+                                f"https://music.youtube.com/watch?v={video_id}",
+                                download=False,
+                            )
+
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    info = pool.submit(_do_ytdlp_extraction).result()
+
                 stream_url = str(info.get("url") or "")
                 raw_duration = info.get("duration")
                 duration_seconds = float(raw_duration) if raw_duration is not None else None
