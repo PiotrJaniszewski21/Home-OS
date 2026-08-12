@@ -438,9 +438,13 @@ private struct AppleMusicScrubber: View {
                     }
                     .onEnded { _ in
                         if isDragging {
-                            onSeek(scrubValue)
-                            withAnimation(.easeOut(duration: 0.18)) {
-                                isDragging = false
+                            let finalSeek = scrubValue
+                            onSeek(finalSeek)
+                            Task {
+                                try? await Task.sleep(for: .milliseconds(400))
+                                withAnimation(.easeOut(duration: 0.18)) {
+                                    isDragging = false
+                                }
                             }
                         }
                     }

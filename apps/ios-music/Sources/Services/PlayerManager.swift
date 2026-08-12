@@ -122,6 +122,7 @@ final class PlayerManager: ObservableObject {
     private weak var offlineMusic: OfflineMusicStore?
     private static let artworkCache = NSCache<NSString, UIImage>()
     private var playbackStartedAt: ContinuousClock.Instant?
+    private var lastSeekTime: ContinuousClock.Instant?
     private var activePlaybackMetric: PlaybackMetricState?
     private static let maximumConsecutivePlaybackFailures = 3
     private static let localPreparationLimit = 12
@@ -526,6 +527,7 @@ final class PlayerManager: ObservableObject {
     }
 
     func seek(to value: Double) {
+        lastSeekTime = .now
         player.seek(to: CMTime(seconds: value, preferredTimescale: 600))
         elapsed = value
         updateNowPlaying()
@@ -759,10 +761,13 @@ final class PlayerManager: ObservableObject {
     }
 
     private func observeTime() {
-        let interval = CMTime(seconds: 1, preferredTimescale: 1)
+        let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             Task { @MainActor in
                 guard let self else { return }
+                if let lastSeekTime, lastSeekTime.duration(to: .now) < .milliseconds(600) {
+                    return
+                }
                 let rawElapsed = max(0, time.seconds.isFinite ? time.seconds : 0)
                 let item = self.player.currentItem
                 if self.duration <= 0, let item {
