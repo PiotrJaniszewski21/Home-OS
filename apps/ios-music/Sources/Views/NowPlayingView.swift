@@ -31,14 +31,9 @@ struct NowPlayingView: View {
                         .clipped()
 
                     VStack(spacing: 0) {
-                        Capsule()
-                            .fill(.primary.opacity(0.25))
-                            .frame(width: 36, height: 5)
-                            .padding(.top, 10)
-
                         playerHeader
                             .padding(.horizontal, 24)
-                            .padding(.top, 12)
+                            .padding(.top, 16)
 
                         Spacer(minLength: 8)
 
