@@ -1668,6 +1668,22 @@ class HomeMusicService:
             self._log_stream_resolution(video_id, "shared", started_at)
             return cached
 
+        try:
+            from home_os.models.music import MusicStreamUrlCache
+            now = time.time()
+            db_cached = MusicStreamUrlCache.query.filter_by(track_id=video_id).first()
+            if db_cached and db_cached.expires_at > now:
+                details = StreamDetails(
+                    url=db_cached.url,
+                    duration_seconds=db_cached.duration_seconds,
+                    expires_at=db_cached.expires_at,
+                )
+                self._store_stream_in_memory(video_id, details)
+                self._log_stream_resolution(video_id, "db-cache", started_at)
+                return details
+        except Exception:
+            pass
+
         with self._stream_resolution_lock(video_id):
             cached = self._get_cached(self._stream_cache, video_id)
             if cached is not None:
@@ -1689,6 +1705,20 @@ class HomeMusicService:
                 )
                 self._store_stream_in_memory(video_id, details)
                 self._write_shared_stream(video_id, details)
+                try:
+                    from home_os.models.music import MusicStreamUrlCache, db
+                    exp_time = time.time() + 10800
+                    db_item = MusicStreamUrlCache.query.filter_by(track_id=video_id).first()
+                    if db_item is None:
+                        db_item = MusicStreamUrlCache(track_id=video_id, url=fast_url, duration_seconds=details.duration_seconds, expires_at=exp_time)
+                        db.session.add(db_item)
+                    else:
+                        db_item.url = fast_url
+                        db_item.duration_seconds = details.duration_seconds
+                        db_item.expires_at = exp_time
+                    db.session.commit()
+                except Exception:
+                    pass
                 self.clear_track_unavailable(video_id)
                 self._log_stream_resolution(video_id, "innertube-fast", started_at)
                 return details

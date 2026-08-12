@@ -219,3 +219,18 @@ class MusicSavedAlbum(db.Model):
             "type": self.album_type,
             "saved_at": self.saved_at.isoformat(),
         }
+
+
+class MusicStreamUrlCache(db.Model):
+    __tablename__ = "music_stream_url_cache"
+
+    id = db.Column(db.Integer, primary_key=True)
+    track_id = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    url = db.Column(db.Text, nullable=False)
+    duration_seconds = db.Column(db.Float, nullable=True)
+    expires_at = db.Column(db.Float, nullable=False, index=True)
+    created_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
