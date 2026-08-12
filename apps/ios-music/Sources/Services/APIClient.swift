@@ -415,6 +415,7 @@ struct APIClient {
         do {
             return try JSONDecoder().decode(APIEnvelope<Value>.self, from: data).data
         } catch {
+            print("❌ JSON DECODING ERROR for \(Value.self): \(error)")
             throw APIError.invalidResponse
         }
     }

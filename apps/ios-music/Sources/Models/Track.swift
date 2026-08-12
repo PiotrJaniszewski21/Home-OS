@@ -228,6 +228,25 @@ struct ArtistSummary: Codable, Identifiable, Hashable {
     let name: String
     let thumbnail: String
     let subscribers: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, thumbnail, subscribers
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Artist"
+        thumbnail = try container.decodeIfPresent(String.self, forKey: .thumbnail) ?? ""
+        subscribers = try container.decodeIfPresent(String.self, forKey: .subscribers)
+    }
+
+    init(id: String, name: String, thumbnail: String, subscribers: String? = nil) {
+        self.id = id
+        self.name = name
+        self.thumbnail = thumbnail
+        self.subscribers = subscribers
+    }
 }
 
 struct MusicRelease: Codable, Identifiable, Hashable {
@@ -237,6 +256,29 @@ struct MusicRelease: Codable, Identifiable, Hashable {
     let thumbnail: String
     let year: String
     let type: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, artist, thumbnail, year, type
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? "Release"
+        artist = try container.decodeIfPresent(String.self, forKey: .artist)
+        thumbnail = try container.decodeIfPresent(String.self, forKey: .thumbnail) ?? ""
+        year = try container.decodeIfPresent(String.self, forKey: .year) ?? ""
+        type = try container.decodeIfPresent(String.self, forKey: .type) ?? "Album"
+    }
+
+    init(id: String, title: String, artist: String?, thumbnail: String, year: String, type: String) {
+        self.id = id
+        self.title = title
+        self.artist = artist
+        self.thumbnail = thumbnail
+        self.year = year
+        self.type = type
+    }
 }
 
 struct SavedAlbum: Codable, Identifiable, Hashable {
