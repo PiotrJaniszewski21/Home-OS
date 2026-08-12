@@ -1,4 +1,5 @@
 import AVKit
+import MediaPlayer
 import SwiftUI
 
 struct NowPlayingView: View {
@@ -17,7 +18,12 @@ struct NowPlayingView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
-                let artworkSize = min(geometry.size.width - 48, geometry.size.height * 0.42, 380)
+                let isCompactHeight = geometry.size.height < 680
+                let artworkSize = min(
+                    geometry.size.width - 64,
+                    geometry.size.height * (isCompactHeight ? 0.35 : 0.42),
+                    360
+                )
 
                 ZStack {
                     PlayerBackground(url: player.currentTrack?.thumbnail)
@@ -25,51 +31,66 @@ struct NowPlayingView: View {
                         .clipped()
 
                     VStack(spacing: 0) {
-                        playerHeader
-                            .padding(.horizontal, 20)
-                            .padding(.top, 8)
+                        Capsule()
+                            .fill(.primary.opacity(0.25))
+                            .frame(width: 36, height: 5)
+                            .padding(.top, 10)
 
-                        Spacer(minLength: 12)
+                        playerHeader
+                            .padding(.horizontal, 24)
+                            .padding(.top, 12)
+
+                        Spacer(minLength: 8)
 
                         if let track = player.currentTrack {
                             PlayerArtworkView(image: player.artworkImage)
                                 .frame(width: artworkSize, height: artworkSize)
-                                .shadow(color: .black.opacity(0.32), radius: 28, y: 16)
-                                .scaleEffect(player.isPlaying ? 1 : 0.92)
-                                .animation(.spring(response: 0.5, dampingFraction: 0.82), value: player.isPlaying)
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .shadow(color: .black.opacity(0.40), radius: 30, x: 0, y: 16)
+                                .scaleEffect(player.isPlaying ? 1.0 : 0.86)
+                                .animation(
+                                    .spring(response: 0.45, dampingFraction: 0.75, blendDuration: 0),
+                                    value: player.isPlaying
+                                )
 
-                            Spacer(minLength: 24)
+                            Spacer(minLength: 16)
 
                             trackInformation(track)
-                                .padding(.horizontal, 28)
+                                .padding(.horizontal, 30)
 
                             if player.currentRadioStation == nil {
                                 progress
-                                    .padding(.horizontal, 28)
-                                    .padding(.top, 22)
+                                    .padding(.horizontal, 30)
+                                    .padding(.top, isCompactHeight ? 12 : 20)
                             } else {
                                 HStack(spacing: 8) {
                                     Circle().fill(.red).frame(width: 8, height: 8)
-                                    Text("LIVE RADIO").font(.caption.bold())
+                                    Text("LIVE BROADCAST").font(.caption.bold()).tracking(1)
                                 }
-                                .padding(.top, 22)
+                                .padding(.top, isCompactHeight ? 12 : 20)
                             }
 
                             transportControls
-                                .padding(.top, 14)
+                                .padding(.top, isCompactHeight ? 10 : 16)
+
+                            if player.currentRadioStation == nil {
+                                volumeSlider
+                                    .padding(.horizontal, 34)
+                                    .padding(.top, isCompactHeight ? 12 : 22)
+                            }
 
                             accessoryControls
-                                .padding(.horizontal, 38)
-                                .padding(.top, 14)
+                                .padding(.horizontal, 40)
+                                .padding(.top, isCompactHeight ? 12 : 20)
 
                             playbackStatus
-                                .padding(.horizontal, 28)
-                                .padding(.top, 8)
+                                .padding(.horizontal, 30)
+                                .padding(.top, 6)
                         } else {
                             ContentUnavailableView("Nothing Playing", systemImage: "music.note")
                         }
 
-                        Spacer(minLength: 18)
+                        Spacer(minLength: isCompactHeight ? 12 : 24)
                     }
                     .frame(width: geometry.size.width, height: geometry.size.height)
                 }
@@ -95,16 +116,20 @@ struct NowPlayingView: View {
         HStack {
             Button { dismiss() } label: {
                 Image(systemName: "chevron.down")
-                    .font(.headline.bold())
-                    .frame(width: 44, height: 44)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(.primary.opacity(0.85))
+                    .frame(width: 36, height: 36)
+                    .background(.ultraThinMaterial, in: Circle())
             }
             Spacer()
             VStack(spacing: 2) {
-                Text("PLAYING NOW")
+                Text(headerCategoryTitle.uppercased())
                     .font(.caption2.bold())
+                    .tracking(0.8)
                     .foregroundStyle(.secondary)
                 Text(player.currentTrack?.artist ?? "HomeMusic")
                     .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary.opacity(0.9))
                     .lineLimit(1)
             }
             Spacer()
@@ -119,7 +144,10 @@ struct NowPlayingView: View {
                         }
                     } else {
                         Button { Task { await player.toggleLike() } } label: {
-                            Label("Love", systemImage: "heart")
+                            Label(
+                                track.liked == true ? "Unlike" : "Love",
+                                systemImage: track.liked == true ? "heart.slash" : "heart"
+                            )
                         }
                     }
                     if player.currentRadioStation == nil, !library.playlists.isEmpty {
@@ -156,23 +184,33 @@ struct NowPlayingView: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.headline)
-                    .frame(width: 44, height: 44)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.primary.opacity(0.85))
+                    .frame(width: 36, height: 36)
+                    .background(.ultraThinMaterial, in: Circle())
             }
         }
         .buttonStyle(.plain)
     }
 
+    private var headerCategoryTitle: String {
+        if player.currentRadioStation != nil {
+            return "Live Radio"
+        }
+        return "Playing Now"
+    }
+
     private func trackInformation(_ track: Track) -> some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 5) {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(track.title)
-                    .font(.title2.bold())
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                 Button {
                     openArtist(track)
                 } label: {
-                    HStack(spacing: 7) {
+                    HStack(spacing: 6) {
                         Text(track.artist)
                             .lineLimit(1)
                         if isResolvingArtist {
@@ -180,20 +218,19 @@ struct NowPlayingView: View {
                                 .controlSize(.mini)
                         }
                     }
-                    .font(.title3)
+                    .font(.title3.weight(.medium))
                     .foregroundStyle(.secondary)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(player.currentRadioStation != nil || isResolvingArtist)
-                .accessibilityHint("Opens the artist page")
             }
             Spacer()
             if let station = player.currentRadioStation {
                 Button { radio.toggleFavourite(station) } label: {
                     Image(systemName: radio.favouriteIDs.contains(station.id) ? "star.fill" : "star")
                         .font(.title2)
-                        .foregroundStyle(radio.favouriteIDs.contains(station.id) ? .yellow : .primary)
+                        .foregroundStyle(radio.favouriteIDs.contains(station.id) ? .yellow : .primary.opacity(0.7))
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
@@ -201,7 +238,7 @@ struct NowPlayingView: View {
                 Button { Task { await player.toggleLike() } } label: {
                     Image(systemName: track.liked == true ? "heart.fill" : "heart")
                         .font(.title2)
-                        .foregroundStyle(track.liked == true ? Color.homeMusicRed : .primary)
+                        .foregroundStyle(track.liked == true ? Color.homeMusicRed : .primary.opacity(0.7))
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
@@ -210,7 +247,7 @@ struct NowPlayingView: View {
     }
 
     private var progress: some View {
-        VStack(spacing: 7) {
+        VStack(spacing: 8) {
             AppleMusicScrubber(
                 value: Binding(get: { player.elapsed }, set: player.seek),
                 range: 0...max(player.duration, 1)
@@ -220,38 +257,43 @@ struct NowPlayingView: View {
                 Spacer()
                 Text("−\(formatTime(max(player.duration - player.elapsed, 0)))")
             }
-            .font(.caption.monospacedDigit())
+            .font(.caption.weight(.medium).monospacedDigit())
             .foregroundStyle(.secondary)
         }
     }
 
     private var transportControls: some View {
-        HStack(spacing: 52) {
+        HStack(spacing: 48) {
             if player.currentRadioStation == nil {
                 Button(action: player.playPrevious) {
                     Image(systemName: "backward.fill")
-                        .font(.system(size: 28))
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(.primary)
                         .frame(width: 52, height: 52)
                 }
             } else {
                 Color.clear.frame(width: 52, height: 52)
             }
+
             Button(action: player.togglePlayback) {
                 ZStack {
                     if player.isBuffering {
                         ProgressView().controlSize(.large).tint(.primary)
                     } else {
                         Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 44, weight: .semibold))
-                            .offset(x: player.isPlaying ? 0 : 2)
+                            .font(.system(size: 44, weight: .bold))
+                            .foregroundStyle(.primary)
+                            .offset(x: player.isPlaying ? 0 : 3)
                     }
                 }
-                .frame(width: 76, height: 76)
+                .frame(width: 72, height: 72)
             }
+
             if player.currentRadioStation == nil {
                 Button(action: player.playNext) {
                     Image(systemName: "forward.fill")
-                        .font(.system(size: 28))
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(.primary)
                         .frame(width: 52, height: 52)
                 }
             } else {
@@ -261,35 +303,28 @@ struct NowPlayingView: View {
         .buttonStyle(.plain)
     }
 
+    private var volumeSlider: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "speaker.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            SystemVolumeSlider()
+                .frame(height: 22)
+            Image(systemName: "speaker.wave.3.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private var accessoryControls: some View {
         HStack {
             AirPlayButton().frame(width: 44, height: 44)
             Spacer()
-            if let track = player.currentTrack, player.currentRadioStation == nil {
-                Menu {
-                    if library.playlists.isEmpty {
-                        Text("Create a playlist in Library first")
-                    } else {
-                        ForEach(library.playlists) { playlist in
-                            Button(playlist.name) {
-                                Task {
-                                    await library.add(track, to: playlist, using: session.client)
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "text.badge.plus")
-                        .font(.title3)
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Add to Playlist")
-            }
-            Spacer()
             if player.currentRadioStation == nil {
                 Button { showingQueue = true } label: {
                     Image(systemName: "list.bullet")
-                        .font(.title3)
+                        .font(.title3.weight(.medium))
+                        .foregroundStyle(.primary.opacity(0.85))
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
@@ -303,10 +338,10 @@ struct NowPlayingView: View {
     private var playbackStatus: some View {
         switch player.playbackState {
         case .loading:
-            Text("Loading audio…").foregroundStyle(.secondary)
+            Text("Loading audio…").font(.caption).foregroundStyle(.secondary)
         case .failed(let message):
             VStack(spacing: 8) {
-                Text(message).foregroundStyle(.red).multilineTextAlignment(.center)
+                Text(message).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center)
                 Button("Try Again") {
                     if let track = player.currentTrack { Task { await player.play(track) } }
                 }
@@ -377,12 +412,12 @@ private struct AppleMusicScrubber: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
-                Capsule().fill(.primary.opacity(0.18))
+                Capsule().fill(.primary.opacity(0.15))
                 Capsule()
-                    .fill(.primary.opacity(isDragging ? 0.95 : 0.72))
+                    .fill(.primary.opacity(isDragging ? 0.95 : 0.70))
                     .frame(width: proxy.size.width * fraction)
             }
-            .frame(height: isDragging ? 10 : 5)
+            .frame(height: isDragging ? 10 : 4)
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
             .gesture(
@@ -399,21 +434,23 @@ private struct AppleMusicScrubber: View {
             .animation(.easeOut(duration: 0.16), value: isDragging)
         }
         .frame(height: 18)
-        .accessibilityElement()
-        .accessibilityLabel("Playback position")
-        .accessibilityValue("\(Int(fraction * 100)) percent")
-        .accessibilityAdjustableAction { direction in
-            let step = max((range.upperBound - range.lowerBound) * 0.05, 5)
-            switch direction {
-            case .increment:
-                value = min(value + step, range.upperBound)
-            case .decrement:
-                value = max(value - step, range.lowerBound)
-            @unknown default:
-                break
+    }
+}
+
+private struct SystemVolumeSlider: UIViewRepresentable {
+    func makeUIView(context: Context) -> MPVolumeView {
+        let volumeView = MPVolumeView(frame: .zero)
+        volumeView.showsRouteButton = false
+        for view in volumeView.subviews {
+            if let slider = view as? UISlider {
+                slider.tintColor = UIColor.label
+                slider.thumbTintColor = UIColor.label
             }
         }
+        return volumeView
     }
+
+    func updateUIView(_ uiView: MPVolumeView, context: Context) {}
 }
 
 struct PlayerBackground: View {
@@ -430,12 +467,13 @@ struct PlayerBackground: View {
                         .scaledToFill()
                         .frame(width: proxy.size.width, height: proxy.size.height)
                         .clipped()
-                        .blur(radius: 60)
-                        .opacity(0.38)
+                        .saturation(1.5)
+                        .blur(radius: 75)
+                        .opacity(0.55)
                 }
                 Rectangle().fill(.ultraThinMaterial)
                 LinearGradient(
-                    colors: [.clear, Color(uiColor: .systemBackground).opacity(0.3)],
+                    colors: [.clear, Color(uiColor: .systemBackground).opacity(0.4)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
