@@ -168,6 +168,19 @@ final class PlayerManager: ObservableObject {
         )
     }
 
+    func playFromSearch(_ track: Track) async {
+        currentRadioStation = nil
+        sourceTrackIDs = [track.id]
+        playedTrackIDs = []
+        consecutivePlaybackFailures = 0
+        await start(
+            track,
+            remaining: [],
+            scenario: .selection
+        )
+        await extendQueue()
+    }
+
     func play(_ station: RadioStation) async {
         guard let url = URL(string: station.streamURL) else {
             setPlaybackFailure("This station has an invalid stream address.")

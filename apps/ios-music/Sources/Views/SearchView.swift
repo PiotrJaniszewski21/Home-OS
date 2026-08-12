@@ -304,7 +304,7 @@ struct SearchView: View {
         SearchSectionHeader(title: title)
         LazyVStack(spacing: 0) {
             ForEach(tracks) { track in
-                TrackRow(track: track, context: tracks)
+                TrackRow(track: track, context: tracks, isSearch: true)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 5)
                 if track.id != tracks.last?.id {

@@ -196,10 +196,19 @@ struct TrackRow: View {
     @State private var newPlaylistName = ""
     let track: Track
     let context: [Track]
+    var isSearch: Bool = false
 
     var body: some View {
         HStack(spacing: 12) {
-            Button { Task { await player.play(track, from: context) } } label: {
+            Button {
+                Task {
+                    if isSearch {
+                        await player.playFromSearch(track)
+                    } else {
+                        await player.play(track, from: context)
+                    }
+                }
+            } label: {
                 HStack(spacing: 12) {
                 ArtworkView(track: track).frame(width: 54, height: 54)
                 VStack(alignment: .leading, spacing: 3) {
