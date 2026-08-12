@@ -1,3 +1,4 @@
+import AVFoundation
 import CryptoKit
 import Foundation
 
@@ -458,8 +459,47 @@ final class OfflineMusicStore: ObservableObject {
         for trackID in Array(trackRecords.keys) where !fileExists(trackID: trackID) {
             trackRecords.removeValue(forKey: trackID)
         }
+        repairMissingTrackDurations()
         refreshPublishedState()
         try? saveManifests()
+    }
+
+    func repairMissingTrackDurations() {
+        var didModify = false
+        for (trackID, var record) in trackRecords {
+            if record.track.parsedDurationSeconds == nil || record.track.durationSeconds == nil {
+                let fileURL = fileURL(trackID: trackID)
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    let asset = AVURLAsset(url: fileURL)
+                    let seconds = asset.duration.seconds
+                    if seconds.isFinite, seconds > 0 {
+                        let durSec = Int(seconds.rounded())
+                        let min = durSec / 60
+                        let sec = durSec % 60
+                        let formattedDuration = String(format: "%d:%02d", min, sec)
+                        let updatedTrack = Track(
+                            id: record.track.id,
+                            title: record.track.title,
+                            artist: record.track.artist,
+                            artistID: record.track.artistID,
+                            thumbnail: record.track.thumbnail,
+                            duration: formattedDuration,
+                            durationSeconds: durSec,
+                            explicit: record.track.explicit,
+                            playCount: record.track.playCount,
+                            liked: record.track.liked,
+                            lastPlayedAt: record.track.lastPlayedAt
+                        )
+                        record.track = updatedTrack
+                        trackRecords[trackID] = record
+                        didModify = true
+                    }
+                }
+            }
+        }
+        if didModify {
+            try? saveManifests()
+        }
     }
 
     private func migrateLegacyManifest() {
