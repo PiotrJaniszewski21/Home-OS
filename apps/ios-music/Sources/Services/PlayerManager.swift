@@ -361,7 +361,7 @@ final class PlayerManager: ObservableObject {
                 : .deviceCache
         )
         let asset = AVURLAsset(url: url)
-        let assetSeconds = asset.duration.seconds
+        let assetSeconds = CMTimeGetSeconds(asset.duration)
         let effectiveDuration: Double? = (assetSeconds.isFinite && assetSeconds > 0)
             ? assetSeconds
             : (track.parsedDurationSeconds ?? durationSeconds)
@@ -1074,10 +1074,17 @@ final class PlayerManager: ObservableObject {
     }
 
     private func resolvedDuration(measured value: Double) -> Double? {
-        if let measuredDuration = validDuration(value) {
-            return measuredDuration
+        guard let fallback = fallbackDuration, fallback > 0 else {
+            return validDuration(value)
         }
-        return fallbackDuration
+        guard let measured = validDuration(value) else {
+            return fallback
+        }
+        let ratio = measured / fallback
+        if (0.8...1.25).contains(ratio) {
+            return measured
+        }
+        return fallback
     }
 
     private func preferredDuration(
