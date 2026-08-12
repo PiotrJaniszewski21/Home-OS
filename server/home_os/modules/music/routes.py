@@ -1062,14 +1062,7 @@ def radio_stations():
     except LiveRadioError as error:
         current_app.logger.warning("HomeMusic radio directory failed: %s", error)
         return jsonify({"ok": False, "error": str(error)}), 502
-    compatible_stations = []
-    for station in stations:
-        if station.get("is_hls"):
-            continue
-        station_payload = dict(station)
-        station_payload["stream_url"] = _radio_stream_url(station)
-        compatible_stations.append(station_payload)
-    return jsonify({"ok": True, "data": compatible_stations})
+    return jsonify({"ok": True, "data": stations})
 
 
 @music_bp.route("/api/music/radio/stream")

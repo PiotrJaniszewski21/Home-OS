@@ -103,20 +103,10 @@ class LiveRadioService:
         parsed = urlsplit(value)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username:
             return False
-        try:
-            addresses = {
-                entry[4][0]
-                for entry in socket.getaddrinfo(
-                    parsed.hostname,
-                    parsed.port or (443 if parsed.scheme == "https" else 80),
-                    type=socket.SOCK_STREAM,
-                )
-            }
-        except socket.gaierror:
+        hostname = parsed.hostname.lower()
+        if hostname in {"localhost", "127.0.0.1", "::1"} or hostname.endswith(".local") or hostname.endswith(".internal"):
             return False
-        if not addresses:
-            return False
-        return all(ipaddress.ip_address(address).is_global for address in addresses)
+        return True
 
     def is_public_stream_url(self, value):
         return self._is_public_stream_url(value)
