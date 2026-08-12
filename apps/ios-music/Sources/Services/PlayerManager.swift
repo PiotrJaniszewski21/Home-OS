@@ -360,13 +360,19 @@ final class PlayerManager: ObservableObject {
                 ? .downloaded
                 : .deviceCache
         )
+        let asset = AVURLAsset(url: url)
+        let assetSeconds = asset.duration.seconds
+        let effectiveDuration: Double? = (assetSeconds.isFinite && assetSeconds > 0)
+            ? assetSeconds
+            : (track.parsedDurationSeconds ?? durationSeconds)
+
         let source = PlaybackSource(
             url: url,
-            durationSeconds: durationSeconds
+            durationSeconds: effectiveDuration
         )
         return PreparedPlayback(
             source: source,
-            item: AVPlayerItem(url: url),
+            item: AVPlayerItem(asset: asset),
             cachedAsset: nil,
             sourceKind: sourceKind
         )

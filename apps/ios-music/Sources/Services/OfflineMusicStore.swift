@@ -467,13 +467,13 @@ final class OfflineMusicStore: ObservableObject {
     func repairMissingTrackDurations() {
         var didModify = false
         for (trackID, var record) in trackRecords {
-            if record.track.parsedDurationSeconds == nil || record.track.durationSeconds == nil {
-                let fileURL = fileURL(trackID: trackID)
-                if FileManager.default.fileExists(atPath: fileURL.path) {
-                    let asset = AVURLAsset(url: fileURL)
-                    let seconds = asset.duration.seconds
-                    if seconds.isFinite, seconds > 0 {
-                        let durSec = Int(seconds.rounded())
+            let fileURL = fileURL(trackID: trackID)
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                let asset = AVURLAsset(url: fileURL)
+                let seconds = asset.duration.seconds
+                if seconds.isFinite, seconds > 0 {
+                    let durSec = Int(seconds.rounded())
+                    if record.track.parsedDurationSeconds != durSec {
                         let min = durSec / 60
                         let sec = durSec % 60
                         let formattedDuration = String(format: "%d:%02d", min, sec)
