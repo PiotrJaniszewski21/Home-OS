@@ -122,9 +122,8 @@ final class PlayerManager: ObservableObject {
     private weak var offlineMusic: OfflineMusicStore?
     private static let artworkCache = NSCache<NSString, UIImage>()
     private var playbackStartedAt: ContinuousClock.Instant?
-    private var activePlaybackMetric: PlaybackMetricState?
-    private static let maximumConsecutivePlaybackFailures = 3
-    private static let localPreparationLimit = 12
+    private var timeControlStatusObserver: NSKeyValueObservation?
+    private var itemStatusObserver: NSKeyValueObservation?
 
     init() {
         player.automaticallyWaitsToMinimizeStalling = false
@@ -132,6 +131,15 @@ final class PlayerManager: ObservableObject {
         configureRemoteCommands()
         observeAudioRouteChanges()
         observeTime()
+        observePlayerTimeControlStatus()
+    }
+
+    private func observePlayerTimeControlStatus() {
+        timeControlStatusObserver = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.synchronizePlaybackState()
+            }
+        }
     }
 
     deinit {
@@ -824,6 +832,29 @@ final class PlayerManager: ObservableObject {
     }
 
     private func observeStatus(of item: AVPlayerItem) {
+        itemStatusObserver?.invalidate()
+        itemStatusObserver = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.player.currentItem === item else { return }
+                switch item.status {
+                case .readyToPlay:
+                    self.playbackError = nil
+                    self.synchronizePlaybackState()
+                    self.updateNowPlaying()
+                case .failed:
+                    if let error = item.error {
+                        await self.recoverFromPlaybackFailure(error.localizedDescription)
+                    }
+                case .unknown:
+                    break
+                @unknown default:
+                    break
+                }
+            }
+        }
+
+        guard currentRadioStation == nil else { return }
+
         Task { @MainActor [weak self, weak item] in
             guard let self, let item else { return }
             do {
