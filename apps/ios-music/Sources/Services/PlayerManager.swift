@@ -279,7 +279,7 @@ final class PlayerManager: ObservableObject {
                 try? await Task.sleep(for: .seconds(9))
                 guard !Task.isCancelled else { return }
                 let automaticTracks = [track] + Array(nextRemaining.prefix(2))
-                await self?.offlineMusic?.cacheAutomatically(automaticTracks)
+                await self.offlineMusic?.cacheAutomatically(automaticTracks)
             }
         } catch {
             guard playbackRequestID == requestID else { return }
