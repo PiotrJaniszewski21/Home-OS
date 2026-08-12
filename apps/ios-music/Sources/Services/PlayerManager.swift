@@ -121,6 +121,7 @@ final class PlayerManager: ObservableObject {
     private weak var session: AppSession?
     private weak var offlineMusic: OfflineMusicStore?
     private static let artworkCache = NSCache<NSString, UIImage>()
+    private var playbackStartedAt: ContinuousClock.Instant?
     private var activePlaybackMetric: PlaybackMetricState?
     private static let maximumConsecutivePlaybackFailures = 3
     private static let localPreparationLimit = 12
