@@ -111,6 +111,33 @@ struct MusicSearchResult: Codable {
     }
 }
 
+struct UnifiedSearchResult: Codable {
+    let tracks: [Track]
+    let genre: String?
+    let recentReleases: [MusicRelease]
+    let classics: [Track]
+    let hotArtists: [ArtistSummary]
+    let artists: [ArtistSummary]
+    let albums: [MusicRelease]
+
+    enum CodingKeys: String, CodingKey {
+        case tracks, genre, classics, artists, albums
+        case recentReleases = "recent_releases"
+        case hotArtists = "hot_artists"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tracks = try container.decodeIfPresent([Track].self, forKey: .tracks) ?? []
+        genre = try container.decodeIfPresent(String.self, forKey: .genre)
+        recentReleases = try container.decodeIfPresent([MusicRelease].self, forKey: .recentReleases) ?? []
+        classics = try container.decodeIfPresent([Track].self, forKey: .classics) ?? []
+        hotArtists = try container.decodeIfPresent([ArtistSummary].self, forKey: .hotArtists) ?? []
+        artists = try container.decodeIfPresent([ArtistSummary].self, forKey: .artists) ?? []
+        albums = try container.decodeIfPresent([MusicRelease].self, forKey: .albums) ?? []
+    }
+}
+
 struct LoginPayload: Decodable {
     let token: String
 }

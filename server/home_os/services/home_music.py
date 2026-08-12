@@ -1106,6 +1106,61 @@ class HomeMusicService:
         self._store_shared_metadata("search", cache_key, albums, 15 * 60)
         return albums
 
+    def unified_search(self, query, limit=20):
+        normalized_query = " ".join((query or "").split())
+        if not normalized_query:
+            raise ValueError("Search query is required")
+        if len(normalized_query) > 120:
+            raise ValueError("Search query is too long")
+        limit = max(1, min(int(limit), 25))
+        cache_key = ("unified", normalized_query.casefold(), limit)
+        cached = self._get_cached(self._search_cache, cache_key)
+        if cached is not None:
+            return cached
+        cached = self._get_shared_metadata("search", cache_key)
+        if cached is not None:
+            self._store_cached(self._search_cache, cache_key, cached, self.search_ttl)
+            return cached
+
+        def fetch_tracks():
+            try:
+                return self.search(normalized_query, limit=limit)
+            except Exception:
+                return []
+
+        def fetch_artists():
+            try:
+                return self.search_artists(normalized_query, limit=6)
+            except Exception:
+                return []
+
+        def fetch_albums():
+            try:
+                return self.search_albums(normalized_query, limit=6)
+            except Exception:
+                return []
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            fut_tracks = executor.submit(fetch_tracks)
+            fut_artists = executor.submit(fetch_artists)
+            fut_albums = executor.submit(fetch_albums)
+            tracks_res = fut_tracks.result()
+            artists_res = fut_artists.result()
+            albums_res = fut_albums.result()
+
+        result = {
+            "tracks": tracks_res if isinstance(tracks_res, list) else tracks_res.get("tracks", []) if isinstance(tracks_res, dict) else [],
+            "genre": tracks_res.get("genre") if isinstance(tracks_res, dict) else None,
+            "recent_releases": tracks_res.get("recent_releases", []) if isinstance(tracks_res, dict) else [],
+            "classics": tracks_res.get("classics", []) if isinstance(tracks_res, dict) else [],
+            "hot_artists": tracks_res.get("hot_artists", []) if isinstance(tracks_res, dict) else [],
+            "artists": artists_res,
+            "albums": albums_res,
+        }
+        self._store_cached(self._search_cache, cache_key, result, self.search_ttl)
+        self._store_shared_metadata("search", cache_key, result, 15 * 60)
+        return result
+
     def artist(self, browse_id):
         browse_id = self.validate_browse_id(browse_id)
         cache_key = ("artist", browse_id)

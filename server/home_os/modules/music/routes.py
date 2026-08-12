@@ -320,6 +320,27 @@ def search_albums():
     return response
 
 
+@music_bp.route("/api/music/search/unified")
+@login_required
+def unified_search():
+    limited = _enforce_rate_limit("unified-search", 60)
+    if limited:
+        return limited
+    try:
+        data = home_music_service.unified_search(
+            request.args.get("q", ""),
+            limit=request.args.get("limit", 20),
+        )
+    except (TypeError, ValueError) as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+    except HomeMusicError as error:
+        current_app.logger.warning("HomeMusic unified search failed: %s", error)
+        return jsonify({"ok": False, "error": str(error)}), 502
+    response = jsonify({"ok": True, "data": data})
+    response.headers["Cache-Control"] = "private, max-age=300, stale-if-error=86400"
+    return response
+
+
 @music_bp.route("/api/music/artists/<browse_id>")
 @login_required
 def artist_detail(browse_id):

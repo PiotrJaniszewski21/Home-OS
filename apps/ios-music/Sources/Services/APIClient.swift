@@ -4,6 +4,13 @@ struct APIClient {
     let baseURL: URL
     let token: String
 
+    func unifiedSearch(_ query: String) async throws -> UnifiedSearchResult {
+        try await get(
+            "/api/music/search/unified",
+            query: [URLQueryItem(name: "q", value: query)]
+        )
+    }
+
     func search(_ query: String) async throws -> MusicSearchResult {
         try await get(
             "/api/music/search/smart",

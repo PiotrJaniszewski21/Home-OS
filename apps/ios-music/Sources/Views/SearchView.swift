@@ -60,27 +60,30 @@ final class SearchModel: ObservableObject {
             }
         }
 
-        let searchResult = try? await client.search(term)
+        let unifiedResult = try? await client.unifiedSearch(term)
         guard latestSearchID == searchID else { return }
-        guard let searchResult else {
+        guard let unifiedResult else {
             if !hasResults { error = "Home OS couldn’t complete this search." }
             return
         }
-        apply(searchResult, artists: [], albums: [])
-        if searchResult.genre == nil {
-            async let artistRequest = try? client.searchArtists(term)
-            async let albumRequest = try? client.searchAlbums(term)
-            let (foundArtists, foundAlbums) = await (artistRequest, albumRequest)
-            guard latestSearchID == searchID else { return }
-            artists = foundArtists ?? []
-            albums = foundAlbums ?? []
-        } else {
-            artists = []
-            albums = []
-        }
+        results = unifiedResult.tracks
+        genre = unifiedResult.genre
+        recentReleases = unifiedResult.recentReleases
+        classics = unifiedResult.classics
+        hotArtists = unifiedResult.hotArtists
+        artists = unifiedResult.artists
+        albums = unifiedResult.albums
+        
+        let musicResult = MusicSearchResult(
+            tracks: unifiedResult.tracks,
+            genre: unifiedResult.genre,
+            recentReleases: unifiedResult.recentReleases,
+            classics: unifiedResult.classics,
+            hotArtists: unifiedResult.hotArtists
+        )
         await CatalogCacheStore.shared.save(
             CachedSearchPage(
-                result: searchResult,
+                result: musicResult,
                 artists: artists,
                 albums: albums
             ),
