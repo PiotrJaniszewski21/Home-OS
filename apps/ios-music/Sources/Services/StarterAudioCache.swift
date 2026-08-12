@@ -28,6 +28,7 @@ final class StarterAudioCache: @unchecked Sendable {
     private let lock = NSLock()
     private var rootURL: URL?
     private var activeTasks = [String: Task<Void, Never>]()
+    private var warmingKeys = Set<String>()
 
     private init() {}
 
@@ -248,12 +249,6 @@ final class StarterAudioCache: @unchecked Sendable {
         guard rootURL != nil else { return }
         try? FileManager.default.removeItem(at: dataURLLocked(trackID: trackID))
         try? FileManager.default.removeItem(at: metadataURLLocked(trackID: trackID))
-    }
-
-    private func finishWarming(_ key: String) {
-        lock.lock()
-        warmingKeys.remove(key)
-        lock.unlock()
     }
 
     fileprivate static func fingerprint(for url: URL) -> String {
