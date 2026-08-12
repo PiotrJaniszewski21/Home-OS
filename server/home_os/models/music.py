@@ -44,11 +44,13 @@ class MusicListen(db.Model):
     )
 
     def to_track_dict(self):
+        dur_str = f"{self.duration_seconds // 60}:{self.duration_seconds % 60:02d}" if self.duration_seconds else None
         return {
             "id": self.track_id,
             "title": self.title,
             "artist": self.artist,
             "thumbnail": self.thumbnail,
+            "duration": dur_str,
             "duration_seconds": self.duration_seconds,
             "play_count": self.play_count,
             "liked": self.liked,
@@ -163,11 +165,13 @@ class MusicPlaylistTrack(db.Model):
     )
 
     def to_track_dict(self):
+        dur_str = f"{self.duration_seconds // 60}:{self.duration_seconds % 60:02d}" if self.duration_seconds else None
         return {
             "id": self.track_id,
             "title": self.title,
             "artist": self.artist,
             "thumbnail": self.thumbnail,
+            "duration": dur_str,
             "duration_seconds": self.duration_seconds,
             "playlist_track_id": self.id,
         }
