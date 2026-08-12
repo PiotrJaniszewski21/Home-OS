@@ -38,10 +38,9 @@ struct NowPlayingView: View {
                         Spacer(minLength: 8)
 
                         if let track = player.currentTrack {
-                            PlayerArtworkView(image: player.artworkImage)
+                            PlayerArtworkView(image: player.artworkImage, isPlaying: player.isPlaying)
                                 .frame(width: artworkSize, height: artworkSize)
-                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                .shadow(color: .black.opacity(0.40), radius: 30, x: 0, y: 16)
+                                .shadow(color: .black.opacity(0.45), radius: 28, x: 0, y: 16)
                                 .scaleEffect(player.isPlaying ? 1.0 : 0.86)
                                 .animation(
                                     .spring(response: 0.45, dampingFraction: 0.75, blendDuration: 0),

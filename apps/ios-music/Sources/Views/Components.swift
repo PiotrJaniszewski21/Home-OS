@@ -3,32 +3,106 @@ import UIKit
 
 struct PlayerArtworkView: View {
     let image: UIImage?
+    var isPlaying: Bool = true
+    @State private var rotationDegree: Double = 0
 
     var body: some View {
         GeometryReader { proxy in
+            let size = min(proxy.size.width, proxy.size.height)
+            let centerStickerSize = size * 0.42
+            let spindleHoleSize = size * 0.05
+
             ZStack {
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .blur(radius: 12)
-                        .opacity(0.45)
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                } else {
-                    LinearGradient(colors: [.pink, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    Image(systemName: "music.note")
-                        .font(.largeTitle)
-                        .foregroundStyle(.white.opacity(0.9))
+                // Outer Vinyl Disc
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color(white: 0.14),
+                                Color(white: 0.06),
+                                Color(white: 0.16),
+                                Color(white: 0.05)
+                            ],
+                            center: .center,
+                            startRadius: 8,
+                            endRadius: size / 2
+                        )
+                    )
+
+                // Concentric Grooves
+                ForEach(0..<7) { i in
+                    Circle()
+                        .stroke(Color.white.opacity(0.04), lineWidth: 1.5)
+                        .frame(width: size * (0.48 + Double(i) * 0.068))
+                }
+
+                // Vinyl Reflection Gloss
+                Circle()
+                    .fill(
+                        AngularGradient(
+                            colors: [
+                                .white.opacity(0.0),
+                                .white.opacity(0.14),
+                                .white.opacity(0.0),
+                                .white.opacity(0.14),
+                                .white.opacity(0.0)
+                            ],
+                            center: .center
+                        )
+                    )
+
+                // Center Album Label Sticker
+                ZStack {
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: centerStickerSize, height: centerStickerSize)
+                            .clipShape(Circle())
+                    } else {
+                        Circle()
+                            .fill(LinearGradient(colors: [.pink, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: centerStickerSize, height: centerStickerSize)
+                        Image(systemName: "music.note")
+                            .font(.system(size: centerStickerSize * 0.35, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+
+                    // Outer Sticker Ring
+                    Circle()
+                        .stroke(Color.white.opacity(0.35), lineWidth: 1)
+                        .frame(width: centerStickerSize, height: centerStickerSize)
+
+                    // Spindle Hole
+                    Circle()
+                        .fill(Color(white: 0.06))
+                        .frame(width: spindleHoleSize, height: spindleHoleSize)
+                    Circle()
+                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        .frame(width: spindleHoleSize, height: spindleHoleSize)
                 }
             }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-            .clipped()
+            .frame(width: size, height: size)
+            .rotationEffect(.degrees(rotationDegree))
+            .onAppear {
+                if isPlaying {
+                    withAnimation(.linear(duration: 12).repeatForever(autoreverses: false)) {
+                        rotationDegree = 360
+                    }
+                }
+            }
+            .onChange(of: isPlaying) { newValue in
+                if newValue {
+                    withAnimation(.linear(duration: 12).repeatForever(autoreverses: false)) {
+                        rotationDegree += 360
+                    }
+                } else {
+                    withAnimation(.easeOut(duration: 0.4)) {
+                        // Smooth halt
+                    }
+                }
+            }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
