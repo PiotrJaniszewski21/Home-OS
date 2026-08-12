@@ -384,6 +384,21 @@ struct RadioStation: Codable, Identifiable, Hashable {
         case isHLS = "is_hls"
     }
 
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Radio Station"
+        streamURL = try container.decodeIfPresent(String.self, forKey: .streamURL) ?? ""
+        artwork = try container.decodeIfPresent(String.self, forKey: .artwork) ?? ""
+        country = try container.decodeIfPresent(String.self, forKey: .country) ?? ""
+        countryCode = try container.decodeIfPresent(String.self, forKey: .countryCode) ?? ""
+        language = try container.decodeIfPresent(String.self, forKey: .language) ?? ""
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        codec = try container.decodeIfPresent(String.self, forKey: .codec) ?? ""
+        bitrate = try container.decodeIfPresent(Int.self, forKey: .bitrate) ?? 0
+        isHLS = try container.decodeIfPresent(Bool.self, forKey: .isHLS) ?? false
+    }
+
     var subtitle: String {
         if !tags.isEmpty { return tags.prefix(2).map(\.capitalized).joined(separator: " · ") }
         if !country.isEmpty { return country }
