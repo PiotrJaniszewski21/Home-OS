@@ -763,6 +763,13 @@ def add_playlist_track(playlist_id):
     data = request.get_json(silent=True) or {}
     try:
         video_id, title, artist, thumbnail, duration, _ = _clean_track_payload(data)
+        if duration is None or duration <= 0:
+            try:
+                details = home_music_service.stream_details(video_id)
+                if details.duration_seconds:
+                    duration = int(details.duration_seconds)
+            except Exception:
+                pass
     except (TypeError, ValueError) as error:
         return jsonify({"ok": False, "error": str(error)}), 400
     existing = MusicPlaylistTrack.query.filter_by(
