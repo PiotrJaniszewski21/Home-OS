@@ -17,6 +17,20 @@ actor ArtworkCacheStore {
         memoryCache.totalCostLimit = 96 * 1024 * 1024
     }
 
+    func cachedImage(for url: URL) -> UIImage? {
+        let key = url.absoluteString as NSString
+        if let image = memoryCache.object(forKey: key) {
+            return image
+        }
+        let path = fileURL(for: url)
+        if let data = try? Data(contentsOf: path),
+           let image = UIImage(data: data) {
+            memoryCache.setObject(image, forKey: key, cost: image.memoryCost)
+            return image
+        }
+        return nil
+    }
+
     func image(for url: URL) async -> UIImage? {
         let key = url.absoluteString as NSString
         if let image = memoryCache.object(forKey: key) {

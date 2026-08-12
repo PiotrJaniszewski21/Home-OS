@@ -1155,21 +1155,36 @@ final class PlayerManager: ObservableObject {
     }
 
     private func prepareArtwork(for track: Track) {
-        let artworkURL = track.thumbnail.highResolutionMusicArtworkURL
-        let cacheKey = (artworkURL?.absoluteString ?? track.thumbnail) as NSString
-        if let cached = Self.artworkCache.object(forKey: cacheKey) {
+        let highResURL = track.thumbnail.highResolutionMusicArtworkURL
+        let listURL = track.thumbnail.musicArtworkURL(maximumDimension: 120) ?? URL(string: track.thumbnail)
+        let highResCacheKey = (highResURL?.absoluteString ?? track.thumbnail) as NSString
+
+        if let cached = Self.artworkCache.object(forKey: highResCacheKey) {
             artworkImage = cached
             updateNowPlaying(artwork: nowPlayingArtwork(from: cached))
             return
         }
-        artworkImage = nil
-        guard let url = artworkURL else { return }
+
+        Task { @MainActor [weak self] in
+            guard let self, self.currentTrack?.id == track.id else { return }
+            if let listURL, let quickImage = await ArtworkCacheStore.shared.cachedImage(for: listURL) {
+                if self.artworkImage == nil {
+                    self.artworkImage = quickImage
+                    self.updateNowPlaying(artwork: self.nowPlayingArtwork(from: quickImage))
+                }
+            }
+        }
+
+        guard let url = highResURL else { return }
         Task {
             guard let image = await ArtworkCacheStore.shared.image(for: url),
                   currentTrack?.id == track.id else { return }
-            Self.artworkCache.setObject(image, forKey: cacheKey)
-            artworkImage = image
-            updateNowPlaying(artwork: nowPlayingArtwork(from: image))
+            Self.artworkCache.setObject(image, forKey: highResCacheKey)
+            await MainActor.run { [weak self] in
+                guard let self, self.currentTrack?.id == track.id else { return }
+                self.artworkImage = image
+                self.updateNowPlaying(artwork: self.nowPlayingArtwork(from: image))
+            }
         }
     }
 
