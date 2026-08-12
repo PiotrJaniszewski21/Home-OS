@@ -243,8 +243,9 @@ struct NowPlayingView: View {
     private var progress: some View {
         VStack(spacing: 8) {
             AppleMusicScrubber(
-                value: Binding(get: { player.elapsed }, set: player.seek),
-                range: 0...max(player.duration, 1)
+                value: player.elapsed,
+                range: 0...max(player.duration, 1),
+                onSeek: player.seek
             )
             HStack {
                 Text(formatTime(player.elapsed))
@@ -394,17 +395,26 @@ struct NowPlayingView: View {
 }
 
 private struct AppleMusicScrubber: View {
-    @Binding var value: Double
+    let value: Double
     let range: ClosedRange<Double>
+    let onSeek: (Double) -> Void
     @State private var isDragging = false
+    @State private var dragStartValue: Double = 0
+    @State private var scrubValue: Double = 0
+
+    private var displayValue: Double {
+        isDragging ? scrubValue : value
+    }
 
     private var fraction: Double {
         guard range.upperBound > range.lowerBound else { return 0 }
-        return min(max((value - range.lowerBound) / (range.upperBound - range.lowerBound), 0), 1)
+        return min(max((displayValue - range.lowerBound) / (range.upperBound - range.lowerBound), 0), 1)
     }
 
     var body: some View {
         GeometryReader { proxy in
+            let totalSeconds = max(range.upperBound - range.lowerBound, 1)
+
             ZStack(alignment: .leading) {
                 Capsule().fill(.primary.opacity(0.15))
                 Capsule()
@@ -415,14 +425,24 @@ private struct AppleMusicScrubber: View {
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
             .gesture(
-                DragGesture(minimumDistance: 0)
+                DragGesture(minimumDistance: 4)
                     .onChanged { gesture in
-                        isDragging = true
-                        let position = min(max(gesture.location.x / max(proxy.size.width, 1), 0), 1)
-                        value = range.lowerBound + position * (range.upperBound - range.lowerBound)
+                        if !isDragging {
+                            isDragging = true
+                            dragStartValue = value
+                        }
+                        let deltaFraction = gesture.translation.width / max(proxy.size.width, 1)
+                        let deltaSeconds = deltaFraction * totalSeconds
+                        let newTime = min(max(dragStartValue + deltaSeconds, range.lowerBound), range.upperBound)
+                        scrubValue = newTime
                     }
                     .onEnded { _ in
-                        withAnimation(.easeOut(duration: 0.18)) { isDragging = false }
+                        if isDragging {
+                            onSeek(scrubValue)
+                            withAnimation(.easeOut(duration: 0.18)) {
+                                isDragging = false
+                            }
+                        }
                     }
             )
             .animation(.easeOut(duration: 0.16), value: isDragging)
