@@ -249,12 +249,9 @@ final class PlayerManager: ObservableObject {
             queue = remaining
             historyRecordedForTrack = nil
             elapsed = 0
-            let reportedDuration = preferredDuration(
-                source: source.durationSeconds,
-                track: track.parsedDurationSeconds.map(Int.init)
-            )
-            duration = reportedDuration
-            fallbackDuration = validDuration(reportedDuration)
+            let canonicalDuration = track.parsedDurationSeconds ?? source.durationSeconds ?? 0
+            duration = canonicalDuration
+            fallbackDuration = validDuration(canonicalDuration)
             playbackFallbackURL = source.fallbackURL
             isUsingPlaybackFallback = false
             let item = preparation.item
@@ -809,8 +806,12 @@ final class PlayerManager: ObservableObject {
             do {
                 _ = try await item.asset.load(.isPlayable)
                 guard self.player.currentItem === item else { return }
-                if let assetDuration = try? await item.asset.load(.duration) {
-                    self.updateDuration(from: assetDuration)
+                if self.duration <= 0, let assetDuration = try? await item.asset.load(.duration) {
+                    let seconds = CMTimeGetSeconds(assetDuration)
+                    if seconds.isFinite, seconds > 0 {
+                        self.duration = seconds
+                        self.fallbackDuration = seconds
+                    }
                 }
                 self.synchronizePlaybackState()
                 self.playbackError = nil
@@ -1061,48 +1062,11 @@ final class PlayerManager: ObservableObject {
     }
 
     private func effectiveEndTime(for item: AVPlayerItem) -> Double {
-        resolvedDuration(measured: item.duration.seconds) ?? 0
-    }
-
-    private func updateDuration(from mediaTime: CMTime) {
-        guard let resolvedDuration = resolvedDuration(
-            measured: mediaTime.seconds
-        ) else { return }
-        if abs(duration - resolvedDuration) >= 0.1 {
-            duration = resolvedDuration
+        if self.duration > 0 {
+            return self.duration
         }
-    }
-
-    private func resolvedDuration(measured value: Double) -> Double? {
-        guard let fallback = fallbackDuration, fallback > 0 else {
-            return validDuration(value)
-        }
-        guard let measured = validDuration(value) else {
-            return fallback
-        }
-        let ratio = measured / fallback
-        if (0.8...1.25).contains(ratio) {
-            return measured
-        }
-        return fallback
-    }
-
-    private func preferredDuration(
-        source sourceValue: Double?,
-        track trackValue: Int?
-    ) -> Double {
-        let sourceDuration = sourceValue.flatMap(validDuration)
-        let trackDuration = trackValue.flatMap { validDuration(Double($0)) }
-        guard let sourceDuration else {
-            return trackDuration ?? 0
-        }
-        guard let trackDuration else {
-            return sourceDuration
-        }
-        let ratio = sourceDuration / trackDuration
-        return (0.8...1.2).contains(ratio)
-            ? sourceDuration
-            : trackDuration
+        let seconds = CMTimeGetSeconds(item.duration)
+        return (seconds.isFinite && seconds > 0) ? seconds : 0
     }
 
     private func validDuration(_ value: Double) -> Double? {
