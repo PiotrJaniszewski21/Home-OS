@@ -114,6 +114,7 @@ struct ListenNowView: View {
             .task { await model.load(using: session.client) }
             .task(id: model.feed.suggestedSongs.map(\.id)) {
                 player.prepareForLikelyPlayback(model.feed.suggestedSongs)
+                player.prewarmTracks(model.feed.suggestedSongs)
             }
             .overlay {
                 if model.isLoading && model.isEmpty {

@@ -321,6 +321,7 @@ struct PlaylistDetailView: View {
         .task(id: playlist?.tracks.map(\.id)) {
             guard let playlist, !playlist.tracks.isEmpty else { return }
             player.prepareForLikelyPlayback(playlist.tracks)
+            player.prewarmTracks(playlist.tracks)
             await library.loadSuggestions(for: playlist, using: session.client)
         }
         .sheet(isPresented: $showingRename) {

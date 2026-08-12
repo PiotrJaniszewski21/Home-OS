@@ -433,6 +433,14 @@ final class PlayerManager: ObservableObject {
         }
     }
 
+    func prewarmTracks(_ tracks: [Track]) {
+        guard let client = session?.client else { return }
+        let candidates = Array(tracks.prefix(5))
+        Task.detached(priority: .utility) {
+            _ = try? await client.prepareServerCache(for: candidates)
+        }
+    }
+
     func prepareForLikelyPlayback(_ tracks: [Track]) {
         var seen = Set<String>()
         let candidates = tracks.filter {
