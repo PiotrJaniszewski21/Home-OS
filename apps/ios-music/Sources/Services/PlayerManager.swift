@@ -734,8 +734,11 @@ final class PlayerManager: ObservableObject {
                 guard let self else { return }
                 let rawElapsed = max(0, time.seconds.isFinite ? time.seconds : 0)
                 let item = self.player.currentItem
-                if let item {
-                    self.updateDuration(from: item.duration)
+                if self.duration <= 0, let item {
+                    let seconds = CMTimeGetSeconds(item.duration)
+                    if seconds.isFinite, seconds > 0 {
+                        self.duration = seconds
+                    }
                 }
                 self.elapsed = self.duration > 0 ? min(rawElapsed, self.duration) : rawElapsed
                 self.synchronizePlaybackState()
