@@ -109,6 +109,20 @@ struct MusicSearchResult: Codable {
             forKey: .hotArtists
         ) ?? []
     }
+
+    init(
+        tracks: [Track],
+        genre: String? = nil,
+        recentReleases: [MusicRelease] = [],
+        classics: [Track] = [],
+        hotArtists: [ArtistSummary] = []
+    ) {
+        self.tracks = tracks
+        self.genre = genre
+        self.recentReleases = recentReleases
+        self.classics = classics
+        self.hotArtists = hotArtists
+    }
 }
 
 struct UnifiedSearchResult: Codable {
