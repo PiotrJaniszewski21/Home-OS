@@ -1587,6 +1587,8 @@ class HomeMusicService:
                 best = max(audio_formats, key=lambda f: f.get("bitrate", 0))
                 stream_url = best["url"]
                 raw_duration = data.get("videoDetails", {}).get("lengthSeconds")
+                if not raw_duration and best.get("approxDurationMs"):
+                    raw_duration = float(best["approxDurationMs"]) / 1000.0
                 duration = float(raw_duration) if raw_duration else None
                 elapsed_ms = (time.monotonic() - start) * 1000
                 logger.info("[FAST-INNERTUBE] Resolved %s stream in %.1f ms", video_id, elapsed_ms)

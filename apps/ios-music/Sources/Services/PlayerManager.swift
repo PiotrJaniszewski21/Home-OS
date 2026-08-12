@@ -1068,20 +1068,10 @@ final class PlayerManager: ObservableObject {
     }
 
     private func resolvedDuration(measured value: Double) -> Double? {
-        guard let measuredDuration = validDuration(value) else {
-            return fallbackDuration
-        }
-        guard let fallbackDuration else {
+        if let measuredDuration = validDuration(value) {
             return measuredDuration
         }
-        if activeCachedAsset != nil {
-            return fallbackDuration
-        }
-        let ratio = measuredDuration / fallbackDuration
-        guard (0.8...1.2).contains(ratio) else {
-            return fallbackDuration
-        }
-        return measuredDuration
+        return fallbackDuration
     }
 
     private func preferredDuration(
