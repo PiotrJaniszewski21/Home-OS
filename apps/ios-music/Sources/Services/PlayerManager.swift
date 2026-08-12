@@ -842,6 +842,7 @@ final class PlayerManager: ObservableObject {
                 switch item.status {
                 case .readyToPlay:
                     self.playbackError = nil
+                    self.player.play()
                     self.synchronizePlaybackState()
                     self.updateNowPlaying()
                 case .failed:

@@ -81,6 +81,9 @@ class LiveRadioService:
         station_id = str(item.get("stationuuid") or "").strip()
         name = " ".join(str(item.get("name") or "").split())[:200]
         stream_url = str(item.get("url_resolved") or item.get("url") or "").strip()
+        lower_url = stream_url.lower().split("?", 1)[0]
+        if lower_url.endswith(".m3u") or lower_url.endswith(".pls"):
+            return None
         if not station_id or not name or not self._is_public_stream_url(stream_url):
             return None
         tags = [value.strip() for value in str(item.get("tags") or "").split(",") if value.strip()]
