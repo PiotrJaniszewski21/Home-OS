@@ -27,9 +27,20 @@ final class StarterAudioCache: @unchecked Sendable {
 
     private let lock = NSLock()
     private var rootURL: URL?
-    private var warmingKeys = Set<String>()
+    private var activeTasks = [String: Task<Void, Never>]()
 
     private init() {}
+
+    func cancelAll() {
+        lock.lock()
+        let tasks = Array(activeTasks.values)
+        activeTasks.removeAll()
+        warmingKeys.removeAll()
+        lock.unlock()
+        for task in tasks {
+            task.cancel()
+        }
+    }
 
     func connect(client: APIClient?) {
         lock.lock()
@@ -37,6 +48,8 @@ final class StarterAudioCache: @unchecked Sendable {
         guard let client else {
             rootURL = nil
             warmingKeys.removeAll()
+            activeTasks.values.forEach { $0.cancel() }
+            activeTasks.removeAll()
             return
         }
         let base = FileManager.default.urls(
@@ -66,12 +79,14 @@ final class StarterAudioCache: @unchecked Sendable {
             lock.unlock()
             return
         }
-        lock.unlock()
 
-        Task.detached(priority: .utility) { [weak self] in
-            defer { self?.finishWarming(warmingKey) }
+        let task = Task.detached(priority: .utility) { [weak self] in
+            defer {
+                self?.finishWarming(warmingKey)
+            }
+            guard !Task.isCancelled else { return }
             var request = URLRequest(url: sourceURL)
-            request.timeoutInterval = 90
+            request.timeoutInterval = 30
             request.setValue("audio/*,*/*;q=0.8", forHTTPHeaderField: "Accept")
             request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
             request.setValue(
@@ -83,6 +98,7 @@ final class StarterAudioCache: @unchecked Sendable {
             }
 
             guard let (data, response) = try? await URLSession.shared.data(for: request),
+                  !Task.isCancelled,
                   let http = response as? HTTPURLResponse,
                   http.statusCode == 200 || http.statusCode == 206 else {
                 return
@@ -103,6 +119,15 @@ final class StarterAudioCache: @unchecked Sendable {
                 supportsByteRanges: supportsByteRanges
             )
         }
+        activeTasks[warmingKey] = task
+        lock.unlock()
+    }
+
+    private func finishWarming(_ warmingKey: String) {
+        lock.lock()
+        warmingKeys.remove(warmingKey)
+        activeTasks.removeValue(forKey: warmingKey)
+        lock.unlock()
     }
 
     fileprivate func hasEntry(trackID: String, sourceURL: URL) -> Bool {

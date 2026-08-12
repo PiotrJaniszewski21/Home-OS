@@ -254,6 +254,8 @@ final class PlayerManager: ObservableObject {
             fallbackDuration = validDuration(canonicalDuration)
             playbackFallbackURL = source.fallbackURL
             isUsingPlaybackFallback = false
+            StarterAudioCache.shared.cancelAll()
+            player.replaceCurrentItem(with: nil)
             let item = preparation.item
             item.preferredForwardBufferDuration = 0.5
             completedItem = nil
@@ -265,13 +267,18 @@ final class PlayerManager: ObservableObject {
             player.playImmediately(atRate: 1)
             schedulePlaybackWatchdog(for: item)
             updateNowPlaying()
-            prepareNextPlaybackSource(remaining.first)
-            prepareForLikelyPlayback(remaining)
+            
+            let nextRemaining = remaining
             automaticCacheTask?.cancel()
-            let automaticTracks = [track] + Array(remaining.prefix(2))
             automaticCacheTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(12))
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled, let self else { return }
+                self.prepareNextPlaybackSource(nextRemaining.first)
+                self.prepareForLikelyPlayback(nextRemaining)
+                
+                try? await Task.sleep(for: .seconds(9))
                 guard !Task.isCancelled else { return }
+                let automaticTracks = [track] + Array(nextRemaining.prefix(2))
                 await self?.offlineMusic?.cacheAutomatically(automaticTracks)
             }
         } catch {

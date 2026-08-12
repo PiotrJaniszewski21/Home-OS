@@ -433,6 +433,9 @@ def legacy_search():
     return _search_response(legacy=True)
 
 
+_playback_ticket_cache = {}
+
+
 @music_bp.route("/api/music/playback-url")
 @login_required
 def playback_url():
@@ -443,6 +446,15 @@ def playback_url():
         video_id = home_music_service.validate_video_id(request.args.get("id", ""))
     except ValueError as error:
         return jsonify({"ok": False, "error": str(error)}), 400
+
+    now = time.time()
+    if video_id in _playback_ticket_cache:
+        cached_data, expires_at = _playback_ticket_cache[video_id]
+        if now < expires_at:
+            ticket = _create_playback_ticket(video_id)
+            cached_data["path"] = url_for("music.proxy_stream", id=video_id, ticket=ticket)
+            return jsonify({"ok": True, "data": cached_data})
+
     ticket = _create_playback_ticket(video_id)
     path = url_for(
         "music.proxy_stream",
@@ -476,16 +488,19 @@ def playback_url():
     if listen is not None and listen.duration_seconds is None and duration_seconds:
         listen.duration_seconds = round(duration_seconds)
         db.session.commit()
+    result_data = {
+        "path": path,
+        "direct_url": direct_url,
+        "expires_in": PLAYBACK_TICKET_MAX_AGE,
+        "duration_seconds": duration_seconds,
+        "source_expires_at": source_expires_at,
+        "cache_hit": cached_path is not None,
+    }
+    if direct_url:
+        _playback_ticket_cache[video_id] = (dict(result_data), now + 180)
     return jsonify({
         "ok": True,
-        "data": {
-            "path": path,
-            "direct_url": direct_url,
-            "expires_in": PLAYBACK_TICKET_MAX_AGE,
-            "duration_seconds": duration_seconds,
-            "source_expires_at": source_expires_at,
-            "cache_hit": cached_path is not None,
-        },
+        "data": result_data,
     })
 
 
