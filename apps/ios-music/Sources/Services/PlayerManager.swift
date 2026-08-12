@@ -206,18 +206,10 @@ final class PlayerManager: ObservableObject {
         fallbackDuration = nil
         historyRecordedForTrack = nil
         prepareArtwork(for: station.playerTrack)
-        let asset = AVURLAsset(
-            url: url,
-            options: [
-                "AVURLAssetHTTPHeaderFieldsKey": [
-                    "User-Agent": "HomeMusic/1.0",
-                    "Icy-MetaData": "1",
-                    "Accept": "audio/aac,audio/mpeg,audio/*;q=0.9,*/*;q=0.5",
-                ]
-            ]
-        )
-        let item = AVPlayerItem(asset: asset)
-        item.preferredForwardBufferDuration = 2
+        StarterAudioCache.shared.cancelAll()
+        player.replaceCurrentItem(with: nil)
+        let item = AVPlayerItem(url: url)
+        item.preferredForwardBufferDuration = 1.0
         completedItem = nil
         replacePlaybackItem(with: item)
         observeFailure(of: item)
