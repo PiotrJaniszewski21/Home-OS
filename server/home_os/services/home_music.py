@@ -1175,6 +1175,17 @@ class HomeMusicService:
             result = self._get_ytmusic().get_artist(browse_id)
         except Exception as error:
             raise HomeMusicError("Artist details are unavailable") from error
+        songs_data = (result.get("songs") or {}).get("results") or []
+        songs_browse_id = (result.get("songs") or {}).get("browseId")
+        if songs_browse_id:
+            try:
+                playlist_data = self._get_ytmusic().get_playlist(songs_browse_id, limit=25)
+                playlist_tracks = playlist_data.get("tracks") or []
+                if playlist_tracks:
+                    songs_data = playlist_tracks
+            except Exception as error:
+                logger.warning("Could not fetch full top songs playlist for %s: %s", browse_id, error)
+
         artist = {
             "id": browse_id,
             "name": str(result.get("name") or "Artist").strip(),
@@ -1182,9 +1193,7 @@ class HomeMusicService:
             "subscribers": result.get("subscribers"),
             "monthly_listeners": result.get("monthlyListeners"),
             "thumbnail": self._largest_thumbnail(result.get("thumbnails")),
-            "essentials": self._normalize_tracks(
-                (result.get("songs") or {}).get("results") or [], limit=20
-            ),
+            "essentials": self._normalize_tracks(songs_data, limit=20),
             "albums": self._normalize_releases((result.get("albums") or {}).get("results") or []),
             "singles": self._normalize_releases((result.get("singles") or {}).get("results") or []),
             "related": [
