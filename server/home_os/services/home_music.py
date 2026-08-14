@@ -354,6 +354,7 @@ class HomeMusicService:
         self._audio_warm_queue = deque()
         self._audio_warm_queued = set()
         self._audio_warm_worker = None
+        self._realtime_playback_active_until = 0.0
         configured_cache = (
             stream_cache_directory
             if stream_cache_directory is not None
@@ -1666,6 +1667,7 @@ class HomeMusicService:
         if self.is_track_unavailable(video_id):
             raise HomeMusicError("Audio stream is currently unavailable")
         started_at = time.monotonic()
+        self.notify_realtime_playback_active()
         cached = self._get_cached(self._stream_cache, video_id)
         if cached is not None:
             self._log_stream_resolution(video_id, "memory", started_at)
@@ -2060,8 +2062,15 @@ class HomeMusicService:
                 queued += 1
         return {"requested": len(seen), "cached": cached, "queued": queued}
 
+    def notify_realtime_playback_active(self, duration=8.0):
+        self._realtime_playback_active_until = time.time() + duration
+
     def _run_audio_warm_queue(self):
         while True:
+            # Priority Engine: Yield/pause background warming if real-time user playback is active!
+            while time.time() < self._realtime_playback_active_until:
+                time.sleep(0.3)
+
             with self._lock:
                 if not self._audio_warm_queue:
                     self._audio_warm_worker = None
