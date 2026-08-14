@@ -1472,10 +1472,127 @@ class HomeMusicService:
         suggested_albums = [
             item for item in suggested_albums if item["id"] not in new_release_ids
         ][:10]
+        hour = datetime.datetime.now().hour
+        if 5 <= hour < 12:
+            greeting = "Good morning"
+            period = "morning"
+        elif 12 <= hour < 17:
+            greeting = "Good afternoon"
+            period = "afternoon"
+        else:
+            greeting = "Good evening"
+            period = "evening"
+
+        quick_tiles = [
+            {
+                "id": "tile_liked_songs",
+                "title": "Liked Songs",
+                "subtitle": "Playlist",
+                "kind": "liked",
+                "icon": "heart.fill",
+                "palette_colors": ["#FF2D55", "#FF3B30"]
+            },
+            {
+                "id": "tile_personal_station",
+                "title": "Piotr's Station",
+                "subtitle": "Personal Radio",
+                "kind": "station_personal",
+                "icon": "play.station.fill",
+                "palette_colors": ["#AF52DE", "#5856D6"]
+            },
+            {
+                "id": "tile_discovery_station",
+                "title": "Discovery Station",
+                "subtitle": "New Music",
+                "kind": "station_discovery",
+                "icon": "sparkles",
+                "palette_colors": ["#007AFF", "#34C759"]
+            }
+        ]
+
+        if suggested_albums:
+            top_album = suggested_albums[0]
+            quick_tiles.append({
+                "id": f"tile_album_{top_album['id']}",
+                "title": top_album['title'],
+                "subtitle": top_album.get('artist', 'Album'),
+                "kind": "album",
+                "browse_id": top_album['id'],
+                "thumbnail": top_album.get('thumbnail'),
+                "palette_colors": top_album.get('palette_colors', ["#FF9500", "#FFCC00"])
+            })
+
+        for idx, artist in enumerate(artists[:2]):
+            quick_tiles.append({
+                "id": f"tile_artist_{idx}",
+                "title": artist,
+                "subtitle": "Artist Radio",
+                "kind": "artist",
+                "artist": artist,
+                "palette_colors": ["#5856D6", "#007AFF"]
+            })
+
+        while len(quick_tiles) < 6:
+            idx = len(quick_tiles)
+            quick_tiles.append({
+                "id": f"tile_fallback_{idx}",
+                "title": "Heavy Rotation",
+                "subtitle": "Favorites",
+                "kind": "favorites",
+                "icon": "music.note.list",
+                "palette_colors": ["#FF2D55", "#5856D6"]
+            })
+
+        daily_mixes = []
+        if len(suggested_songs) >= 6:
+            chunk_size = max(5, len(suggested_songs) // 3)
+            mix_configs = [
+                ("Daily Mix 1", ["#FF2D55", "#AF52DE"], "Electronic & Synth"),
+                ("Daily Mix 2", ["#007AFF", "#34C759"], "Alternative & Indie"),
+                ("Daily Mix 3", ["#FF9500", "#FFCC00"], "Chill & Ambient"),
+            ]
+            for i, (mix_name, palette, mix_sub) in enumerate(mix_configs):
+                mix_tracks = suggested_songs[i * chunk_size : (i + 1) * chunk_size]
+                if mix_tracks:
+                    daily_mixes.append({
+                        "id": f"daily_mix_{i+1}",
+                        "title": mix_name,
+                        "subtitle": mix_sub,
+                        "palette_colors": palette,
+                        "tracks": mix_tracks
+                    })
+
+        contextual_shelves = []
+        for artist in artists:
+            artist_tracks = [t for t in suggested_songs if artist.casefold() in t.get("artist", "").casefold()]
+            if not artist_tracks:
+                artist_tracks = suggested_songs[:6]
+            contextual_shelves.append({
+                "id": f"contextual_{artist}",
+                "title": f"Because you listened to {artist}",
+                "artist": artist,
+                "tracks": artist_tracks[:10]
+            })
+
+        for i, track in enumerate(suggested_songs):
+            dur = track.get("duration_seconds") or 200
+            if dur < 180 or i % 3 == 0:
+                track["moods"] = ["Energize"]
+            elif dur > 240 or i % 3 == 1:
+                track["moods"] = ["Chill", "Focus"]
+            else:
+                track["moods"] = ["Party", "Energize"]
+
         payload = {
+            "greeting": greeting,
+            "period": period,
+            "quick_tiles": quick_tiles,
+            "daily_mixes": daily_mixes,
+            "contextual_shelves": contextual_shelves,
             "suggested_songs": suggested_songs,
             "suggested_albums": suggested_albums,
             "new_releases": new_releases,
+            "mood_categories": ["All", "Chill", "Focus", "Energize", "Party"]
         }
         return payload
 
@@ -2757,6 +2874,22 @@ class HomeMusicService:
         sanitized["suggested_songs"] = self._filter_unavailable_tracks(
             payload.get("suggested_songs") or []
         )
+        if "daily_mixes" in payload:
+            sanitized["daily_mixes"] = [
+                {
+                    **mix,
+                    "tracks": self._filter_unavailable_tracks(mix.get("tracks") or [])
+                }
+                for mix in payload.get("daily_mixes", [])
+            ]
+        if "contextual_shelves" in payload:
+            sanitized["contextual_shelves"] = [
+                {
+                    **shelf,
+                    "tracks": self._filter_unavailable_tracks(shelf.get("tracks") or [])
+                }
+                for shelf in payload.get("contextual_shelves", [])
+            ]
         return sanitized
 
     def _normalize_tracks(self, results, limit, filter_non_audio=True):
