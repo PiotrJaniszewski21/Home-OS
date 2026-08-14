@@ -1454,7 +1454,7 @@ class HomeMusicService:
                 track["id"] not in excluded
                 and not self.is_track_unavailable(track["id"])
             )
-        ][:24]
+        ][:30]
         suggested_albums = self._albums_from_tracks(candidates, limit=10)
         new_releases = []
         for artist, releases in zip(artists, release_groups):
@@ -2512,15 +2512,24 @@ class HomeMusicService:
             stale_until=entry.stale_until,
         )
 
+    def _next_1am_timestamp(self):
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        target = now.replace(hour=1, minute=0, second=0, microsecond=0)
+        if now >= target:
+            target += timedelta(days=1)
+        return target.timestamp()
+
     def _write_shared_feed(self, cache_key, value):
         directory = self._ensure_feed_cache_directory()
         if directory is None:
             return
         now = time.time()
+        fresh_until = self._next_1am_timestamp()
         payload = {
             "value": value,
-            "fresh_until": now + self.feed_fresh_ttl,
-            "stale_until": now + self.feed_stale_ttl,
+            "fresh_until": fresh_until,
+            "stale_until": fresh_until + (7 * 24 * 3600),
             "updated_at": now,
         }
         digest = self._feed_cache_digest(cache_key)
