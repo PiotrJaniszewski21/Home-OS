@@ -2796,6 +2796,7 @@ class HomeMusicService:
                 thumbnail = self._high_resolution_thumbnail(thumbnail)
             dur_str = result.get("duration")
             dur_sec = self._parse_duration_seconds(dur_str, result.get("duration_seconds"))
+            palette = self._generate_palette_from_id(video_id)
             tracks.append({
                 "id": video_id,
                 "title": title,
@@ -2805,11 +2806,30 @@ class HomeMusicService:
                 "duration": dur_str,
                 "duration_seconds": dur_sec,
                 "explicit": bool(result.get("isExplicit")),
+                "palette_colors": palette,
             })
             seen_ids.add(video_id)
             if len(tracks) >= limit:
                 break
         return tracks
+
+    def _generate_palette_from_id(self, video_id):
+        import hashlib, colorsys
+        h = int(hashlib.md5(str(video_id).encode("utf-8")).hexdigest()[:8], 16)
+        hue1 = (h % 360) / 360.0
+        hue2 = ((h + 120) % 360) / 360.0
+        hue3 = ((h + 240) % 360) / 360.0
+        
+        def to_hex(h_val, s_val, l_val):
+            r, g, b = colorsys.hls_to_rgb(h_val, l_val, s_val)
+            return f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
+            
+        return [
+            to_hex(hue1, 0.70, 0.25),
+            to_hex(hue2, 0.65, 0.30),
+            to_hex(hue3, 0.75, 0.20),
+            to_hex((hue1 + 0.1) % 1.0, 0.80, 0.35)
+        ]
 
     @staticmethod
     def _parse_duration_seconds(duration_str, duration_seconds_val):
