@@ -2404,11 +2404,10 @@ class HomeMusicService:
 
     @staticmethod
     def _log_stream_resolution(video_id, cache_status, started_at):
-        track_hash = hashlib.sha256(video_id.encode()).hexdigest()[:12]
         elapsed_ms = round((time.monotonic() - started_at) * 1000)
         logger.info(
-            "HomeMusic source track=%s cache=%s resolution_ms=%d",
-            track_hash,
+            "PERF-SERVER-STREAM track_id=%s source=%s resolution_ms=%dms",
+            video_id,
             cache_status,
             elapsed_ms,
         )
