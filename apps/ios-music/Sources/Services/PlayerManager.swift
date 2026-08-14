@@ -944,8 +944,9 @@ final class PlayerManager: ObservableObject {
                     self.synchronizePlaybackState()
                     self.updateNowPlaying()
                 case .failed:
-                    if let error = item.error {
-                        await self.recoverFromPlaybackFailure(error.localizedDescription)
+                    let errMessage = item.error?.localizedDescription ?? "Playback failed"
+                    if !self.playFromFallbackIfAvailable() {
+                        await self.recoverFromPlaybackFailure(errMessage)
                     }
                 case .unknown:
                     break
