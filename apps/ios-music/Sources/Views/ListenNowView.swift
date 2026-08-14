@@ -227,28 +227,175 @@ private struct SuggestedSongsSection: View {
                     subtitle: "A fresh queue shaped by your listening"
                 )
                 Spacer()
-                Button {
-                    let shuffled = tracks.shuffled()
-                    guard let first = shuffled.first else { return }
-                    Task { await player.play(first, from: shuffled) }
-                } label: {
-                    Label("Shuffle", systemImage: "shuffle")
+
+                HStack(spacing: 8) {
+                    Button {
+                        let shuffled = tracks.shuffled()
+                        guard let first = shuffled.first else { return }
+                        Task { await player.play(first, from: shuffled) }
+                    } label: {
+                        Label("Shuffle", systemImage: "shuffle")
+                    }
+                    .buttonStyle(.bordered)
+
+                    NavigationLink {
+                        InfiniteSuggestedSongsView(initialTracks: tracks)
+                    } label: {
+                        Text("More")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.homeMusicRed.opacity(0.12), in: Capsule())
+                            .foregroundStyle(Color.homeMusicRed)
+                    }
                 }
-                .buttonStyle(.bordered)
             }
 
             LazyVStack(spacing: 0) {
                 ForEach(tracks.prefix(12)) { track in
                     TrackRow(track: track, context: tracks)
                         .padding(.vertical, 6)
-                    if track.id != tracks.prefix(12).last?.id {
-                        Divider().padding(.leading, 66)
-                    }
+                    Divider().padding(.leading, 66)
                 }
+
+                NavigationLink {
+                    InfiniteSuggestedSongsView(initialTracks: tracks)
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("View More Songs")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(Color.homeMusicRed)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(Color.homeMusicRed)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 14)
             .background(Color(uiColor: .secondarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+    }
+}
+
+struct InfiniteSuggestedSongsView: View {
+    @EnvironmentObject private var session: AppSession
+    @EnvironmentObject private var player: PlayerManager
+    @State private var tracks: [Track]
+    @State private var isLoadingMore = false
+    @State private var hasMore = true
+
+    init(initialTracks: [Track]) {
+        _tracks = State(initialValue: initialTracks)
+    }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                // Header Action Bar
+                HStack(spacing: 14) {
+                    Button {
+                        if let first = tracks.first {
+                            Task { await player.play(first, from: tracks) }
+                        }
+                    } label: {
+                        Label("Play All", systemImage: "play.fill")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.homeMusicRed, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+
+                    Button {
+                        let shuffled = tracks.shuffled()
+                        if let first = shuffled.first {
+                            Task { await player.play(first, from: shuffled) }
+                        }
+                    } label: {
+                        Label("Shuffle", systemImage: "shuffle")
+                            .font(.headline)
+                            .foregroundStyle(Color.homeMusicRed)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.homeMusicRed.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+
+                // Songs List
+                VStack(spacing: 0) {
+                    ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
+                        TrackRow(track: track, context: tracks)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 12)
+                            .onAppear {
+                                if index >= tracks.count - 4 && !isLoadingMore && hasMore {
+                                    Task { await loadMoreSongs() }
+                                }
+                            }
+
+                        if index < tracks.count - 1 {
+                            Divider().padding(.leading, 66)
+                        }
+                    }
+                }
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(.horizontal, 16)
+
+                // Loading Indicator at Bottom
+                if isLoadingMore {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Loading more songs for you…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 24)
+                }
+            }
+            .padding(.bottom, 40)
+        }
+        .navigationTitle("Songs for You")
+        .navigationBarTitleDisplayMode(.large)
+        .refreshable {
+            await refreshSongs()
+        }
+    }
+
+    private func loadMoreSongs() async {
+        guard let client = session.client, !isLoadingMore else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        do {
+            let seedIDs = Array(tracks.suffix(5).map(\.id))
+            let existingIDs = tracks.map(\.id)
+            let newSongs = try await client.recommendations(seedIDs: seedIDs, excluding: existingIDs, limit: 20)
+            if newSongs.isEmpty {
+                hasMore = false
+            } else {
+                tracks.append(contentsOf: newSongs)
+            }
+        } catch {
+            print("Failed to load more songs: \(error)")
+        }
+    }
+
+    private func refreshSongs() async {
+        guard let client = session.client else { return }
+        do {
+            let fresh = try await client.recommendations()
+            if !fresh.isEmpty {
+                tracks = fresh
+                hasMore = true
+            }
+        } catch {
+            print("Failed to refresh songs: \(error)")
         }
     }
 }
