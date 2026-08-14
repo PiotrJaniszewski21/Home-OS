@@ -2572,7 +2572,7 @@ class HomeMusicService:
         return self._feed_cache_directory
 
     def _feed_cache_digest(self, cache_key):
-        return hashlib.sha256(f"feed:v2:{cache_key}".encode()).hexdigest()
+        return hashlib.sha256(f"feed:v3:{cache_key}".encode()).hexdigest()
 
     def _shared_feed_path(self, cache_key):
         return self._feed_cache_directory / f"{self._feed_cache_digest(cache_key)}.json"
