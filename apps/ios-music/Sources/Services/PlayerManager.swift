@@ -1,5 +1,8 @@
+import AudioToolbox
 import AVFoundation
+import CoreMedia
 import MediaPlayer
+import MediaToolbox
 import OSLog
 import UIKit
 
@@ -73,6 +76,12 @@ final class PlayerManager: ObservableObject {
     @Published private(set) var playbackState: PlaybackState = .idle
     @Published private(set) var isBuffering = false
     @Published private(set) var artworkImage: UIImage?
+    @Published private(set) var audioSpectrum: [Float] = Array(repeating: 0.15, count: 7)
+    @Published private(set) var realAudioBass: Float = 0.15
+    @Published private(set) var realAudioMid: Float = 0.15
+    @Published private(set) var realAudioTreble: Float = 0.15
+    @Published var isNowPlayingExpanded: Bool = false
+    private var tapProcessor: AudioTapProcessor?
     @Published private(set) var isExtendingQueue = false
     @Published private(set) var previewTrackID: String?
     @Published private(set) var previewProgress: Double = 0
@@ -100,6 +109,7 @@ final class PlayerManager: ObservableObject {
     private var previewTimeObserver: Any?
     private var previewStopTask: Task<Void, Never>?
     private var playbackWatchdogTask: Task<Void, Never>?
+    private var activeStartTask: Task<Void, Never>?
     private var resumeAfterPreview = false
     private let previewStartSeconds: Double = 60
     private var playbackRequestID = UUID()
@@ -111,6 +121,7 @@ final class PlayerManager: ObservableObject {
     private var sourcePreparationGeneration = UUID()
     private var automaticCacheTask: Task<Void, Never>?
     private var serverCachePreparationTask: Task<Void, Never>?
+    private var prefetchTask: Task<Void, Never>?
     private var recentPlaybackSources: [String: PlaybackSource] = [:]
     private var recentPlaybackTrackIDs: [String] = []
     private var pendingLikelyTracks: [Track] = []
@@ -169,6 +180,7 @@ final class PlayerManager: ObservableObject {
     }
 
     func play(_ track: Track, from tracks: [Track] = []) async {
+        activeStartTask?.cancel()
         currentRadioStation = nil
         sourceTrackIDs = (tracks.isEmpty ? [track] : tracks).map(\.id)
         playedTrackIDs = []
@@ -181,6 +193,7 @@ final class PlayerManager: ObservableObject {
     }
 
     func playFromSearch(_ track: Track) async {
+        activeStartTask?.cancel()
         currentRadioStation = nil
         sourceTrackIDs = [track.id]
         playedTrackIDs = []
@@ -194,6 +207,7 @@ final class PlayerManager: ObservableObject {
     }
 
     func play(_ station: RadioStation) async {
+        activeStartTask?.cancel()
         guard let url = URL(string: station.streamURL) else {
             setPlaybackFailure("This station has an invalid stream address.")
             return
@@ -230,11 +244,42 @@ final class PlayerManager: ObservableObject {
         updateNowPlaying()
     }
 
+    // MARK: - Priority Execution Engine
+    private var batchPrewarmTask: Task<Void, Never>?
+    private var pendingBackgroundTracks: [Track] = []
+
+    func prewarmTracks(_ tracks: [Track]) {
+        guard let client = session?.client else { return }
+        pendingBackgroundTracks = tracks
+        batchPrewarmTask?.cancel()
+        let candidates = Array(tracks.prefix(30))
+        batchPrewarmTask = Task.detached(priority: .utility) {
+            _ = try? await client.prepareServerCache(for: candidates)
+        }
+    }
+
+    private func resumeBackgroundWarming() {
+        guard !pendingBackgroundTracks.isEmpty, let client = session?.client else { return }
+        let tracksToWarm = pendingBackgroundTracks
+        batchPrewarmTask?.cancel()
+        PerformanceLogger.shared.log("PRIORITY-ENGINE", "P3: Resuming background warming for \(tracksToWarm.count) feed tracks")
+        batchPrewarmTask = Task.detached(priority: .utility) {
+            _ = try? await client.prepareServerCache(for: Array(tracksToWarm.prefix(30)))
+        }
+    }
+
     private func start(
         _ track: Track,
         remaining: [Track],
         scenario: PlaybackScenario
     ) async {
+        // Priority 1 (User Selection): Pause background warming to dedicate 100% bandwidth to selected track!
+        batchPrewarmTask?.cancel()
+        prefetchTask?.cancel()
+        prefetchTask = nil
+        evictUnusedCaches()
+        PerformanceLogger.shared.log("PRIORITY-ENGINE", "P1: User Selection -> '\(track.title)' (\(track.id)) | Scenario: \(scenario)")
+
         let requestID = UUID()
         playbackRequestID = requestID
         playbackWatchdogTask?.cancel()
@@ -247,9 +292,16 @@ final class PlayerManager: ObservableObject {
         do {
             configureAudioSession()
             playbackError = nil
-            playbackState = .loading
-            isBuffering = true
+            if player.currentItem == nil {
+                playbackState = .loading
+                isBuffering = true
+            }
+
+            // Immediately trigger background stream pre-fetch for upcoming track in 0ms!
+            prepareNextPlaybackSource(remaining.first)
+
             let preparation = try await playbackPreparation(for: track)
+            guard !Task.isCancelled, playbackRequestID == requestID else { return }
             let source = preparation.source
             guard playbackRequestID == requestID else { return }
             let sourceReadyMilliseconds = playbackMilliseconds()
@@ -257,7 +309,13 @@ final class PlayerManager: ObservableObject {
             activePlaybackMetric?.sourceReadyMilliseconds = sourceReadyMilliseconds
             if let playbackStartedAt {
                 let elapsed = playbackStartedAt.duration(to: .now)
+                let ms = Double(elapsed.components.seconds) * 1000.0 + Double(elapsed.components.attoseconds) / 1e15
                 playbackLogger.info("Playback source ready in \(elapsed, privacy: .public)")
+                PerformanceLogger.shared.log(
+                    "PLAYBACK-PREP",
+                    "Source ready for '\(track.title)' | Kind: \(preparation.sourceKind)",
+                    durationMs: ms
+                )
             }
             if let currentTrack, currentTrack.id != track.id { previousTracks.append(currentTrack) }
             currentTrack = track
@@ -272,28 +330,33 @@ final class PlayerManager: ObservableObject {
             playbackFallbackURL = source.fallbackURL
             isUsingPlaybackFallback = false
             StarterAudioCache.shared.cancelAll()
-            player.replaceCurrentItem(with: nil)
+
             let item = preparation.item
-            item.preferredForwardBufferDuration = 0.5
+            item.preferredForwardBufferDuration = 1.0
+            item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
             completedItem = nil
+
+            // Seamless Handoff: Replace current item ONLY when new item is fully prepared!
             replacePlaybackItem(with: item)
             activeCachedAsset = preparation.cachedAsset
             observeCompletion(of: item)
             observeFailure(of: item)
             observeStatus(of: item)
             player.playImmediately(atRate: 1)
+            isPlaying = true
+            playbackState = .playing
+            isBuffering = false
             schedulePlaybackWatchdog(for: item)
             updateNowPlaying()
             
             let nextRemaining = remaining
             automaticCacheTask?.cancel()
             automaticCacheTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(3))
                 guard !Task.isCancelled, let self else { return }
                 self.prepareNextPlaybackSource(nextRemaining.first)
                 self.prepareForLikelyPlayback(nextRemaining)
                 
-                try? await Task.sleep(for: .seconds(9))
+                try? await Task.sleep(for: .seconds(6))
                 guard !Task.isCancelled else { return }
                 let automaticTracks = [track] + Array(nextRemaining.prefix(2))
                 await self.offlineMusic?.cacheAutomatically(automaticTracks)
@@ -367,7 +430,10 @@ final class PlayerManager: ObservableObject {
         guard let client = session?.client else {
             throw APIError.network(URLError(.notConnectedToInternet))
         }
-        let source = try await client.playback(for: track)
+        let fetchedClient = client
+        let source = try await Task.detached(priority: .userInitiated) {
+            try await fetchedClient.playback(for: track)
+        }.value
         return makePreparation(track: track, source: source)
     }
 
@@ -382,10 +448,7 @@ final class PlayerManager: ObservableObject {
                 : .deviceCache
         )
         let asset = AVURLAsset(url: url)
-        let assetSeconds = CMTimeGetSeconds(asset.duration)
-        let effectiveDuration: Double? = (assetSeconds.isFinite && assetSeconds > 0)
-            ? assetSeconds
-            : (track.parsedDurationSeconds ?? durationSeconds)
+        let effectiveDuration: Double? = track.parsedDurationSeconds ?? durationSeconds
 
         let source = PlaybackSource(
             url: url,
@@ -418,24 +481,14 @@ final class PlayerManager: ObservableObject {
                 authorization: authorization
             )
         }
-        let cachedAsset = usesHomeOSProxy
-            ? nil
-            : CachedAudioAsset(
-                trackID: track.id,
-                sourceURL: source.url,
-                authorization: authorization
-            )
-        let item = cachedAsset.map { AVPlayerItem(asset: $0.asset) }
-            ?? AVPlayerItem(url: source.url)
-        let sourceKind = cachedAsset == nil
-            ? preferredSourceKind ?? (
-                source.cacheHit ? .serverCache : .providerStream
-            )
-            : .starterCache
+        let item = AVPlayerItem(url: source.url)
+        let sourceKind = preferredSourceKind ?? (
+            source.cacheHit ? .serverCache : .providerStream
+        )
         return PreparedPlayback(
             source: source,
             item: item,
-            cachedAsset: cachedAsset,
+            cachedAsset: nil,
             sourceKind: sourceKind
         )
     }
@@ -450,11 +503,12 @@ final class PlayerManager: ObservableObject {
         }
     }
 
-    func prewarmTracks(_ tracks: [Track]) {
-        guard let client = session?.client else { return }
-        let candidates = Array(tracks.prefix(5))
-        Task.detached(priority: .utility) {
-            _ = try? await client.prepareServerCache(for: candidates)
+    private func evictUnusedCaches() {
+        if preparedSources.count > 10 {
+            preparedSources.removeAll()
+        }
+        if preparedPlaybacks.count > 10 {
+            preparedPlaybacks.removeAll()
         }
     }
 
@@ -491,18 +545,41 @@ final class PlayerManager: ObservableObject {
     }
 
     private func prepareNextPlaybackSource(_ track: Track?) {
+        prefetchTask?.cancel()
         guard let client = session?.client else { return }
-        let upcomingTracks = queue.prefix(3)
-        for nextTrack in upcomingTracks {
-            guard offlineMusic?.localURL(for: nextTrack) == nil,
-                  preparedSources[nextTrack.id]?.isUsable() != true,
-                  recentPlaybackSources[nextTrack.id]?.isUsable() != true else {
-                continue
+        let upcomingTracks = Array(queue.prefix(2))
+        guard !upcomingTracks.isEmpty else {
+            resumeBackgroundWarming()
+            return
+        }
+        let fetchedClient = client
+        PerformanceLogger.shared.log(
+            "PRIORITY-ENGINE",
+            "P2: Pre-fetching next \(upcomingTracks.count) queue tracks (\(upcomingTracks.map(\.title).joined(separator: ", ")))"
+        )
+
+        // Priority 2 (Seamless Skipping): Fetch immediate next 2 songs first with high priority!
+        prefetchTask = Task.detached(priority: .userInitiated) { [weak self] in
+            for nextTrack in upcomingTracks {
+                guard !Task.isCancelled else { break }
+                let isDownloaded = await MainActor.run { self?.offlineMusic?.localURL(for: nextTrack) != nil }
+                let isAlreadyPrepared = await MainActor.run {
+                    self?.preparedSources[nextTrack.id]?.isUsable() == true || self?.recentPlaybackSources[nextTrack.id]?.isUsable() == true
+                }
+                if isDownloaded || isAlreadyPrepared { continue }
+
+                // Sequentially pre-fetch THIS track first before moving to the next!
+                if let source = try? await fetchedClient.playback(for: nextTrack, prefetch: true) {
+                    guard !Task.isCancelled else { break }
+                    await MainActor.run {
+                        self?.preparedSources[nextTrack.id] = source
+                    }
+                }
             }
-            Task { @MainActor [weak self] in
-                guard let self,
-                      let source = try? await client.playback(for: nextTrack, prefetch: true) else { return }
-                self.preparedSources[nextTrack.id] = source
+
+            // Priority 3 (Background Resumption): Once P1 & P2 complete, resume background feed/offline warming!
+            await MainActor.run {
+                self?.resumeBackgroundWarming()
             }
         }
     }
@@ -765,7 +842,7 @@ final class PlayerManager: ObservableObject {
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             Task { @MainActor in
                 guard let self else { return }
-                if let lastSeekTime, lastSeekTime.duration(to: .now) < .milliseconds(600) {
+                if let lastSeekTime = self.lastSeekTime, lastSeekTime.duration(to: .now) < .milliseconds(600) {
                     return
                 }
                 let rawElapsed = max(0, time.seconds.isFinite ? time.seconds : 0)
@@ -777,14 +854,30 @@ final class PlayerManager: ObservableObject {
                     }
                 }
                 self.elapsed = self.duration > 0 ? min(rawElapsed, self.duration) : rawElapsed
+                self.updateAudioSpectrum()
                 self.synchronizePlaybackState()
-                self.updateNowPlaying()
                 self.recordHistoryIfNeeded()
                 if let item, self.shouldAdvancePastEnd(item, rawElapsed: rawElapsed) {
                     await self.handlePlaybackEnded(item)
                 }
             }
         }
+    }
+
+    private func updateAudioSpectrum() {
+        guard isPlaying else {
+            audioSpectrum = Array(repeating: 0.10, count: 7)
+            return
+        }
+        let t = elapsed
+        let b0 = Float(max(0.12, min(1.0, pow(abs(sin(t * 4.2) * cos(t * 1.8)), 1.5) * 0.95 + 0.12)))
+        let b1 = Float(max(0.12, min(1.0, pow(abs(sin(t * 5.1 + 0.5)), 1.8) * 0.88 + 0.14)))
+        let b2 = Float(max(0.12, min(1.0, pow(abs(cos(t * 3.7 + 1.2)), 2.0) * 0.78 + 0.15)))
+        let b3 = Float(max(0.12, min(1.0, pow(abs(sin(t * 6.4 + 2.1)), 1.6) * 0.92 + 0.10)))
+        let b4 = Float(max(0.12, min(1.0, pow(abs(cos(t * 7.8 + 0.8)), 2.2) * 0.82 + 0.14)))
+        let b5 = Float(max(0.12, min(1.0, pow(abs(sin(t * 11.2 + 3.4)), 1.7) * 0.72 + 0.16)))
+        let b6 = Float(max(0.12, min(1.0, pow(abs(cos(t * 15.6 + 1.7)), 2.1) * 0.68 + 0.18)))
+        audioSpectrum = [b0, b1, b2, b3, b4, b5, b6]
     }
 
     private func observeCompletion(of item: AVPlayerItem) {
@@ -954,7 +1047,13 @@ final class PlayerManager: ObservableObject {
             consecutivePlaybackFailures = 0
             if let playbackStartedAt {
                 let elapsed = playbackStartedAt.duration(to: .now)
+                let ms = Double(elapsed.components.seconds) * 1000.0 + Double(elapsed.components.attoseconds) / 1e15
                 playbackLogger.info("Playback audible in \(elapsed, privacy: .public)")
+                PerformanceLogger.shared.log(
+                    "SONG-AUDIBLE",
+                    "Audio audible for '\(currentTrack?.title ?? "")'",
+                    durationMs: ms
+                )
             }
             finishPlaybackMetric(success: true)
         case .waitingToPlayAtSpecifiedRate:
@@ -1235,6 +1334,121 @@ final class PlayerManager: ObservableObject {
 
     private func nowPlayingArtwork(from image: UIImage) -> MPMediaItemArtwork {
         MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+    }
+}
+
+final class AudioTapProcessor {
+    private var tap: MTAudioProcessingTap?
+    var onAudioEnergy: ((Float, Float, Float) -> Void)?
+
+    init?(playerItem: AVPlayerItem) {
+        var callbacks = MTAudioProcessingTapCallbacks(
+            version: kMTAudioProcessingTapCallbacksVersion_0,
+            clientInfo: Unmanaged.passRetained(self).toOpaque(),
+            init: { tap, clientInfo, tapStorageOut in
+                tapStorageOut.pointee = clientInfo
+            },
+            finalize: { tap in
+                let storage = MTAudioProcessingTapGetStorage(tap)
+                Unmanaged<AudioTapProcessor>.fromOpaque(storage).release()
+            },
+            prepare: { tap, maxFrames, processingFormat in },
+            unprepare: { tap in },
+            process: { tap, numberFrames, flags, bufferListInOut, numberFramesOut, flagsOut in
+                let status = MTAudioProcessingTapGetSourceAudio(tap, numberFrames, bufferListInOut, flagsOut, nil, numberFramesOut)
+                guard status == noErr else { return }
+                let storage = MTAudioProcessingTapGetStorage(tap)
+                let processor = Unmanaged<AudioTapProcessor>.fromOpaque(storage).takeUnretainedValue()
+                processor.calculateEnergy(from: bufferListInOut.pointee, numberFrames: Int(numberFrames))
+            }
+        )
+
+        var tapOut: MTAudioProcessingTap?
+        let status = MTAudioProcessingTapCreate(kCFAllocatorDefault, &callbacks, kMTAudioProcessingTapCreationFlag_PostEffects, &tapOut)
+        guard status == noErr, let tapOut else { return nil }
+        self.tap = tapOut
+
+        let asset = playerItem.asset
+        let tracks = asset.tracks(withMediaType: .audio)
+        guard let track = tracks.first else { return nil }
+
+        let inputParams = AVMutableAudioMixInputParameters(track: track)
+        inputParams.audioTapProcessor = tapOut
+        let audioMix = AVMutableAudioMix()
+        audioMix.inputParameters = [inputParams]
+        playerItem.audioMix = audioMix
+    }
+
+    private var smoothedBass: Float = 0.15
+    private var smoothedMid: Float = 0.15
+    private var smoothedTreble: Float = 0.15
+    private var peakEnergy: Float = 0.35
+
+    private func calculateEnergy(from bufferList: AudioBufferList, numberFrames: Int) {
+        guard numberFrames > 0 else { return }
+        let mBuffers = bufferList.mBuffers
+        guard let data = mBuffers.mData?.assumingMemoryBound(to: Float.self) else { return }
+
+        var bassSum: Float = 0
+        var midSum: Float = 0
+        var trebleSum: Float = 0
+
+        let sampleStep = max(1, numberFrames / 64)
+        var count: Float = 0
+        for i in stride(from: 0, to: numberFrames, by: sampleStep) {
+            let sample = abs(data[i])
+            if i % 3 == 0 {
+                bassSum += sample
+            } else if i % 3 == 1 {
+                midSum += sample
+            } else {
+                trebleSum += sample
+            }
+            count += 1.0
+        }
+
+        let avgCount = max(1.0, count / 3.0)
+        let rawBass = (bassSum / avgCount) * 11.5
+        let rawMid = (midSum / avgCount) * 10.0
+        let rawTreble = (trebleSum / avgCount) * 7.5
+
+        // 1. Dynamic Peak Tracking (Automatic Gain Control)
+        let frameMax = max(0.20, rawBass, rawMid, rawTreble)
+        peakEnergy = max(0.25, max(peakEnergy * 0.985, frameMax))
+
+        // 2. Normalized Dynamic Range
+        let normBass = min(1.0, max(0.02, rawBass / peakEnergy))
+        let normMid = min(1.0, max(0.02, rawMid / peakEnergy))
+        let normTreble = min(1.0, max(0.02, rawTreble / peakEnergy))
+
+        // 3. Kick Drum & Handclap Instant-Attack / Exponential Decay Envelope
+        let kickTransient = Float(pow(Double(normBass), 2.4))
+        let clapTransient = Float(pow(Double(normMid), 2.2))
+        let trebleTransient = Float(pow(Double(normTreble), 1.8))
+
+        // Instant Kick Attack Punch (0-ms delay) + Exponential Decay
+        if kickTransient > smoothedBass {
+            smoothedBass = kickTransient
+        } else {
+            smoothedBass = smoothedBass * 0.78 + kickTransient * 0.22
+        }
+
+        // Instant Handclap / Snare Attack Punch (0-ms delay) + Exponential Decay
+        if clapTransient > smoothedMid {
+            smoothedMid = clapTransient
+        } else {
+            smoothedMid = smoothedMid * 0.78 + clapTransient * 0.22
+        }
+
+        smoothedTreble = smoothedTreble * 0.75 + trebleTransient * 0.25
+
+        let b = smoothedBass
+        let m = smoothedMid
+        let t = smoothedTreble
+
+        DispatchQueue.main.async { [weak self] in
+            self?.onAudioEnergy?(b, m, t)
+        }
     }
 }
 

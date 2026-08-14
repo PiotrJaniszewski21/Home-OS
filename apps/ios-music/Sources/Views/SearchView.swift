@@ -128,6 +128,7 @@ struct SearchView: View {
     @EnvironmentObject private var session: AppSession
     @EnvironmentObject private var player: PlayerManager
     @StateObject private var model = SearchModel()
+    @AppStorage("enableGlobalAmbientLights") private var enableGlobalAmbientLights = true
 
     private var likelyTracks: [Track] {
         model.results + model.classics

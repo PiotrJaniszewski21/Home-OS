@@ -25,71 +25,63 @@ struct NowPlayingView: View {
                     360
                 )
 
-                ZStack {
-                    PlayerBackground(url: player.currentTrack?.thumbnail)
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .clipped()
+                VStack(spacing: 0) {
+                    playerHeader
+                        .padding(.horizontal, 24)
+                        .padding(.top, 16)
 
-                    VStack(spacing: 0) {
-                        playerHeader
-                            .padding(.horizontal, 24)
-                            .padding(.top, 16)
+                    Spacer(minLength: 8)
 
-                        Spacer(minLength: 8)
+                    if let track = player.currentTrack {
+                        PlayerArtworkView(image: player.artworkImage, isPlaying: player.isPlaying)
+                            .frame(width: artworkSize, height: artworkSize)
+                            .shadow(color: .black.opacity(0.45), radius: 28, x: 0, y: 16)
+                            .scaleEffect(player.isPlaying ? 1.0 : 0.86)
+                            .animation(
+                                .spring(response: 0.45, dampingFraction: 0.75, blendDuration: 0),
+                                value: player.isPlaying
+                            )
 
-                        if let track = player.currentTrack {
-                            PlayerArtworkView(image: player.artworkImage, isPlaying: player.isPlaying)
-                                .frame(width: artworkSize, height: artworkSize)
-                                .shadow(color: .black.opacity(0.45), radius: 28, x: 0, y: 16)
-                                .scaleEffect(player.isPlaying ? 1.0 : 0.86)
-                                .animation(
-                                    .spring(response: 0.45, dampingFraction: 0.75, blendDuration: 0),
-                                    value: player.isPlaying
-                                )
+                        Spacer(minLength: 16)
 
-                            Spacer(minLength: 16)
+                        trackInformation(track)
+                            .padding(.horizontal, 30)
 
-                            trackInformation(track)
+                        if player.currentRadioStation == nil {
+                            progress
                                 .padding(.horizontal, 30)
-
-                            if player.currentRadioStation == nil {
-                                progress
-                                    .padding(.horizontal, 30)
-                                    .padding(.top, isCompactHeight ? 12 : 20)
-                            } else {
-                                HStack(spacing: 8) {
-                                    Circle().fill(.red).frame(width: 8, height: 8)
-                                    Text("LIVE BROADCAST").font(.caption.bold()).tracking(1)
-                                }
                                 .padding(.top, isCompactHeight ? 12 : 20)
-                            }
-
-                            transportControls
-                                .padding(.top, isCompactHeight ? 10 : 16)
-
-                            if player.currentRadioStation == nil {
-                                volumeSlider
-                                    .padding(.horizontal, 34)
-                                    .padding(.top, isCompactHeight ? 12 : 22)
-                            }
-
-                            accessoryControls
-                                .padding(.horizontal, 40)
-                                .padding(.top, isCompactHeight ? 12 : 20)
-
-                            playbackStatus
-                                .padding(.horizontal, 30)
-                                .padding(.top, 6)
                         } else {
-                            ContentUnavailableView("Nothing Playing", systemImage: "music.note")
+                            HStack(spacing: 8) {
+                                Circle().fill(.red).frame(width: 8, height: 8)
+                                Text("LIVE BROADCAST").font(.caption.bold()).tracking(1)
+                            }
+                            .padding(.top, isCompactHeight ? 12 : 20)
                         }
 
-                        Spacer(minLength: isCompactHeight ? 12 : 24)
+                        transportControls
+                            .padding(.top, isCompactHeight ? 10 : 16)
+
+                        if player.currentRadioStation == nil {
+                            volumeSlider
+                                .padding(.horizontal, 34)
+                                .padding(.top, isCompactHeight ? 12 : 22)
+                        }
+
+                        accessoryControls
+                            .padding(.horizontal, 40)
+                            .padding(.top, isCompactHeight ? 12 : 20)
+
+                        playbackStatus
+                            .padding(.horizontal, 30)
+                            .padding(.top, 6)
+                    } else {
+                        ContentUnavailableView("Nothing Playing", systemImage: "music.note")
                     }
-                    .frame(width: geometry.size.width, height: geometry.size.height)
+
+                    Spacer(minLength: isCompactHeight ? 12 : 24)
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
-                .clipped()
             }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $selectedArtistID) { artistID in
@@ -111,19 +103,19 @@ struct NowPlayingView: View {
             Button { dismiss() } label: {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(.primary.opacity(0.85))
+                    .foregroundStyle(.white)
                     .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial, in: Circle())
+                    .background(.white.opacity(0.18), in: Circle())
             }
             Spacer()
             VStack(spacing: 2) {
                 Text(headerCategoryTitle.uppercased())
                     .font(.caption2.bold())
                     .tracking(0.8)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.75))
                 Text(player.currentTrack?.artist ?? "HomeMusic")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary.opacity(0.9))
+                    .foregroundStyle(.white)
                     .lineLimit(1)
             }
             Spacer()
@@ -179,9 +171,9 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.primary.opacity(0.85))
+                    .foregroundStyle(.white)
                     .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial, in: Circle())
+                    .background(.white.opacity(0.18), in: Circle())
             }
         }
         .buttonStyle(.plain)
@@ -199,7 +191,7 @@ struct NowPlayingView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(track.title)
                     .font(.title2.weight(.bold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.white)
                     .lineLimit(1)
                 Button {
                     openArtist(track)
@@ -213,7 +205,7 @@ struct NowPlayingView: View {
                         }
                     }
                     .font(.title3.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -224,7 +216,7 @@ struct NowPlayingView: View {
                 Button { radio.toggleFavourite(station) } label: {
                     Image(systemName: radio.favouriteIDs.contains(station.id) ? "star.fill" : "star")
                         .font(.title2)
-                        .foregroundStyle(radio.favouriteIDs.contains(station.id) ? .yellow : .primary.opacity(0.7))
+                        .foregroundStyle(radio.favouriteIDs.contains(station.id) ? .yellow : .white.opacity(0.85))
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
@@ -232,7 +224,7 @@ struct NowPlayingView: View {
                 Button { Task { await player.toggleLike() } } label: {
                     Image(systemName: track.liked == true ? "heart.fill" : "heart")
                         .font(.title2)
-                        .foregroundStyle(track.liked == true ? Color.homeMusicRed : .primary.opacity(0.7))
+                        .foregroundStyle(track.liked == true ? Color.homeMusicRed : .white.opacity(0.85))
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
@@ -253,7 +245,7 @@ struct NowPlayingView: View {
                 Text("−\(formatTime(max(player.duration - player.elapsed, 0)))")
             }
             .font(.caption.weight(.medium).monospacedDigit())
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.white.opacity(0.8))
         }
     }
 
@@ -263,7 +255,7 @@ struct NowPlayingView: View {
                 Button(action: player.playPrevious) {
                     Image(systemName: "backward.fill")
                         .font(.system(size: 26, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.white)
                         .frame(width: 52, height: 52)
                 }
             } else {
@@ -273,11 +265,11 @@ struct NowPlayingView: View {
             Button(action: player.togglePlayback) {
                 ZStack {
                     if player.isBuffering {
-                        ProgressView().controlSize(.large).tint(.primary)
+                        ProgressView().controlSize(.large).tint(.white)
                     } else {
                         Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 44, weight: .bold))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(.white)
                             .offset(x: player.isPlaying ? 0 : 3)
                     }
                 }
@@ -288,7 +280,7 @@ struct NowPlayingView: View {
                 Button(action: player.playNext) {
                     Image(systemName: "forward.fill")
                         .font(.system(size: 26, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.white)
                         .frame(width: 52, height: 52)
                 }
             } else {
@@ -302,16 +294,16 @@ struct NowPlayingView: View {
         HStack(spacing: 14) {
             Image(systemName: "speaker.fill")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.8))
             SystemVolumeSlider()
                 .frame(height: 22)
             Image(systemName: "speaker.wave.3.fill")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.8))
         }
     }
 
-    private var accessoryControls: some View {
+       private var accessoryControls: some View {
         HStack {
             AirPlayButton().frame(width: 44, height: 44)
             Spacer()
@@ -319,7 +311,7 @@ struct NowPlayingView: View {
                 Button { showingQueue = true } label: {
                     Image(systemName: "list.bullet")
                         .font(.title3.weight(.medium))
-                        .foregroundStyle(.primary.opacity(0.85))
+                        .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
@@ -333,7 +325,7 @@ struct NowPlayingView: View {
     private var playbackStatus: some View {
         switch player.playbackState {
         case .loading:
-            Text("Loading audio…").font(.caption).foregroundStyle(.secondary)
+            Text("Loading audio…").font(.caption).foregroundStyle(.white.opacity(0.8))
         case .failed(let message):
             VStack(spacing: 8) {
                 Text(message).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center)
@@ -348,8 +340,9 @@ struct NowPlayingView: View {
     }
 
     private func formatTime(_ seconds: Double) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        return "\(Int(seconds) / 60):\(String(format: "%02d", Int(seconds) % 60))"
+        let mins = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        return String(format: "%d:%02d", mins, secs)
     }
 
     private func openArtist(_ track: Track) {
@@ -375,15 +368,19 @@ struct NowPlayingView: View {
                 let match = artists.first {
                     $0.name.compare(artistName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
                 } ?? artists.first
-                isResolvingArtist = false
-                if let match {
-                    selectedArtistID = match.id
-                } else {
-                    showArtistError("No artist page was found for \(artistName).")
+                await MainActor.run {
+                    isResolvingArtist = false
+                    if let match {
+                        selectedArtistID = match.id
+                    } else {
+                        showArtistError("No artist page was found for \(artistName).")
+                    }
                 }
             } catch {
-                isResolvingArtist = false
-                showArtistError(error.localizedDescription)
+                await MainActor.run {
+                    isResolvingArtist = false
+                    showArtistError(error.localizedDescription)
+                }
             }
         }
     }
@@ -416,9 +413,9 @@ private struct AppleMusicScrubber: View {
             let totalSeconds = max(range.upperBound - range.lowerBound, 1)
 
             ZStack(alignment: .leading) {
-                Capsule().fill(.primary.opacity(0.15))
+                Capsule().fill(Color.white.opacity(0.25))
                 Capsule()
-                    .fill(.primary.opacity(isDragging ? 0.95 : 0.70))
+                    .fill(Color.white.opacity(isDragging ? 1.0 : 0.88))
                     .frame(width: proxy.size.width * fraction)
             }
             .frame(height: isDragging ? 10 : 4)
@@ -461,8 +458,9 @@ private struct SystemVolumeSlider: UIViewRepresentable {
         volumeView.showsRouteButton = false
         for view in volumeView.subviews {
             if let slider = view as? UISlider {
-                slider.tintColor = UIColor.label
-                slider.thumbTintColor = UIColor.label
+                slider.tintColor = UIColor.white
+                slider.thumbTintColor = UIColor.white
+                slider.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.25)
             }
         }
         return volumeView
@@ -471,33 +469,98 @@ private struct SystemVolumeSlider: UIViewRepresentable {
     func updateUIView(_ uiView: MPVolumeView, context: Context) {}
 }
 
+extension UIImage {
+    fileprivate func extractPaletteColors() -> [Color] {
+        guard let cgImage = self.cgImage else {
+            return [.pink, .purple, .cyan, Color(red: 1.0, green: 0.1, blue: 0.8), .orange]
+        }
+        let width = 6
+        let height = 6
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        var rawData = [UInt8](repeating: 0, count: width * height * 4)
+
+        guard let context = CGContext(
+            data: &rawData,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return [.pink, .purple, .cyan, Color(red: 1.0, green: 0.1, blue: 0.8), .orange]
+        }
+
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        var colors: [Color] = []
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 4
+                let r = Double(rawData[offset]) / 255.0
+                let g = Double(rawData[offset + 1]) / 255.0
+                let b = Double(rawData[offset + 2]) / 255.0
+                let brightness = (r + g + b) / 3.0
+                if brightness > 0.12 && brightness < 0.92 {
+                    colors.append(Color(red: r, green: g, blue: b))
+                }
+            }
+        }
+
+        return colors.isEmpty ? [.pink, .purple, .cyan, Color(red: 1.0, green: 0.1, blue: 0.8), .orange] : colors
+    }
+}
+
 struct PlayerBackground: View {
     let url: String?
     @EnvironmentObject private var player: PlayerManager
+    @State private var blurredThumbnail: UIImage?
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                Color(uiColor: .systemBackground)
-                if let artworkImage = player.artworkImage {
-                    Image(uiImage: artworkImage)
+                // Base Dark Atmosphere
+                Color.black
+
+                // Downscaled Blurred Album Cover Layer
+                if let blurredThumbnail {
+                    Image(uiImage: blurredThumbnail)
                         .resizable()
                         .scaledToFill()
                         .frame(width: proxy.size.width, height: proxy.size.height)
                         .clipped()
-                        .saturation(1.5)
-                        .blur(radius: 75)
-                        .opacity(0.55)
+                        .saturation(1.4)
+                        .blur(radius: 16)
+                        .opacity(0.45)
                 }
-                Rectangle().fill(.ultraThinMaterial)
-                LinearGradient(
-                    colors: [.clear, Color(uiColor: .systemBackground).opacity(0.4)],
-                    startPoint: .top,
-                    endPoint: .bottom
+
+                // Subtle Edge Vignette
+                RadialGradient(
+                    colors: [.clear, Color.black.opacity(0.60)],
+                    center: .center,
+                    startRadius: proxy.size.width * 0.30,
+                    endRadius: proxy.size.width * 0.85
                 )
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .clipped()
+            .task(id: player.artworkImage) {
+                guard let artwork = player.artworkImage else {
+                    blurredThumbnail = nil
+                    return
+                }
+                let processed = await Task.detached(priority: .utility) {
+                    let size = CGSize(width: 96, height: 96)
+                    UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
+                    artwork.draw(in: CGRect(origin: .zero, size: size))
+                    let downscaled = UIGraphicsGetImageFromCurrentImageContext()
+                    UIGraphicsEndImageContext()
+                    return downscaled
+                }.value
+                await MainActor.run {
+                    blurredThumbnail = processed
+                }
+            }
         }
     }
 }

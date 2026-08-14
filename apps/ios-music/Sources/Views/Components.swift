@@ -4,103 +4,169 @@ import UIKit
 struct PlayerArtworkView: View {
     let image: UIImage?
     var isPlaying: Bool = true
-    @State private var rotationDegree: Double = 0
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         GeometryReader { proxy in
             let size = min(proxy.size.width, proxy.size.height)
-            let centerStickerSize = size * 0.42
+            let centerStickerSize = size * 0.58
             let spindleHoleSize = size * 0.05
 
             ZStack {
-                // Outer Vinyl Disc
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color(white: 0.14),
-                                Color(white: 0.06),
-                                Color(white: 0.16),
-                                Color(white: 0.05)
-                            ],
-                            center: .center,
-                            startRadius: 8,
-                            endRadius: size / 2
-                        )
-                    )
+                // 1. HARDWARE GPU ROTATING VINYL DISC & ALBUM ART
+                SmoothSpinningView(isPlaying: isPlaying) {
+                    ZStack {
+                        // Outer Vinyl Disc (Classic Black Vinyl)
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        Color(white: 0.16),
+                                        Color(white: 0.07),
+                                        Color(white: 0.18),
+                                        Color(white: 0.05)
+                                    ],
+                                    center: .center,
+                                    startRadius: 8,
+                                    endRadius: size / 2
+                                )
+                            )
 
-                // Concentric Grooves
-                ForEach(0..<7) { i in
-                    Circle()
-                        .stroke(Color.white.opacity(0.04), lineWidth: 1.5)
-                        .frame(width: size * (0.48 + Double(i) * 0.068))
+                        // Concentric Grooves
+                        ForEach(0..<5) { i in
+                            Circle()
+                                .stroke(Color.white.opacity(0.05), lineWidth: 1.5)
+                                .frame(width: size * (0.64 + Double(i) * 0.065))
+                        }
+
+                        // Center Album Label Sticker (Bigger album art)
+                        ZStack {
+                            if let image {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: centerStickerSize, height: centerStickerSize)
+                                    .clipShape(Circle())
+                            } else {
+                                Circle()
+                                    .fill(LinearGradient(colors: [.pink, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .frame(width: centerStickerSize, height: centerStickerSize)
+                                Image(systemName: "music.note")
+                                    .font(.system(size: centerStickerSize * 0.35, weight: .bold))
+                                    .foregroundStyle(.white.opacity(0.9))
+                            }
+
+                            // Outer Sticker Ring
+                            Circle()
+                                .stroke(Color.white.opacity(0.35), lineWidth: 1)
+                                .frame(width: centerStickerSize, height: centerStickerSize)
+
+                            // Spindle Hole
+                            Circle()
+                                .fill(Color(white: 0.06))
+                                .frame(width: spindleHoleSize, height: spindleHoleSize)
+                            Circle()
+                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                .frame(width: spindleHoleSize, height: spindleHoleSize)
+                        }
+                    }
+                    .frame(width: size, height: size)
                 }
 
-                // Vinyl Reflection Gloss
+                // 2. STATIONARY LIGHT REFLECTION GLOSS
                 Circle()
                     .fill(
                         AngularGradient(
                             colors: [
                                 .white.opacity(0.0),
-                                .white.opacity(0.14),
+                                .white.opacity(0.12),
                                 .white.opacity(0.0),
-                                .white.opacity(0.14),
+                                .white.opacity(0.12),
                                 .white.opacity(0.0)
                             ],
                             center: .center
                         )
                     )
-
-                // Center Album Label Sticker
-                ZStack {
-                    if let image {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: centerStickerSize, height: centerStickerSize)
-                            .clipShape(Circle())
-                    } else {
-                        Circle()
-                            .fill(LinearGradient(colors: [.pink, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: centerStickerSize, height: centerStickerSize)
-                        Image(systemName: "music.note")
-                            .font(.system(size: centerStickerSize * 0.35, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.9))
-                    }
-
-                    // Outer Sticker Ring
-                    Circle()
-                        .stroke(Color.white.opacity(0.35), lineWidth: 1)
-                        .frame(width: centerStickerSize, height: centerStickerSize)
-
-                    // Spindle Hole
-                    Circle()
-                        .fill(Color(white: 0.06))
-                        .frame(width: spindleHoleSize, height: spindleHoleSize)
-                    Circle()
-                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                        .frame(width: spindleHoleSize, height: spindleHoleSize)
-                }
+                    .allowsHitTesting(false)
             }
             .frame(width: size, height: size)
-            .rotationEffect(.degrees(rotationDegree))
-            .onAppear {
-                if isPlaying {
-                    withAnimation(.linear(duration: 12).repeatForever(autoreverses: false)) {
-                        rotationDegree = 360
-                    }
+        }
+    }
+}
+
+private struct SmoothSpinningView<Content: View>: UIViewRepresentable {
+    let isPlaying: Bool
+    let content: Content
+
+    init(isPlaying: Bool, @ViewBuilder content: () -> Content) {
+        self.isPlaying = isPlaying
+        self.content = content()
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(hostingController: UIHostingController(rootView: content))
+    }
+
+    final class Coordinator {
+        let hostingController: UIHostingController<Content>
+        init(hostingController: UIHostingController<Content>) {
+            self.hostingController = hostingController
+        }
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView()
+        let hostingController = context.coordinator.hostingController
+        hostingController.view.backgroundColor = .clear
+
+        container.addSubview(hostingController.view)
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            hostingController.view.topAnchor.constraint(equalTo: container.topAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            hostingController.view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            hostingController.view.trailingAnchor.constraint(equalTo: container.trailingAnchor)
+        ])
+
+        updateAnimation(layer: hostingController.view.layer, isPlaying: isPlaying)
+        return container
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.hostingController.rootView = content
+        context.coordinator.hostingController.view.setNeedsLayout()
+        if let subview = uiView.subviews.first {
+            updateAnimation(layer: subview.layer, isPlaying: isPlaying)
+        }
+    }
+
+    private func updateAnimation(layer: CALayer, isPlaying: Bool) {
+        let animationKey = "vinylRotationAnimation"
+        if isPlaying {
+            if layer.animation(forKey: animationKey) == nil {
+                let animation = CABasicAnimation(keyPath: "transform.rotation.z")
+                animation.fromValue = 0
+                animation.toValue = Double.pi * 2
+                animation.duration = 9.5
+                animation.repeatCount = .infinity
+                animation.isRemovedOnCompletion = false
+                animation.fillMode = .forwards
+                layer.add(animation, forKey: animationKey)
+            } else {
+                let pausedTime = layer.timeOffset
+                if pausedTime > 0 {
+                    layer.speed = 1.0
+                    layer.timeOffset = 0
+                    layer.beginTime = 0
+                    let timeSincePause = layer.convertTime(CACurrentMediaTime(), from: nil) - pausedTime
+                    layer.beginTime = timeSincePause
                 }
             }
-            .onChange(of: isPlaying) { newValue in
-                if newValue {
-                    withAnimation(.linear(duration: 12).repeatForever(autoreverses: false)) {
-                        rotationDegree += 360
-                    }
-                } else {
-                    withAnimation(.easeOut(duration: 0.4)) {
-                        // Smooth halt
-                    }
-                }
+        } else {
+            if layer.animation(forKey: animationKey) != nil && layer.speed != 0 {
+                let pausedTime = layer.convertTime(CACurrentMediaTime(), from: nil)
+                layer.speed = 0.0
+                layer.timeOffset = pausedTime
             }
         }
     }

@@ -927,10 +927,11 @@ def personalized_home():
     )
 
     if not recent_listens and not playlist_tracks and not liked_listens:
-        seed_ids = ["m83-midnight-city", "daft-punk-get-lucky"]
-        recent_artists = ["M83", "Daft Punk"]
-        exclude_ids = []
-    else:
+        return jsonify({
+            "ok": True,
+            "data": {"suggested_songs": [], "suggested_albums": [], "new_releases": []},
+            "message": "Play a few songs or create a playlist to personalize Listen Now.",
+        })
 
     # Assemble candidate seeds from all 3 sources
     raw_seed_candidates = []
@@ -975,10 +976,7 @@ def personalized_home():
                 seen_artists.add(primary_artist.casefold())
                 recent_artists.append(primary_artist)
 
-    if not seed_ids:
-        seed_ids = ["m83-midnight-city", "daft-punk-get-lucky"]
-    if not recent_artists:
-        recent_artists = ["M83", "Daft Punk"]
+    exclude_ids = list(seen_seeds)
 
     try:
         payload = home_music_service.personalized_home(

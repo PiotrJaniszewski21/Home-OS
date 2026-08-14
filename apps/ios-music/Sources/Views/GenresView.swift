@@ -35,6 +35,7 @@ struct GenresView: View {
     @EnvironmentObject private var session: AppSession
     @StateObject private var model = GenresModel()
     @State private var query = ""
+    @AppStorage("enableGlobalAmbientLights") private var enableGlobalAmbientLights = true
 
     private var visibleGenres: [String] {
         let value = query.trimmingCharacters(in: .whitespacesAndNewlines)

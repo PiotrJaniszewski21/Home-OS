@@ -193,6 +193,7 @@ struct APIClient {
         for track: Track,
         prefetch: Bool = false
     ) async throws -> PlaybackSource {
+        let startTime = CFAbsoluteTimeGetCurrent()
         var query = [
             URLQueryItem(name: "id", value: track.id),
             URLQueryItem(name: "direct", value: "1")
@@ -204,6 +205,14 @@ struct APIClient {
             "/api/music/playback-url",
             query: query
         )
+        let elapsedMs = (CFAbsoluteTimeGetCurrent() - startTime) * 1000.0
+        Task { @MainActor in
+            PerformanceLogger.shared.log(
+                "STREAM-API",
+                "Fetched ticket for '\(track.title)' (\(track.id)) | prefetch: \(prefetch) | cacheHit: \(payload.cacheHit)",
+                durationMs: elapsedMs
+            )
+        }
         guard let proxyURL = URL(string: payload.path, relativeTo: baseURL)?.absoluteURL else {
             throw APIError.invalidResponse
         }
@@ -406,15 +415,25 @@ struct APIClient {
         do {
             (data, response) = try await NetworkSession.shared.data(for: request)
         } catch let error as URLError {
+            Task { @MainActor in
+                PerformanceLogger.shared.log("NETWORK-ERROR", "Request to \(request.url?.path ?? "") failed: \(error.localizedDescription)")
+            }
             throw APIError.network(error)
         }
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
+            Task { @MainActor in
+                PerformanceLogger.shared.log("HTTP-ERROR", "Request to \(request.url?.path ?? "") returned status \(http.statusCode)")
+            }
             throw APIError.response(status: http.statusCode, data: data)
         }
         do {
             return try JSONDecoder().decode(APIEnvelope<Value>.self, from: data).data
         } catch {
+            let str = String(data: data, encoding: .utf8) ?? "binary"
+            Task { @MainActor in
+                PerformanceLogger.shared.log("DECODING-ERROR", "Failed to decode \(Value.self) for \(request.url?.path ?? ""): \(error). Payload: \(str.prefix(150))")
+            }
             print("❌ JSON DECODING ERROR for \(Value.self): \(error)")
             throw APIError.invalidResponse
         }

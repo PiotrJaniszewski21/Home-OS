@@ -473,7 +473,7 @@ final class OfflineMusicStore: ObservableObject {
                 let seconds = asset.duration.seconds
                 if seconds.isFinite, seconds > 0 {
                     let durSec = Int(seconds.rounded())
-                    if record.track.parsedDurationSeconds != durSec {
+                    if record.track.parsedDurationSeconds != Double(durSec) {
                         let min = durSec / 60
                         let sec = durSec % 60
                         let formattedDuration = String(format: "%d:%02d", min, sec)

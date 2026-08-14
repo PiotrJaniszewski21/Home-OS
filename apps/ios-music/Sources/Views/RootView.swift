@@ -162,3 +162,34 @@ private struct TabBarPlayerAccessory: View {
         .padding(.horizontal, placement == .inline ? 4 : 10)
     }
 }
+
+struct GlobalAmbientBackgroundView: View {
+    @EnvironmentObject private var player: PlayerManager
+    @AppStorage("enableGlobalAmbientLights") private var enableGlobalAmbientLights = true
+
+    var body: some View {
+        if enableGlobalAmbientLights {
+            ZStack {
+                Color.black
+
+                if let artwork = player.artworkImage {
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .scaledToFill()
+                        .saturation(1.4)
+                        .blur(radius: 60)
+                        .opacity(0.35)
+                }
+
+                RadialGradient(
+                    colors: [.clear, Color.black.opacity(0.60)],
+                    center: .center,
+                    startRadius: 120,
+                    endRadius: 750
+                )
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        }
+    }
+}

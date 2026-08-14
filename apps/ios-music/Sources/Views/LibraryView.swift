@@ -6,6 +6,7 @@ struct LibraryView: View {
     @EnvironmentObject private var offlineMusic: OfflineMusicStore
     @State private var showingNewPlaylist = false
     @State private var renamingPlaylist: Playlist?
+    @AppStorage("enableGlobalAmbientLights") private var enableGlobalAmbientLights = true
 
     var body: some View {
         NavigationStack {

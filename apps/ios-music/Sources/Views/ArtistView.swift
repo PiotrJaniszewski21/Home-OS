@@ -48,9 +48,11 @@ struct ArtistView: View {
                     ArtistHero(artist: artist)
 
                     if !artist.essentials.isEmpty {
-                        ArtistSectionHeader(title: "\(artist.name) Essentials")
+                        ArtistEssentialsCard(artist: artist)
+
+                        ArtistSectionHeader(title: "Top Songs")
                         VStack(spacing: 0) {
-                            ForEach(artist.essentials.prefix(8)) { track in
+                            ForEach(artist.essentials.prefix(25)) { track in
                                 TrackRow(track: track, context: artist.essentials)
                                     .padding(.vertical, 5)
                                 Divider().padding(.leading, 66)
@@ -339,5 +341,91 @@ private struct AlbumOfflineStatus: View {
                 .buttonStyle(.bordered)
             }
         }
+    }
+}
+
+private struct ArtistEssentialsCard: View {
+    let artist: ArtistDetail
+    @EnvironmentObject private var player: PlayerManager
+
+    var body: some View {
+        NavigationLink {
+            TrackCollectionView(
+                title: "\(artist.name) Essentials",
+                subtitle: "The defining songs and career highlights of \(artist.name)",
+                tracks: artist.essentials,
+                symbol: "sparkles"
+            )
+        } label: {
+            HStack(spacing: 16) {
+                // Essentials Artwork Thumbnail with Badge
+                ZStack(alignment: .bottomTrailing) {
+                    if let firstArtwork = artist.essentials.first?.thumbnail, !firstArtwork.isEmpty {
+                        RemoteArtworkView(url: firstArtwork)
+                            .frame(width: 104, height: 104)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    } else {
+                        ArtistArtwork(url: artist.thumbnail)
+                            .frame(width: 104, height: 104)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(6)
+                        .background(Color.homeMusicRed, in: Circle())
+                        .offset(x: -4, y: -4)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("ESSENTIAL PLAYLIST")
+                        .font(.caption2.weight(.bold))
+                        .tracking(1.2)
+                        .foregroundStyle(Color.homeMusicRed)
+
+                    Text("\(artist.name): Essentials")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    Text("The defining tracks and essential hits by \(artist.name)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+
+                    HStack(spacing: 12) {
+                        Button {
+                            if let first = artist.essentials.first {
+                                Task { await player.play(first, from: artist.essentials) }
+                            }
+                        } label: {
+                            Label("Play", systemImage: "play.fill")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .background(Color.homeMusicRed, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+
+                        Text("\(artist.essentials.count) Songs")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 2)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+        }
+        .buttonStyle(.plain)
     }
 }

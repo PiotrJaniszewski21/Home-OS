@@ -4,6 +4,7 @@ struct RadioView: View {
     @EnvironmentObject private var session: AppSession
     @EnvironmentObject private var radio: RadioStore
     @State private var query = ""
+    @AppStorage("enableGlobalAmbientLights") private var enableGlobalAmbientLights = true
 
     var body: some View {
         NavigationStack {
